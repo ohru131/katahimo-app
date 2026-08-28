@@ -224,6 +224,17 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [savingDaily, setSavingDaily] = useState(false);
   const [dailyMessage, setDailyMessage] = useState<string | null>(null);
   const [dailyError, setDailyError] = useState<string | null>(null);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+
+  /** GAS版copyToClipboard('customerResult')と同じ役割。 */
+  const handleCopyCustomerText = async () => {
+    try {
+      await navigator.clipboard.writeText(customerText);
+      setCopyMessage('コピーしました');
+    } catch {
+      setCopyMessage('コピーに失敗しました');
+    }
+  };
   const dailyVoice = useVoiceInput((text) => setMemoText((prev) => (prev ? `${prev}\n${text}` : text)));
 
   // ── 事故報告/ヒヤリハット ──
@@ -232,6 +243,8 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const accidentVoice = useVoiceInput((text) =>
     setAccidentMemo((prev) => (prev ? `${prev}\n${text}` : text)),
   );
+  const [accTargetName, setAccTargetName] = useState('');
+  const [accTargetDob, setAccTargetDob] = useState('');
   const [occurrenceTime, setOccurrenceTime] = useState('');
   const [location, setLocation] = useState('');
   const [accidentContent, setAccidentContent] = useState('');
@@ -253,7 +266,13 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
-  const selectedFamily = customerQuery.data?.familyMembers.find((f) => f.id === selectedFamilyId) ?? null;
+  /** 対象者選択(GAS版onFamilySelect()と同じ、事故報告の対象者氏名/生年月日を自動入力する)。 */
+  const handleFamilySelect = (id: string) => {
+    setSelectedFamilyId(id);
+    const fam = customerQuery.data?.familyMembers.find((f) => f.id === id);
+    setAccTargetName(fam?.name ?? '');
+    setAccTargetDob(fam?.dob ?? '');
+  };
 
   const handleGenerateDaily = async () => {
     if (!memoText.trim()) return;
@@ -334,8 +353,8 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
       await saveAccidentReport({
         customerId,
         reportType,
-        targetName: selectedFamily?.name ?? '',
-        targetDob: selectedFamily?.dob ?? '',
+        targetName: accTargetName,
+        targetDob: accTargetDob,
         occurrenceTime,
         location,
         accidentContent,
@@ -493,7 +512,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
               <select
                 id="familySelector"
                 value={selectedFamilyId}
-                onChange={(e) => setSelectedFamilyId(e.target.value)}
+                onChange={(e) => handleFamilySelect(e.target.value)}
                 className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
               >
                 <option value="">(選択してください)</option>
@@ -668,6 +687,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
               <div>
                 <label htmlFor="internalText" className="text-xs text-gray-500 block mb-1">
                   社内向けレポート
+                  <span className="text-gray-400 font-normal ml-2">{internalText.length}文字</span>
                 </label>
                 <textarea
                   id="internalText"
@@ -678,9 +698,19 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                 />
               </div>
               <div>
-                <label htmlFor="customerText" className="text-xs text-gray-500 block mb-1">
-                  保護者向けレポート
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label htmlFor="customerText" className="text-xs text-gray-500">
+                    保護者向けレポート
+                    <span className="text-gray-400 font-normal ml-2">{customerText.length}文字</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleCopyCustomerText}
+                    className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded"
+                  >
+                    📋 コピー
+                  </button>
+                </div>
                 <textarea
                   id="customerText"
                   value={customerText}
@@ -690,6 +720,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                 />
               </div>
 
+              {copyMessage && <p className="text-gray-500 text-xs">{copyMessage}</p>}
               {dailyError && <p className="text-red-500 text-sm">{dailyError}</p>}
               {dailyMessage && <p className="text-green-600 text-sm">{dailyMessage}</p>}
 
@@ -890,6 +921,33 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
               </button>
 
               {accidentError && <p className="text-red-500 text-sm">{accidentError}</p>}
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label htmlFor="accTargetName" className="text-xs text-gray-500 block mb-1">
+                    対象者氏名
+                  </label>
+                  <input
+                    id="accTargetName"
+                    type="text"
+                    value={accTargetName}
+                    onChange={(e) => setAccTargetName(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="accTargetDob" className="text-xs text-gray-500 block mb-1">
+                    生年月日
+                  </label>
+                  <input
+                    id="accTargetDob"
+                    type="text"
+                    value={accTargetDob}
+                    onChange={(e) => setAccTargetDob(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
+                  />
+                </div>
+              </div>
 
               <div>
                 <label htmlFor="accOccurrenceTime" className="text-xs text-gray-500 block mb-1">
