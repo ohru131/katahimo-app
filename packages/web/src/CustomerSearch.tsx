@@ -116,22 +116,47 @@ export function CustomerSearch() {
             <div className="text-center text-gray-400 py-8">該当する顧客がいません</div>
           )}
           {filteredCustomers.map((c) => (
+            // biome-ignore lint/a11y/useSemanticElements: 内部に顧客情報/活動記録ボタンをネストするため<button>不可(GAS版と同じ構造)
             <div
               key={c.id}
-              className="w-full bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
+              role="button"
+              tabIndex={0}
+              onClick={() => setReportCustomerId(c.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') setReportCustomerId(c.id);
+              }}
+              className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center cursor-pointer hover:shadow-md transition-shadow active:bg-gray-50"
             >
-              <button
-                type="button"
-                onClick={() => setReportCustomerId(c.id)}
-                className="w-full p-4 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors text-left"
-              >
-                <div className="flex-grow">
-                  <h3 className="font-bold text-gray-800 text-lg">{c.name}</h3>
-                  {c.city && (
-                    <p className="text-sm text-gray-500 flex items-center gap-1">
-                      <span className="inline-block px-2 py-0.5 bg-gray-100 rounded text-xs">{c.city}</span>
-                    </p>
-                  )}
+              <div className="flex-grow">
+                <h3 className="font-bold text-gray-800 text-lg">{c.name}</h3>
+                {c.city && (
+                  <p className="text-sm text-gray-500 flex items-center gap-1">
+                    <span className="inline-block px-2 py-0.5 bg-gray-100 rounded text-xs">{c.city}</span>
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex flex-col gap-2 items-end z-10 relative">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDetailCustomerId(c.id);
+                    }}
+                    className="px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors"
+                  >
+                    顧客情報
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setHistoryCustomer({ id: c.id, name: c.name });
+                    }}
+                    className="px-3 py-1.5 text-xs font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg border border-orange-200 transition-colors"
+                  >
+                    活動記録
+                  </button>
                 </div>
                 <div className="text-blue-500">
                   <svg
@@ -144,22 +169,6 @@ export function CustomerSearch() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
-              </button>
-              <div className="flex border-t border-gray-100 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setDetailCustomerId(c.id)}
-                  className="flex-1 py-2 text-gray-600 hover:bg-gray-50 font-medium"
-                >
-                  👤 顧客情報
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHistoryCustomer({ id: c.id, name: c.name })}
-                  className="flex-1 py-2 text-gray-600 hover:bg-gray-50 font-medium border-l border-gray-100"
-                >
-                  📋 活動記録
-                </button>
               </div>
             </div>
           ))}
