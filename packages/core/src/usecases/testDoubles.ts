@@ -1,5 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
 import type { BlindIndexPort, CryptoPort, EncryptedValue } from '../ports/crypto';
+import type { NotificationChannel, NotifierPort } from '../ports/notifier';
 import type {
   ActiveStaffRecord,
   AppSettingsPatchInput,
@@ -49,6 +50,15 @@ export class FakeBlindIndexPort implements BlindIndexPort {
   async compute(tenantId: string, normalizedValue: string): Promise<string> {
     const key = createHash('sha256').update('test-fixed-key').update(tenantId).digest();
     return createHmac('sha256', key).update(normalizedValue, 'utf8').digest('hex');
+  }
+}
+
+/** notify()の呼び出しを記録するだけの、通知先を持たないフェイク実装。 */
+export class FakeNotifierPort implements NotifierPort {
+  readonly notifications: { tenantId: string; channel: NotificationChannel; text: string }[] = [];
+
+  async notify(tenantId: string, channel: NotificationChannel, text: string): Promise<void> {
+    this.notifications.push({ tenantId, channel, text });
   }
 }
 

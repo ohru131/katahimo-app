@@ -4,6 +4,7 @@ import {
   getCustomerHistory,
   saveAccidentReport,
   saveDailyReport,
+  sendVisitCompleteNotification,
 } from '@katahimo/core';
 import { Hono } from 'hono';
 import type { Container } from '../container';
@@ -111,6 +112,36 @@ export function createReportRoutes(container: Container) {
         inputText: typeof body.inputText === 'string' ? body.inputText : '',
       });
       return c.json({ success: true, report });
+    } catch (e) {
+      return c.json({ success: false, message: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
+  /** 「訪問完了」通知のみ送信する(DB書き込みなし)。GAS版sendVisitComplete相当。 */
+  app.post('/visit-complete', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    const body = await c.req.json().catch(() => null);
+    if (
+      typeof body?.customerId !== 'string' ||
+      typeof body?.visitDate !== 'string' ||
+      typeof body?.startTime !== 'string' ||
+      typeof body?.endTime !== 'string'
+    ) {
+      return c.json({ success: false, message: 'customerId, visitDate, startTime, endTime が必要です' }, 400);
+    }
+
+    const staffId = resolveReportTargetStaffId(session, body.staffId);
+    try {
+      await sendVisitCompleteNotification(container, session.tenantId, {
+        staffId,
+        customerId: body.customerId,
+        visitDate: body.visitDate,
+        startTime: body.startTime,
+        endTime: body.endTime,
+      });
+      return c.json({ success: true });
     } catch (e) {
       return c.json({ success: false, message: e instanceof Error ? e.message : String(e) }, 400);
     }

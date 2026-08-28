@@ -211,6 +211,34 @@ export async function saveAccidentReport(
   };
 }
 
+export interface SendVisitCompleteInput {
+  staffId: string;
+  customerId: string;
+  /** 'YYYY-MM-DD' */
+  visitDate: string;
+  /** 'HH:mm' */
+  startTime: string;
+  /** 'HH:mm' */
+  endTime: string;
+}
+
+/**
+ * 「訪問完了」ボタン用の通知のみ(DB書き込みは無い)。GAS版sendVisitComplete/
+ * sendVisitCompleteNotificationに対応。担当者名・顧客名はクライアント指定を信用せず、
+ * 常にセッション/DBから解決する(CLAUDE.mdのセキュリティパターン)。
+ */
+export async function sendVisitCompleteNotification(
+  deps: ReportDeps,
+  tenantId: string,
+  input: SendVisitCompleteInput,
+): Promise<void> {
+  const { staffName, customerName } = await resolveNames(deps, tenantId, input.staffId, input.customerId);
+  const [y, m, d] = input.visitDate.split('-');
+  const dateStr = `${y}/${m}/${d}`;
+  const message = `【訪問完了】\n担当: ${staffName}\n顧客名: ${customerName}\n訪問日時: ${dateStr} ${input.startTime}〜${input.endTime}`;
+  await deps.notifier.notify(tenantId, 'report', message);
+}
+
 export interface HistoryItem {
   type: 'daily' | 'accident';
   id: string;
