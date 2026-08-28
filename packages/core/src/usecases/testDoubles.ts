@@ -326,4 +326,19 @@ export class FakeAttendanceDayRepository implements AttendanceDayRepositoryPort 
       (r) => r.tenantId === tenantId && r.staffId === staffId && r.businessDate.startsWith(yearMonth),
     );
   }
+
+  async listByStaffAndDateRange(
+    tenantId: string,
+    staffId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<AttendanceDayRecord[]> {
+    return this.rows.filter(
+      (r) =>
+        r.tenantId === tenantId &&
+        r.staffId === staffId &&
+        r.businessDate >= startDate &&
+        r.businessDate <= endDate,
+    );
+  }
 }

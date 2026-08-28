@@ -199,3 +199,23 @@ export async function fetchAttendanceMonth(yearMonth: string): Promise<Attendanc
   const body = await parseJsonOrThrow<{ month: AttendanceMonthView }>(res);
   return body.month;
 }
+
+export type ScheduleEventType = 'CUSTOMER APPOINTMENT' | 'OFFICE WORK';
+
+export interface ScheduleEvent {
+  date: string;
+  slotKey: 'slot1' | 'slot2' | 'slot3' | 'office1' | 'office2';
+  title: string;
+  eventType: ScheduleEventType;
+  start: string;
+  end: string;
+}
+
+export async function fetchAttendanceWeekEvents(start: string, end: string): Promise<ScheduleEvent[]> {
+  const res = await fetch(
+    `/api/attendance/week?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+    { credentials: 'include' },
+  );
+  const body = await parseJsonOrThrow<{ events: ScheduleEvent[] }>(res);
+  return body.events;
+}

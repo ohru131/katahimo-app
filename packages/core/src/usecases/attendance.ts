@@ -1,5 +1,14 @@
-import type { AttendanceDayDerived, AttendanceMonthlyTotals, AttendanceRowData } from '../domain/attendance';
-import { computeDayDerived, computeMonthlyTotals } from '../domain/attendance';
+import type {
+  AttendanceDayDerived,
+  AttendanceMonthlyTotals,
+  AttendanceRowData,
+  ScheduleEvent,
+} from '../domain/attendance';
+import {
+  buildScheduleEventsFromRowData,
+  computeDayDerived,
+  computeMonthlyTotals,
+} from '../domain/attendance';
 import type { CryptoPort } from '../ports/crypto';
 import type { AttendanceDayRepositoryPort } from '../ports/repositories';
 
@@ -83,4 +92,29 @@ export async function getAttendanceMonth(
   const totals = computeMonthlyTotals(days.map((d) => ({ rowData: d.rowData, derived: d.derived })));
 
   return { yearMonth, days, totals };
+}
+
+/**
+ * 指定スタッフの指定期間('YYYY-MM-DD'両端含む)の勤怠を、週間予定UI表示用のイベント配列に変換する。
+ *
+ * GAS版の週間予定タブと同じく、実際のGoogleカレンダーからではなく出勤簿(attendance_days)の
+ * 記録内容をそのままイベント化して返す(閲覧専用。カレンダー連携Phase 5が無くても動く)。
+ */
+export async function getAttendanceScheduleEvents(
+  deps: AttendanceDeps,
+  tenantId: string,
+  staffId: string,
+  startDate: string,
+  endDate: string,
+): Promise<ScheduleEvent[]> {
+  const records = await deps.attendanceDays.listByStaffAndDateRange(tenantId, staffId, startDate, endDate);
+
+  const eventsByDay = await Promise.all(
+    records.map(async (r) => {
+      const rowData = await decryptRowData(deps.crypto, tenantId, r.rowData.ciphertext, r.rowData.keyVersion);
+      return buildScheduleEventsFromRowData(r.businessDate, rowData);
+    }),
+  );
+
+  return eventsByDay.flat();
 }

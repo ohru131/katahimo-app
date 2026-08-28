@@ -1,5 +1,5 @@
 import type { AttendanceDayRecord, AttendanceDayRepositoryPort, EncryptedField } from '@katahimo/core/ports';
-import { and, eq, gte, lt } from 'drizzle-orm';
+import { and, eq, gte, lt, lte } from 'drizzle-orm';
 import type { Database } from '../client';
 import { withTenant } from '../client';
 import { attendanceDays } from '../schema';
@@ -93,6 +93,27 @@ export class DrizzleAttendanceDayRepository implements AttendanceDayRepositoryPo
             eq(attendanceDays.staffId, staffId),
             gte(attendanceDays.businessDate, start),
             lt(attendanceDays.businessDate, nextMonthStart),
+          ),
+        );
+      return rows.map(toRecord);
+    });
+  }
+
+  async listByStaffAndDateRange(
+    tenantId: string,
+    staffId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<AttendanceDayRecord[]> {
+    return withTenant(this.db, tenantId, async (tx) => {
+      const rows = await tx
+        .select()
+        .from(attendanceDays)
+        .where(
+          and(
+            eq(attendanceDays.staffId, staffId),
+            gte(attendanceDays.businessDate, startDate),
+            lte(attendanceDays.businessDate, endDate),
           ),
         );
       return rows.map(toRecord);

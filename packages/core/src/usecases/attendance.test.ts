@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AttendanceDeps } from './attendance';
-import { getAttendanceDay, getAttendanceMonth, saveAttendanceDay } from './attendance';
+import {
+  getAttendanceDay,
+  getAttendanceMonth,
+  getAttendanceScheduleEvents,
+  saveAttendanceDay,
+} from './attendance';
 import { FakeAttendanceDayRepository, FakeCryptoPort } from './testDoubles';
 
 describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
@@ -58,5 +63,40 @@ describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
 
     const otherTenant = await getAttendanceDay(deps, 'tenant-2', staffId, '2026-08-01');
     expect(otherTenant.rowData).toEqual({});
+  });
+
+  it('getAttendanceScheduleEventsは期間内の各日をイベント化して返す(GAS版の週間予定と同じ考え方)', async () => {
+    await saveAttendanceDay(deps, tenantId, staffId, '2026-08-10', {
+      C: '佐藤様',
+      D: '09:00',
+      E: '10:00',
+    });
+    await saveAttendanceDay(deps, tenantId, staffId, '2026-08-11', {
+      X: 'MTG',
+      Y: '14:00',
+      Z: '15:00',
+    });
+    // 期間外
+    await saveAttendanceDay(deps, tenantId, staffId, '2026-08-20', { D: '10:00', E: '11:00' });
+
+    const events = await getAttendanceScheduleEvents(deps, tenantId, staffId, '2026-08-10', '2026-08-11');
+    expect(events).toEqual([
+      {
+        date: '2026-08-10',
+        slotKey: 'slot1',
+        title: '佐藤様',
+        eventType: 'CUSTOMER APPOINTMENT',
+        start: '09:00',
+        end: '10:00',
+      },
+      {
+        date: '2026-08-11',
+        slotKey: 'office1',
+        title: 'MTG',
+        eventType: 'OFFICE WORK',
+        start: '14:00',
+        end: '15:00',
+      },
+    ]);
   });
 });

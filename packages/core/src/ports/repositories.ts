@@ -212,4 +212,11 @@ export interface AttendanceDayRepositoryPort {
   ): Promise<AttendanceDayRecord>;
   /** yearMonthは 'YYYY-MM'。月次集計(computeMonthlyTotals)の入力に使う。 */
   listByStaffAndMonth(tenantId: string, staffId: string, yearMonth: string): Promise<AttendanceDayRecord[]>;
+  /** startDate〜endDateは両端とも 'YYYY-MM-DD' で含む。週間予定UI(Googleカレンダー風表示)の入力に使う。 */
+  listByStaffAndDateRange(
+    tenantId: string,
+    staffId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<AttendanceDayRecord[]>;
 }
