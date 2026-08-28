@@ -79,6 +79,48 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+/** GAS版resizeAndAddImageのMAX_WIDTH/MAX_HEIGHT・JPEG品質と同じ値。 */
+const RECEIPT_IMAGE_MAX_DIMENSION = 1200;
+const RECEIPT_IMAGE_JPEG_QUALITY = 0.7;
+
+/** 長辺1200px以内・JPEG品質0.7へリサイズ/圧縮する。GAS版resizeAndAddImageと同じロジック。 */
+function resizeReceiptImage(dataUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let { width, height } = img;
+      if (width > height) {
+        if (width > RECEIPT_IMAGE_MAX_DIMENSION) {
+          height *= RECEIPT_IMAGE_MAX_DIMENSION / width;
+          width = RECEIPT_IMAGE_MAX_DIMENSION;
+        }
+      } else if (height > RECEIPT_IMAGE_MAX_DIMENSION) {
+        width *= RECEIPT_IMAGE_MAX_DIMENSION / height;
+        height = RECEIPT_IMAGE_MAX_DIMENSION;
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas 2D contextの取得に失敗しました'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', RECEIPT_IMAGE_JPEG_QUALITY));
+    };
+    img.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
+    img.src = dataUrl;
+  });
+}
+
+/** 'yyyy/MM/dd HH:mm'形式で現在時刻を返す(OCRが日時を読み取れなかった場合のフォールバック)。GAS版getNowDatetimeLocalと同じ役割。 */
+function formatNowForReceipt(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /**
  * 顧客カードタップで開く報告作成モーダル。GAS版index.htmlのreportModal(保育日報/事故報告の
  * 2タブ+領収書登録)に対応。「顧客情報」「活動記録」は別モーダル(CustomerDetail/HistoryModal)
@@ -233,47 +275,62 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
 
   const MAX_RECEIPT_IMAGES = 6;
 
-  const handleAddImages = async (fileList: FileList | null) => {
-    if (!fileList || fileList.length === 0) return;
-    if (images.length + fileList.length > MAX_RECEIPT_IMAGES) {
-      setUploadMessage(`画像は最大${MAX_RECEIPT_IMAGES}枚までです`);
+  /**
+   * 画像1枚をリサイズ/圧縮してプレビューに追加し、そのままOCRを自動実行する。
+   * GAS版resizeAndAddImage→runOcrと同じ流れ(手動の「OCRで自動入力」ボタンは無く、
+   * 追加した瞬間に自動でOCRが走る)。複数枚を同時に追加した場合、各画像は互いを待たず
+   * 独立に処理される(GAS版がFileReader+resizeAndAddImageをファイルごとに並行して
+   * 呼んでいるのと同じ)。
+   */
+  const addAndOcrReceiptImage = async (file: File) => {
+    const id = crypto.randomUUID();
+    let dataUrl: string;
+    try {
+      dataUrl = await resizeReceiptImage(await readFileAsDataUrl(file));
+    } catch (e) {
+      setUploadMessage(e instanceof Error ? e.message : String(e));
       return;
     }
-    const newImages = await Promise.all(
-      Array.from(fileList).map(async (file) => ({
-        id: crypto.randomUUID(),
-        dataUrl: await readFileAsDataUrl(file),
-        amount: '',
-        storeName: '',
-        receiptDate: '',
-        ocrLoading: false,
-      })),
-    );
-    setImages((prev) => [...prev, ...newImages]);
-  };
+    setImages((prev) => [
+      ...prev,
+      { id, dataUrl, amount: '', storeName: '', receiptDate: '', ocrLoading: true },
+    ]);
 
-  const handleRunOcr = async (id: string) => {
-    setImages((prev) => prev.map((img) => (img.id === id ? { ...img, ocrLoading: true } : img)));
-    const target = images.find((img) => img.id === id);
-    if (!target) return;
     try {
-      const result = await extractReceiptOcr(target.dataUrl);
+      const result = await extractReceiptOcr(dataUrl);
       setImages((prev) =>
         prev.map((img) =>
           img.id === id
             ? {
                 ...img,
-                amount: String(result.amount ?? ''),
-                storeName: result.storeName ?? '',
-                receiptDate: result.receiptDate ?? '',
+                amount: result.amount ? String(result.amount) : img.amount,
+                storeName: result.storeName || img.storeName,
+                receiptDate: result.receiptDate || formatNowForReceipt(),
                 ocrLoading: false,
               }
             : img,
         ),
       );
-    } catch (e) {
-      setUploadMessage(e instanceof Error ? e.message : String(e));
-      setImages((prev) => prev.map((img) => (img.id === id ? { ...img, ocrLoading: false } : img)));
+    } catch {
+      setImages((prev) =>
+        prev.map((img) =>
+          img.id === id
+            ? { ...img, receiptDate: img.receiptDate || formatNowForReceipt(), ocrLoading: false }
+            : img,
+        ),
+      );
+    }
+  };
+
+  const handleAddImages = (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+    if (images.length + files.length > MAX_RECEIPT_IMAGES) {
+      setUploadMessage(`画像は最大${MAX_RECEIPT_IMAGES}枚までです`);
+      return;
+    }
+    for (const file of files) {
+      void addAndOcrReceiptImage(file);
     }
   };
 
@@ -527,7 +584,14 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                 <div className="space-y-2">
                   {images.map((img) => (
                     <div key={img.id} className="border rounded-lg p-2 flex gap-2 items-start">
-                      <img src={img.dataUrl} alt="領収書" className="w-16 h-16 object-cover rounded" />
+                      <div className="relative w-16 h-16 shrink-0">
+                        <img src={img.dataUrl} alt="領収書" className="w-16 h-16 object-cover rounded" />
+                        {img.ocrLoading && (
+                          <div className="absolute inset-0 bg-black/30 rounded flex items-center justify-center">
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full loading-spinner" />
+                          </div>
+                        )}
+                      </div>
                       <div className="flex-grow space-y-1">
                         <div className="flex gap-1">
                           <input
@@ -565,14 +629,6 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                           className="w-full border rounded px-2 py-1 text-xs"
                         />
                         <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleRunOcr(img.id)}
-                            disabled={img.ocrLoading}
-                            className="text-xs text-blue-600 disabled:opacity-60"
-                          >
-                            {img.ocrLoading ? 'OCR中…' : 'OCRで自動入力'}
-                          </button>
                           <button
                             type="button"
                             onClick={() => setImages((prev) => prev.filter((i) => i.id !== img.id))}
