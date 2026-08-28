@@ -626,6 +626,164 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
             </div>
           </div>
 
+          {/* 領収書登録(日報タブのみ)。GAS版imageUploadSectionと同じ位置(訪問完了ボタンの直後)・
+              構成(見出し行の右に「領収書登録」ボタン、サムネイル+カメラ撮影/アルバムボタンを
+              横並びのflex-wrapで並べる)にしている。 */}
+          {mode === 'daily' && (
+            <div className="border-t pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-gray-500">領収書 (最大6枚)</span>
+                <button
+                  type="button"
+                  onClick={handleUploadReceipts}
+                  disabled={uploading || images.length === 0}
+                  className="text-xs bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white px-3 py-1.5 rounded-md font-bold transition-colors"
+                >
+                  {uploading ? 'アップロード中…' : '領収書登録'}
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2 items-start">
+                {images.map((img) => (
+                  <div key={img.id} className="relative w-40 flex flex-col gap-1 items-center">
+                    <div className="relative w-24 h-24 rounded-xl overflow-hidden shadow-sm border border-gray-200 bg-gray-100">
+                      <img src={img.dataUrl} alt="領収書" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setImages((prev) => prev.filter((i) => i.id !== img.id))}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-80 hover:opacity-100 shadow-md"
+                      >
+                        &times;
+                      </button>
+                      {img.ocrLoading && (
+                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full loading-spinner" />
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={img.receiptDate}
+                      onChange={(e) =>
+                        setImages((prev) =>
+                          prev.map((i) => (i.id === img.id ? { ...i, receiptDate: e.target.value } : i)),
+                        )
+                      }
+                      placeholder="日時(yyyy/MM/dd HH:mm)"
+                      className="w-full p-1 text-[11px] border border-blue-300 rounded text-center bg-blue-50 font-medium"
+                    />
+                    <input
+                      type="text"
+                      value={img.amount}
+                      onChange={(e) =>
+                        setImages((prev) =>
+                          prev.map((i) => (i.id === img.id ? { ...i, amount: e.target.value } : i)),
+                        )
+                      }
+                      placeholder="金額"
+                      className="w-full p-1 text-sm border border-gray-300 rounded text-center"
+                    />
+                    <input
+                      type="text"
+                      value={img.storeName}
+                      onChange={(e) =>
+                        setImages((prev) =>
+                          prev.map((i) => (i.id === img.id ? { ...i, storeName: e.target.value } : i)),
+                        )
+                      }
+                      placeholder="店舗名"
+                      className="w-full p-1 text-sm border border-gray-300 rounded text-center"
+                    />
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="w-20 h-20 border-2 border-dashed border-blue-300 rounded-xl flex flex-col items-center justify-center text-blue-500 hover:bg-blue-50 transition-colors bg-white"
+                >
+                  <svg
+                    className="w-8 h-8 mb-1"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                    />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                  </svg>
+                  <span className="text-[10px] font-bold">カメラ撮影</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => galleryInputRef.current?.click()}
+                  className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors bg-gray-50"
+                >
+                  <svg
+                    className="w-8 h-8 mb-1"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                  <span className="text-[10px] font-bold">アルバム</span>
+                </button>
+              </div>
+
+              {/* カメラは1枚ずつ即撮影(capture属性でスマホのカメラアプリを直接起動)、アルバムは複数選択可。GAS版index.htmlのcameraInput/galleryInputと同じ使い分け。 */}
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => {
+                  handleAddImages(e.target.files);
+                  e.target.value = '';
+                }}
+                className="hidden"
+              />
+              <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => {
+                  handleAddImages(e.target.files);
+                  e.target.value = '';
+                }}
+                className="hidden"
+              />
+
+              <div className="mt-3">
+                <textarea
+                  value={handoffText}
+                  onChange={(e) => setHandoffText(e.target.value)}
+                  rows={2}
+                  placeholder="領収書に関する申し送り事項があれば入力"
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
+                />
+              </div>
+              {uploadMessage && <p className="text-sm text-gray-700 mt-1">{uploadMessage}</p>}
+            </div>
+          )}
+
           {mode === 'daily' && (
             <div className="space-y-4">
               <div className="space-y-1">
@@ -732,129 +890,6 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
               >
                 {savingDaily ? '保存中…' : '日報を保存'}
               </button>
-
-              <hr className="my-2" />
-
-              <div className="space-y-2">
-                <h3 className="text-sm font-bold text-gray-700">🧾 領収書登録</h3>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => cameraInputRef.current?.click()}
-                    className="w-20 h-20 border-2 border-dashed border-blue-300 rounded-xl flex flex-col items-center justify-center text-blue-500 hover:bg-blue-50 transition-colors bg-white"
-                  >
-                    <span className="text-2xl leading-none mb-1">📷</span>
-                    <span className="text-[10px] font-bold">カメラ撮影</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => galleryInputRef.current?.click()}
-                    className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors bg-gray-50"
-                  >
-                    <span className="text-2xl leading-none mb-1">🖼️</span>
-                    <span className="text-[10px] font-bold">アルバム</span>
-                  </button>
-                </div>
-                {/* カメラは1枚ずつ即撮影(capture属性でスマホのカメラアプリを直接起動)、アルバムは複数選択可。GAS版index.htmlのcameraInput/galleryInputと同じ使い分け。 */}
-                <input
-                  ref={cameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(e) => {
-                    handleAddImages(e.target.files);
-                    e.target.value = '';
-                  }}
-                  className="hidden"
-                />
-                <input
-                  ref={galleryInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => {
-                    handleAddImages(e.target.files);
-                    e.target.value = '';
-                  }}
-                  className="hidden"
-                />
-                <div className="space-y-2">
-                  {images.map((img) => (
-                    <div key={img.id} className="border rounded-lg p-2 flex gap-2 items-start">
-                      <div className="relative w-16 h-16 shrink-0">
-                        <img src={img.dataUrl} alt="領収書" className="w-16 h-16 object-cover rounded" />
-                        {img.ocrLoading && (
-                          <div className="absolute inset-0 bg-black/30 rounded flex items-center justify-center">
-                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full loading-spinner" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-grow space-y-1">
-                        <div className="flex gap-1">
-                          <input
-                            type="text"
-                            value={img.amount}
-                            onChange={(e) =>
-                              setImages((prev) =>
-                                prev.map((i) => (i.id === img.id ? { ...i, amount: e.target.value } : i)),
-                              )
-                            }
-                            placeholder="金額"
-                            className="w-20 border rounded px-2 py-1 text-xs"
-                          />
-                          <input
-                            type="text"
-                            value={img.storeName}
-                            onChange={(e) =>
-                              setImages((prev) =>
-                                prev.map((i) => (i.id === img.id ? { ...i, storeName: e.target.value } : i)),
-                              )
-                            }
-                            placeholder="店舗名"
-                            className="flex-grow border rounded px-2 py-1 text-xs"
-                          />
-                        </div>
-                        <input
-                          type="text"
-                          value={img.receiptDate}
-                          onChange={(e) =>
-                            setImages((prev) =>
-                              prev.map((i) => (i.id === img.id ? { ...i, receiptDate: e.target.value } : i)),
-                            )
-                          }
-                          placeholder="日時(yyyy/MM/dd HH:mm)"
-                          className="w-full border rounded px-2 py-1 text-xs"
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setImages((prev) => prev.filter((i) => i.id !== img.id))}
-                            className="text-xs text-red-500"
-                          >
-                            削除
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <textarea
-                  value={handoffText}
-                  onChange={(e) => setHandoffText(e.target.value)}
-                  rows={2}
-                  placeholder="申し送り(任意)"
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
-                />
-                {uploadMessage && <p className="text-sm text-gray-700">{uploadMessage}</p>}
-                <button
-                  type="button"
-                  onClick={handleUploadReceipts}
-                  disabled={uploading || images.length === 0}
-                  className="w-full py-2.5 bg-gray-700 hover:bg-gray-800 disabled:opacity-60 text-white font-bold rounded-lg text-sm"
-                >
-                  {uploading ? 'アップロード中…' : '領収書登録'}
-                </button>
-              </div>
             </div>
           )}
 
