@@ -41,8 +41,17 @@ export const staff = pgTable(
     phoneKeyVersion: integer(),
     phoneBlindIndex: text(),
 
-    /** argon2id。GAS版のSHA-256+salt方式からの移行はPhase 2で別途扱う(legacy_password_hash等)。 */
-    passwordHash: text().notNull(),
+    /**
+     * argon2id。GAS版から移行したスタッフは初回ログインまでnull(legacyPasswordHashのみ持つ)。
+     * ログイン成功時にサイレント再ハッシュしてここへ設定する(packages/core/src/usecases/auth.ts)。
+     */
+    passwordHash: text(),
+    /**
+     * GAS版のSHA-256+salt方式のハッシュ(sha256(password + AUTH_SALT))。移行直後の
+     * スタッフのみ持ち、argon2idへの再ハッシュが完了したらnullに戻す。新規登録スタッフは
+     * 最初からargon2idのみでこの列は使わない。
+     */
+    legacyPasswordHash: text(),
 
     isAdmin: boolean().notNull().default(false),
     retirementDate: date(),

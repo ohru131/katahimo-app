@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { computeLegacyHash } from '../domain';
 import type { AuthDeps } from './auth';
-import { decodeSessionCookie, login, registerStaff, resolveSession } from './auth';
+import { decodeSessionCookie, importLegacyStaff, login, registerStaff, resolveSession } from './auth';
 import {
   FakeBlindIndexPort,
   FakeCryptoPort,
@@ -92,5 +93,82 @@ describe('login / registerStaff / resolveSession', () => {
 
   it('不正なCookie値(区切りが無い等)はnullを返す', async () => {
     expect(await resolveSession(deps, 'not-a-valid-cookie-value')).toBeNull();
+  });
+});
+
+describe('GAS版レガシーパスワードハッシュからの移行ログイン', () => {
+  let deps: AuthDeps;
+  let tenantId: string;
+  const legacySalt = 'gas-auth-salt-example';
+
+  beforeEach(async () => {
+    deps = {
+      tenants: new FakeTenantRepository(),
+      staff: new FakeStaffRepository(),
+      sessions: new FakeSessionRepository(),
+      crypto: new FakeCryptoPort(),
+      blindIndex: new FakeBlindIndexPort(),
+      passwordHasher: new FakePasswordHasherPort(),
+      legacyAuthSalt: legacySalt,
+    };
+    const tenant = await deps.tenants.create({ name: 'テスト法人', slug: 'test-tenant' });
+    tenantId = tenant.id;
+    await importLegacyStaff(deps, {
+      tenantId,
+      name: '鈴木 次郎',
+      email: 'jiro@example.com',
+      legacyPasswordHash: computeLegacyHash('legacy-password', legacySalt),
+      isAdmin: false,
+    });
+  });
+
+  it('GAS版のパスワードのまま(変更なし)ログインできる', async () => {
+    const result = await login(deps, {
+      tenantSlug: 'test-tenant',
+      email: 'jiro@example.com',
+      password: 'legacy-password',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.staff.name).toBe('鈴木 次郎');
+  });
+
+  it('ログイン成功後、argon2idへサイレント再ハッシュされ、レガシーハッシュは消える', async () => {
+    await login(deps, { tenantSlug: 'test-tenant', email: 'jiro@example.com', password: 'legacy-password' });
+
+    const emailBlindIndex = await deps.blindIndex.compute(tenantId, 'jiro@example.com');
+    const staffRecord = await deps.staff.findByEmailBlindIndex(tenantId, emailBlindIndex);
+    expect(staffRecord?.passwordHash).toBe('HASH:legacy-password');
+    expect(staffRecord?.legacyPasswordHash).toBeNull();
+  });
+
+  it('再ハッシュ後は、レガシーハッシュに頼らずargon2idだけで次回ログインできる', async () => {
+    await login(deps, { tenantSlug: 'test-tenant', email: 'jiro@example.com', password: 'legacy-password' });
+
+    const secondLogin = await login(deps, {
+      tenantSlug: 'test-tenant',
+      email: 'jiro@example.com',
+      password: 'legacy-password',
+    });
+    expect(secondLogin.ok).toBe(true);
+  });
+
+  it('間違ったパスワードではレガシーハッシュ経由でもログインできない', async () => {
+    const result = await login(deps, {
+      tenantSlug: 'test-tenant',
+      email: 'jiro@example.com',
+      password: 'wrong-password',
+    });
+    expect(result).toEqual({ ok: false, reason: 'invalid_credentials' });
+  });
+
+  it('legacyAuthSaltが未設定の場合、レガシーハッシュ経由のログインはできない(移行未設定環境の安全側デフォルト)', async () => {
+    const depsWithoutSalt: AuthDeps = { ...deps, legacyAuthSalt: undefined };
+    const result = await login(depsWithoutSalt, {
+      tenantSlug: 'test-tenant',
+      email: 'jiro@example.com',
+      password: 'legacy-password',
+    });
+    expect(result).toEqual({ ok: false, reason: 'invalid_credentials' });
   });
 });

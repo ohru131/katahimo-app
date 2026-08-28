@@ -125,6 +125,20 @@ pnpm exec tsx src/scripts/importReservaCsv.ts demo ../../Kokyaku_202601191958_1_
 管理者以外は自分自身の勤怠にしか読み書きできない(`?staffId=`クエリは管理者のみ有効。
 GAS版`PastSchedule.js`の`resolvePastScheduleTargetStaffName_`と同じアクセス制御パターン)。
 
+## 動作デモ(GAS版パスワードのままログイン)
+
+GAS版のパスワードハッシュ(`sha256(password + AUTH_SALT)`)を持つスタッフを、パスワード変更なしで移行できる。
+
+```bash
+# 1. .env の LEGACY_AUTH_SALT に、GAS版 Script Properties の AUTH_SALT と同じ値を設定する
+# 2. GAS版のハッシュ値(Staffシート列J)をそのまま渡してスタッフを移行する
+cd packages/api
+pnpm exec tsx src/scripts/importLegacyStaff.ts demo "氏名" メールアドレス <GAS版のハッシュ値>
+```
+
+移行したスタッフは、既存パスワードのままログインでき、成功した瞬間にargon2idへサイレント再ハッシュされる
+(`staff.password_hash`が設定され`staff.legacy_password_hash`はnullに戻る)。2回目以降はargon2idだけで検証される。
+
 ## 検証コマンド
 
 | コマンド | 内容 |
@@ -148,7 +162,7 @@ GAS版`PastSchedule.js`の`resolvePastScheduleTargetStaffName_`と同じアク�
 
 - [x] **Phase 0 — 基盤構築**: モノレポ・TS strict・Biome・Vitest・Docker/ローカルPostgreSQL・Hono空サーバー・Vite PWA雛形・health/DB疎通。
 - [x] **Phase 1 — スキーマとテナント分離(RLS)**: tenants/staff/sessions/customers/outbox_jobsをDrizzleで定義し、tenant_idを持つ全テーブルにRLSポリシーを適用(katahimo=所有者/DDL用、katahimo_app=RLS対象のアプリ用ロールに分離。実際にRLSがブロックすることを確認済み)。
-- [x] **Phase 2 — 認証(メール、一部)**: argon2idパスワードハッシュ、httpOnly Cookieセッション(tenantId埋め込みでRLSのチキン&エッグ問題を回避)、`POST /api/auth/login`・`GET /api/auth/me`・`POST /api/auth/logout`。Google認証・GAS版レガシーハッシュ引き継ぎは未着手。
+- [x] **Phase 2 — 認証(メール)**: argon2idパスワードハッシュ、httpOnly Cookieセッション(tenantId埋め込みでRLSのチキン&エッグ問題を回避)、`POST /api/auth/login`・`GET /api/auth/me`・`POST /api/auth/logout`。**GAS版のSHA-256+saltパスワードハッシュ(Auth.jsのcomputeHash)を、パスワード変更なしで引き継げるようにした**(`computeLegacyHash`。GAS版を実行した結果と一致することを検証済み)。ログイン成功時にargon2idへサイレント再ハッシュされ、実際にAPI経由で移行→ログイン→再ハッシュ確認→2回目ログインまで動作確認済み。Google認証(OAuth)は未着手(実GCPクライアントIDが必要なため)。
 - [x] **Phase 3 — 取込・アップサート基盤(RESERVA CSV)**: `parseFamilyInfo`/`normalizeDateStr`(GAS版`CsvImport.js`から完全移植、実サンプル398行でGAS実行結果と1件残らず一致することを検証済み)・Excelシリアル日時変換を追加し、RESERVA顧客CSV(UTF-16LE・タブ区切り・30列、パスワード列を除く全項目)のデコード/パース/外部ID突合による差分計算(作成/更新/ソフトデリート)/適用を実装。世帯構成員(子ども等)は`family_members`テーブルに全件保存し、詳細取得で復号して確認できる。消失率(取込データから消えた顧客の割合)が閾値を超えると適用を拒否する安全装置つき。実データ(`01_GAS/Kokyaku_202601191958_1_dummy.csv`、398件)を実際にPostgreSQLへ取り込み、冪等性(再取込で重複しないこと)も確認済み。
 - [x] **Phase 4 — 顧客詳細画面(読み取り系の一部)**: `GET /api/customers/:id`(セッションのtenantIdのみを使用)と、react-router-domによる`/customers/:id`詳細画面を追加。RESERVA CSV由来の全項目・世帯構成員一覧を復号して表示する。今後の詳細画面は「予定/訪問先一覧/勤怠」の3タブ(Phase 5のCalendar/Maps連携が前提)の実装で続きを進める。
 - [ ] Phase 5 — 外部連携(Sheets/Drive/Calendar/Maps/Chat/Gemini、ミラーはoutbox)

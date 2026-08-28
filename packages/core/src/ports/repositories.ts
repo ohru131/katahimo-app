@@ -14,7 +14,10 @@ export interface StaffRecord {
   name: EncryptedField;
   email: EncryptedField;
   emailBlindIndex: string;
-  passwordHash: string;
+  /** argon2id。GAS版から移行し未ログインのスタッフはnull(legacyPasswordHashのみ持つ)。 */
+  passwordHash: string | null;
+  /** GAS版のsha256(password+AUTH_SALT)。argon2idへの再ハッシュが完了したらnullに戻す。 */
+  legacyPasswordHash: string | null;
   isAdmin: boolean;
   retirementDate: string | null;
 }
@@ -26,7 +29,9 @@ export interface NewStaffInput {
   givenNameBlindIndex: string;
   email: EncryptedField;
   emailBlindIndex: string;
-  passwordHash: string;
+  /** 新規登録は必ずargon2idを渡す。GAS版からの移行はlegacyPasswordHashを渡し、こちらはnullにする。 */
+  passwordHash?: string | null;
+  legacyPasswordHash?: string | null;
   isAdmin: boolean;
 }
 
@@ -34,6 +39,8 @@ export interface StaffRepositoryPort {
   findByEmailBlindIndex(tenantId: string, emailBlindIndex: string): Promise<StaffRecord | null>;
   findById(tenantId: string, staffId: string): Promise<StaffRecord | null>;
   create(input: NewStaffInput): Promise<StaffRecord>;
+  /** ログイン成功時、レガシーハッシュをargon2idへサイレント再ハッシュするために使う。 */
+  upgradeToArgon2Hash(tenantId: string, staffId: string, passwordHash: string): Promise<void>;
 }
 
 export interface NewSessionInput {

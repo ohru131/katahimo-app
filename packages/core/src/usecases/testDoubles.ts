@@ -88,12 +88,21 @@ export class FakeStaffRepository implements StaffRepositoryPort {
       name: input.name,
       email: input.email,
       emailBlindIndex: input.emailBlindIndex,
-      passwordHash: input.passwordHash,
+      passwordHash: input.passwordHash ?? null,
+      legacyPasswordHash: input.legacyPasswordHash ?? null,
       isAdmin: input.isAdmin,
       retirementDate: null,
     };
     this.rows.push(record);
     return record;
+  }
+
+  async upgradeToArgon2Hash(tenantId: string, staffId: string, passwordHash: string): Promise<void> {
+    const record = this.rows.find((s) => s.tenantId === tenantId && s.id === staffId);
+    if (record) {
+      record.passwordHash = passwordHash;
+      record.legacyPasswordHash = null;
+    }
   }
 }
 

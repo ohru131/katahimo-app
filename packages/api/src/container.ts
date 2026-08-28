@@ -22,6 +22,8 @@ export interface Container {
   crypto: LocalCryptoPort;
   blindIndex: LocalBlindIndexPort;
   passwordHasher: typeof argon2PasswordHasher;
+  /** GAS版 Script Properties AUTH_SALT と同じ値。移行済みスタッフのログインにのみ使う。 */
+  legacyAuthSalt?: string;
 }
 
 export function createContainer(env: Env, db: Database): Container {
@@ -35,5 +37,6 @@ export function createContainer(env: Env, db: Database): Container {
     crypto: new LocalCryptoPort(env.LOCAL_DEV_MASTER_KEY),
     blindIndex: new LocalBlindIndexPort(env.LOCAL_DEV_MASTER_KEY),
     passwordHasher: argon2PasswordHasher,
+    legacyAuthSalt: env.LEGACY_AUTH_SALT,
   };
 }

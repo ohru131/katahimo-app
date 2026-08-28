@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { normalizeEmailForIndex, splitJapaneseFullName } from '../domain';
+import { computeLegacyHash, normalizeEmailForIndex, splitJapaneseFullName } from '../domain';
 import type { BlindIndexPort, CryptoPort } from '../ports/crypto';
 import type {
   NewSessionInput,
@@ -21,6 +21,12 @@ export interface AuthDeps {
   crypto: CryptoPort;
   blindIndex: BlindIndexPort;
   passwordHasher: PasswordHasherPort;
+  /**
+   * GAS版Script Properties AUTH_SALTと同じ値。既存スタッフがパスワード変更なしでログイン
+   * できるようにするための移行専用の値で、未設定でも新規登録スタッフのログインには影響しない
+   * (legacyPasswordHashを持つスタッフだけがこれを必要とする)。
+   */
+  legacyAuthSalt?: string;
 }
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -89,8 +95,23 @@ export async function login(deps: AuthDeps, input: LoginInput): Promise<LoginRes
     if (retireDate <= today) return { ok: false, reason: 'retired' };
   }
 
-  const passwordOk = await deps.passwordHasher.verify(staff.passwordHash, input.password);
-  if (!passwordOk) return { ok: false, reason: 'invalid_credentials' };
+  let matched = staff.passwordHash
+    ? await deps.passwordHasher.verify(staff.passwordHash, input.password)
+    : false;
+
+  // GAS版から移行したスタッフ(まだargon2idハッシュを持たない)は、レガシーハッシュ
+  // (sha256(password + AUTH_SALT))で検証する。一致したらargon2idへサイレント再ハッシュし、
+  // 次回以降はargon2idだけで検証される(パスワード変更を利用者に求めずに移行するための仕組み)。
+  if (!matched && staff.legacyPasswordHash && deps.legacyAuthSalt) {
+    const legacyHash = computeLegacyHash(input.password, deps.legacyAuthSalt);
+    if (legacyHash === staff.legacyPasswordHash) {
+      matched = true;
+      const upgradedHash = await deps.passwordHasher.hash(input.password);
+      await deps.staff.upgradeToArgon2Hash(tenant.id, staff.id, upgradedHash);
+    }
+  }
+
+  if (!matched) return { ok: false, reason: 'invalid_credentials' };
 
   const rawToken = randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
@@ -183,6 +204,44 @@ export async function registerStaff(deps: AuthDeps, input: RegisterStaffInput) {
     email: emailEnc,
     emailBlindIndex,
     passwordHash,
+    isAdmin: input.isAdmin,
+  };
+  return deps.staff.create(record);
+}
+
+export interface ImportLegacyStaffInput {
+  tenantId: string;
+  name: string;
+  email: string;
+  /** GAS版 Auth.js の computeHash(password) で計算済みのハッシュ値(Staffシートの列Jの値そのもの)。 */
+  legacyPasswordHash: string;
+  isAdmin: boolean;
+}
+
+/**
+ * GAS版のスタッフ台帳(Staffシート)から、既存のパスワードハッシュ(SHA-256+salt)ごと
+ * スタッフを移行する。パスワードそのものは分からない(ハッシュしか無い)ため、
+ * ここではargon2idハッシュを発行せず、初回ログイン成功時に login() がサイレント再ハッシュする。
+ */
+export async function importLegacyStaff(deps: AuthDeps, input: ImportLegacyStaffInput) {
+  const { familyName, givenName } = splitJapaneseFullName(input.name);
+  const [nameEnc, emailEnc, familyNameBlindIndex, givenNameBlindIndex, emailBlindIndex] = await Promise.all([
+    deps.crypto.encrypt(input.tenantId, input.name),
+    deps.crypto.encrypt(input.tenantId, input.email),
+    deps.blindIndex.compute(input.tenantId, familyName),
+    deps.blindIndex.compute(input.tenantId, givenName),
+    deps.blindIndex.compute(input.tenantId, normalizeEmailForIndex(input.email)),
+  ]);
+
+  const record: NewStaffInput = {
+    tenantId: input.tenantId,
+    name: nameEnc,
+    familyNameBlindIndex,
+    givenNameBlindIndex,
+    email: emailEnc,
+    emailBlindIndex,
+    passwordHash: null,
+    legacyPasswordHash: input.legacyPasswordHash,
     isAdmin: input.isAdmin,
   };
   return deps.staff.create(record);

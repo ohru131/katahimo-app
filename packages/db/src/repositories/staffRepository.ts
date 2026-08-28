@@ -12,6 +12,7 @@ function toRecord(row: typeof staff.$inferSelect): StaffRecord {
     email: { ciphertext: row.emailCiphertext, keyVersion: row.emailKeyVersion },
     emailBlindIndex: row.emailBlindIndex,
     passwordHash: row.passwordHash,
+    legacyPasswordHash: row.legacyPasswordHash,
     isAdmin: row.isAdmin,
     retirementDate: row.retirementDate,
   };
@@ -49,13 +50,20 @@ export class DrizzleStaffRepository implements StaffRepositoryPort {
           emailCiphertext: input.email.ciphertext,
           emailKeyVersion: input.email.keyVersion,
           emailBlindIndex: input.emailBlindIndex,
-          passwordHash: input.passwordHash,
+          passwordHash: input.passwordHash ?? null,
+          legacyPasswordHash: input.legacyPasswordHash ?? null,
           isAdmin: input.isAdmin,
         })
         .returning();
       const row = rows[0];
       if (!row) throw new Error('スタッフの作成に失敗しました');
       return toRecord(row);
+    });
+  }
+
+  async upgradeToArgon2Hash(tenantId: string, staffId: string, passwordHash: string): Promise<void> {
+    await withTenant(this.db, tenantId, async (tx) => {
+      await tx.update(staff).set({ passwordHash, legacyPasswordHash: null }).where(eq(staff.id, staffId));
     });
   }
 }

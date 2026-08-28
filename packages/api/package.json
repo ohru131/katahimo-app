@@ -12,7 +12,8 @@
     "start": "tsx src/server.ts",
     "build": "tsup src/server.ts --format esm --clean",
     "seed": "tsx src/scripts/seed.ts",
-    "import:reserva": "tsx src/scripts/importReservaCsv.ts"
+    "import:reserva": "tsx src/scripts/importReservaCsv.ts",
+    "import:legacy-staff": "tsx src/scripts/importLegacyStaff.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
