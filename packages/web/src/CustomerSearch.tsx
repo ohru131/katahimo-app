@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { searchCustomersByFamilyName } from './api';
 
 /**
@@ -35,7 +36,7 @@ export function CustomerSearch() {
           {mutation.data.length === 0 && <li>該当する顧客が見つかりません</li>}
           {mutation.data.map((c) => (
             <li key={c.id}>
-              {c.name}
+              <Link to={`/customers/${c.id}`}>{c.name}</Link>
               {c.city && `(${c.city})`}
               {c.phone && ` / ${c.phone}`}
             </li>

@@ -1,9 +1,28 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Route, Routes } from 'react-router-dom';
 import type { StaffView } from './api';
 import { fetchMe, logout } from './api';
+import { CustomerDetail } from './CustomerDetail';
 import { CustomerSearch } from './CustomerSearch';
 import { LoginForm } from './LoginForm';
+
+function SearchPage({ staff, onLogout }: { staff: StaffView; onLogout: () => void }) {
+  return (
+    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem', maxWidth: 480 }}>
+      <h1>katahimo 訪問管理</h1>
+      <p>
+        ログイン中: {staff.name}({staff.email}){staff.isAdmin && ' [管理者]'}
+      </p>
+      <button type="button" onClick={onLogout}>
+        ログアウト
+      </button>
+
+      <h2 style={{ marginTop: '1.5rem' }}>顧客検索(苗字)</h2>
+      <CustomerSearch />
+    </main>
+  );
+}
 
 export function App() {
   const queryClient = useQueryClient();
@@ -29,37 +48,26 @@ export function App() {
     );
   }
 
+  if (!staff) {
+    return (
+      <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem', maxWidth: 480 }}>
+        <h1>katahimo 訪問管理</h1>
+        <p>Phase 2: 認証(メール+パスワード)。デモテナントの管理者アカウントでログインできます。</p>
+        <LoginForm onLoggedIn={setStaff} />
+      </main>
+    );
+  }
+
+  const handleLogout = async () => {
+    await logout();
+    setStaff(null);
+    queryClient.removeQueries({ queryKey: ['me'] });
+  };
+
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem', maxWidth: 480 }}>
-      <h1>katahimo 訪問管理</h1>
-
-      {!staff && (
-        <>
-          <p>Phase 2: 認証(メール+パスワード)。デモテナントの管理者アカウントでログインできます。</p>
-          <LoginForm onLoggedIn={setStaff} />
-        </>
-      )}
-
-      {staff && (
-        <>
-          <p>
-            ログイン中: {staff.name}({staff.email}){staff.isAdmin && ' [管理者]'}
-          </p>
-          <button
-            type="button"
-            onClick={async () => {
-              await logout();
-              setStaff(null);
-              queryClient.removeQueries({ queryKey: ['me'] });
-            }}
-          >
-            ログアウト
-          </button>
-
-          <h2 style={{ marginTop: '1.5rem' }}>顧客検索(苗字)</h2>
-          <CustomerSearch />
-        </>
-      )}
-    </main>
+    <Routes>
+      <Route path="/" element={<SearchPage staff={staff} onLogout={handleLogout} />} />
+      <Route path="/customers/:id" element={<CustomerDetail />} />
+    </Routes>
   );
 }

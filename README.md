@@ -96,7 +96,9 @@ pnpm --filter @katahimo/web dev     # http://localhost:5173
 ```
 
 `http://localhost:5173` を開き、法人ID `demo` / `admin@example.com` / `admin1234` でログイン後、「佐藤」で検索すると
-ブラインドインデックス経由で該当顧客(氏名・電話・市区町村は復号済み)が一覧表示される。DBの生カラムを直接見ると
+ブラインドインデックス経由で該当顧客(氏名・電話・市区町村は復号済み)が一覧表示される。検索結果の氏名をクリックすると
+`/customers/:id`(顧客詳細画面、react-router)に遷移し、RESERVA CSVの全項目(カナ・メール・住所・緊急連絡先・
+会員情報等)と世帯構成員(子ども等)一覧を復号した状態で確認できる(Phase 4・読み取り系)。DBの生カラムを直接見ると
 (`psql -U katahimo -d katahimo_dev -c "SELECT name_ciphertext FROM customers LIMIT 1"`)、暗号文であって
 平文が保存されていないことを確認できる。
 
@@ -139,7 +141,7 @@ pnpm exec tsx src/scripts/importReservaCsv.ts demo ../../Kokyaku_202601191958_1_
 - [x] **Phase 1 — スキーマとテナント分離(RLS)**: tenants/staff/sessions/customers/outbox_jobsをDrizzleで定義し、tenant_idを持つ全テーブルにRLSポリシーを適用(katahimo=所有者/DDL用、katahimo_app=RLS対象のアプリ用ロールに分離。実際にRLSがブロックすることを確認済み)。
 - [x] **Phase 2 — 認証(メール、一部)**: argon2idパスワードハッシュ、httpOnly Cookieセッション(tenantId埋め込みでRLSのチキン&エッグ問題を回避)、`POST /api/auth/login`・`GET /api/auth/me`・`POST /api/auth/logout`。Google認証・GAS版レガシーハッシュ引き継ぎは未着手。
 - [x] **Phase 3 — 取込・アップサート基盤(RESERVA CSV)**: `parseFamilyInfo`/`normalizeDateStr`(GAS版`CsvImport.js`から完全移植、実サンプル398行でGAS実行結果と1件残らず一致することを検証済み)・Excelシリアル日時変換を追加し、RESERVA顧客CSV(UTF-16LE・タブ区切り・30列、パスワード列を除く全項目)のデコード/パース/外部ID突合による差分計算(作成/更新/ソフトデリート)/適用を実装。世帯構成員(子ども等)は`family_members`テーブルに全件保存し、詳細取得で復号して確認できる。消失率(取込データから消えた顧客の割合)が閾値を超えると適用を拒否する安全装置つき。実データ(`01_GAS/Kokyaku_202601191958_1_dummy.csv`、398件)を実際にPostgreSQLへ取り込み、冪等性(再取込で重複しないこと)も確認済み。
-- [ ] Phase 4 — ドメイン移植とPWA(読み取り系)
+- [x] **Phase 4 — 顧客詳細画面(読み取り系の一部)**: `GET /api/customers/:id`(セッションのtenantIdのみを使用)と、react-router-domによる`/customers/:id`詳細画面を追加。RESERVA CSV由来の全項目・世帯構成員一覧を復号して表示する。今後の詳細画面は「予定/訪問先一覧/勤怠」の3タブ(Phase 5のCalendar/Maps連携が前提)の実装で続きを進める。
 - [ ] Phase 5 — 外部連携(Sheets/Drive/Calendar/Maps/Chat/Gemini、ミラーはoutbox)
 - [ ] Phase 6 — 勤怠(給与直結。GAS版との数値一致が必須ゲート)
 - [ ] Phase 7 — 並行運用と照合

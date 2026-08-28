@@ -1,4 +1,4 @@
-import { searchCustomersByFamilyName } from '@katahimo/core';
+import { getCustomerDetail, searchCustomersByFamilyName } from '@katahimo/core';
 import { Hono } from 'hono';
 import type { Container } from '../container';
 import { getAuthenticatedSession } from '../session';
@@ -21,6 +21,22 @@ export function createCustomerRoutes(container: Container) {
 
     const results = await searchCustomersByFamilyName(container, session.tenantId, familyName);
     return c.json({ customers: results });
+  });
+
+  /**
+   * 顧客1件の全項目(世帯構成員含む)を復号して返す詳細取得。
+   * こちらもtenantIdはセッション由来のものだけを使う(URLのcustomerIdだけでは他テナントの
+   * 顧客IDを推測して覗かれる心配は無いが、念のためfindByIdもtenant_idでスコープする)。
+   */
+  app.get('/:id', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    const customerId = c.req.param('id');
+    const detail = await getCustomerDetail(container, session.tenantId, customerId);
+    if (!detail) return c.json({ code: 'not_found', message: '顧客が見つかりません' }, 404);
+
+    return c.json({ customer: detail });
   });
 
   return app;
