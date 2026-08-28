@@ -13,6 +13,12 @@ import {
 } from '../api';
 import { markCustomerRecentlyUsed } from '../recentCustomers';
 import { ASSESSMENT_DEFINITIONS, type AssessmentType } from './assessmentDefinitions';
+import {
+  ACCIDENT_MEMO_PLACEHOLDER,
+  ACCIDENT_WRITING_HINT,
+  DAILY_MEMO_PLACEHOLDER,
+  HIYARI_WRITING_HINT,
+} from './promptDefaults';
 import { useVoiceInput } from './useVoiceInput';
 
 type Mode = 'daily' | 'accident';
@@ -142,6 +148,40 @@ function AssessmentHintModal({ type, onClose }: { type: AssessmentType; onClose:
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 事故報告/ヒヤリハットの「💡書き方のヒント」モーダル。GAS版toggleHintと同じく、
+ * 種別(reportType)がヒヤリハットの場合はHIYARI_WRITING_HINT、それ以外はACCIDENT_WRITING_HINT
+ * を表示する(タイトルも切り替える)。
+ */
+function WritingHintModal({
+  reportType,
+  onClose,
+}: {
+  reportType: '事故報告' | 'ヒヤリハット';
+  onClose: () => void;
+}) {
+  const isHiyari = reportType === 'ヒヤリハット';
+  const title = isHiyari ? 'ヒヤリハットの書き方ヒント' : '事故報告書の書き方ヒント';
+  const content = isHiyari ? HIYARI_WRITING_HINT : ACCIDENT_WRITING_HINT;
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-[130] flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-md rounded-xl shadow-xl flex flex-col max-h-[85vh]">
+        <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+          <h3 className="font-bold text-gray-800 text-sm">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 hover:bg-gray-200 rounded-full text-gray-500"
+          >
+            &times;
+          </button>
+        </div>
+        <div className="p-4 overflow-y-auto text-sm text-gray-700 whitespace-pre-wrap">{content}</div>
       </div>
     </div>
   );
@@ -303,6 +343,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [riskRating, setRiskRating] = useState<number | null>(null);
   const [esRating, setEsRating] = useState<number | null>(null);
   const [hintType, setHintType] = useState<AssessmentType | null>(null);
+  const [showWritingHint, setShowWritingHint] = useState(false);
   const [memoText, setMemoText] = useState('');
   const [internalText, setInternalText] = useState('');
   const [customerText, setCustomerText] = useState('');
@@ -350,6 +391,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [handoffText, setHandoffText] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
@@ -512,6 +554,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
 
   const handleAddImages = (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
+    setDuplicateWarning(null);
     const files = Array.from(fileList);
     if (images.length + files.length > MAX_RECEIPT_IMAGES) {
       setUploadMessage(`画像は最大${MAX_RECEIPT_IMAGES}枚までです`);
@@ -526,6 +569,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     if (images.length === 0) return;
     setUploading(true);
     setUploadMessage(null);
+    setDuplicateWarning(null);
     try {
       const payloadImages: ReceiptImageUpload[] = images.map((img) => ({
         data: img.dataUrl,
@@ -534,11 +578,22 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
         receiptDate: img.receiptDate || null,
       }));
       const result = await uploadReceipts({ customerId, images: payloadImages, handoffText });
-      setUploadMessage(result.message);
       markCustomerRecentlyUsed(customerId);
       const duplicateIndexes = new Set(result.duplicates.map((d) => d.index));
       setImages((prev) => prev.filter((_, idx) => duplicateIndexes.has(idx)));
       if (duplicateIndexes.size === 0) setHandoffText('');
+
+      // GAS版showReceiptDuplicateWarningと同じ、重複でスキップされた領収書の一覧表示。
+      if (result.duplicates.length > 0) {
+        const customerName = customerQuery.data?.name ?? '';
+        const lines = result.duplicates.map(
+          (d, idx) =>
+            `${idx + 1}. ${d.timestamp} / 顧客名:${customerName} / 金額:${d.amount} / 名称:${d.storeName}`,
+        );
+        setDuplicateWarning(`⚠️ 既存の領収書と重複したため登録しませんでした。\n${lines.join('\n')}`);
+      } else {
+        setUploadMessage(result.message);
+      }
     } catch (e) {
       setUploadMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -591,7 +646,9 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
             </div>
           )}
 
-          {customerQuery.data && customerQuery.data.familyMembers.length > 0 && (
+          {/* GAS版familySelectorContainerと同じく、事故報告タブでのみ表示する
+              (対象者氏名/生年月日の自動入力に使うため。日報タブでは非表示)。 */}
+          {mode === 'accident' && customerQuery.data && customerQuery.data.familyMembers.length > 0 && (
             <div>
               <label htmlFor="familySelector" className="text-xs text-gray-500 block mb-1">
                 対象者(ご家族)
@@ -729,6 +786,12 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                   {uploading ? 'アップロード中…' : '領収書登録'}
                 </button>
               </div>
+
+              {duplicateWarning && (
+                <div className="mb-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-800 whitespace-pre-wrap">
+                  {duplicateWarning}
+                </div>
+              )}
 
               <div className="flex flex-wrap gap-2 items-start">
                 {images.map((img) => (
@@ -918,7 +981,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                   value={memoText}
                   onChange={(e) => setMemoText(e.target.value)}
                   rows={4}
-                  placeholder="①訪問当日のサポート内容\n②お客様情報\n③振り返り"
+                  placeholder={DAILY_MEMO_PLACEHOLDER}
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
                 />
                 {dailyVoice.error && <p className="text-red-500 text-xs mt-1">{dailyVoice.error}</p>}
@@ -1012,32 +1075,41 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                   <label htmlFor="accidentMemo" className="text-xs text-gray-500">
                     状況メモ(口語でOK・音声入力可)
                   </label>
-                  <button
-                    type="button"
-                    onClick={accidentVoice.toggle}
-                    className={`text-xs px-2 py-1 rounded-md flex items-center gap-1 transition-colors ${
-                      accidentVoice.listening
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
-                    }`}
-                  >
-                    {accidentVoice.listening ? (
-                      <>
-                        <span className="animate-pulse">🔴</span> <span>停止する</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>🎤</span> <span>音声入力</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowWritingHint(true)}
+                      className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2 py-1 rounded-md flex items-center gap-1 transition-colors"
+                    >
+                      💡 書き方のヒント
+                    </button>
+                    <button
+                      type="button"
+                      onClick={accidentVoice.toggle}
+                      className={`text-xs px-2 py-1 rounded-md flex items-center gap-1 transition-colors ${
+                        accidentVoice.listening
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                      }`}
+                    >
+                      {accidentVoice.listening ? (
+                        <>
+                          <span className="animate-pulse">🔴</span> <span>停止する</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>🎤</span> <span>音声入力</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 <textarea
                   id="accidentMemo"
                   value={accidentMemo}
                   onChange={(e) => setAccidentMemo(e.target.value)}
                   rows={4}
-                  placeholder="①事実を時系列で、客観的に&#10;②5W1H+初動対応&#10;③ヒヤリハットも記録"
+                  placeholder={ACCIDENT_MEMO_PLACEHOLDER}
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
                 />
                 {accidentVoice.error && <p className="text-red-500 text-xs mt-1">{accidentVoice.error}</p>}
@@ -1135,6 +1207,9 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
       </div>
 
       {hintType && <AssessmentHintModal type={hintType} onClose={() => setHintType(null)} />}
+      {showWritingHint && (
+        <WritingHintModal reportType={reportType} onClose={() => setShowWritingHint(false)} />
+      )}
     </div>
   );
 }

@@ -98,10 +98,20 @@ export function HistoryModal({
                   </div>
                   <p className="text-xs text-gray-500 mb-1">担当: {item.staff}</p>
                   {(item.risk || item.es) && (
-                    <p className="text-xs text-gray-500 mb-1">
-                      {item.risk ? `PSI: ${'★'.repeat(item.risk)}${'☆'.repeat(5 - item.risk)} ` : ''}
-                      {item.es ? `満足度: ${'★'.repeat(item.es)}${'☆'.repeat(5 - item.es)}` : ''}
-                    </p>
+                    <div className="flex flex-wrap gap-1 mb-1">
+                      {item.risk ? (
+                        <span className="text-xs font-bold bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded border border-yellow-200 whitespace-nowrap">
+                          PSI:{'★'.repeat(item.risk)}
+                          {'☆'.repeat(5 - item.risk)}
+                        </span>
+                      ) : null}
+                      {item.es ? (
+                        <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 whitespace-nowrap">
+                          ES:{'★'.repeat(item.es)}
+                          {'☆'.repeat(5 - item.es)}
+                        </span>
+                      ) : null}
+                    </div>
                   )}
                   <p className="whitespace-pre-wrap text-gray-800">{item.internal}</p>
                 </div>
