@@ -1,6 +1,10 @@
 import { createHash, createHmac } from 'node:crypto';
 import type { BlindIndexPort, CryptoPort, EncryptedValue } from '../ports/crypto';
 import type {
+  ActiveStaffRecord,
+  AppSettingsPatchInput,
+  AppSettingsRecord,
+  AppSettingsRepositoryPort,
   AttendanceDayRecord,
   AttendanceDayRepositoryPort,
   CustomerPatchInput,
@@ -103,6 +107,19 @@ export class FakeStaffRepository implements StaffRepositoryPort {
       record.passwordHash = passwordHash;
       record.legacyPasswordHash = null;
     }
+  }
+
+  async listActive(tenantId: string): Promise<ActiveStaffRecord[]> {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return this.rows
+      .filter((s) => s.tenantId === tenantId && (!s.retirementDate || s.retirementDate > todayStr))
+      .map((s) => ({ id: s.id, name: s.name }));
+  }
+
+  /** テスト専用: 退職日を設定する(create()の入力にretirementDateが無いため)。 */
+  setRetirementDateForTest(tenantId: string, staffId: string, retirementDate: string | null): void {
+    const record = this.rows.find((s) => s.tenantId === tenantId && s.id === staffId);
+    if (record) record.retirementDate = retirementDate;
   }
 }
 
@@ -216,6 +233,12 @@ export class FakeCustomerRepository implements CustomerRepositoryPort {
           r.record.deactivatedAt === null,
       )
       .map((r) => r.record.externalId as string);
+  }
+
+  async listActive(tenantId: string): Promise<CustomerRecord[]> {
+    return this.rows
+      .filter((r) => r.record.tenantId === tenantId && r.record.deactivatedAt === null)
+      .map((r) => r.record);
   }
 
   async update(tenantId: string, customerId: string, patch: CustomerPatchInput): Promise<CustomerRecord> {
@@ -340,5 +363,27 @@ export class FakeAttendanceDayRepository implements AttendanceDayRepositoryPort 
         r.businessDate >= startDate &&
         r.businessDate <= endDate,
     );
+  }
+}
+
+export class FakeAppSettingsRepository implements AppSettingsRepositoryPort {
+  private readonly rows = new Map<string, AppSettingsRecord>();
+
+  async find(tenantId: string): Promise<AppSettingsRecord | null> {
+    return this.rows.get(tenantId) ?? null;
+  }
+
+  async upsert(tenantId: string, patch: AppSettingsPatchInput): Promise<AppSettingsRecord> {
+    const existing: AppSettingsRecord = this.rows.get(tenantId) ?? {
+      tenantId,
+      geminiApiKey: null,
+      geminiReportModel: null,
+      geminiOcrModel: null,
+      gchatReportWebhookUrl: null,
+      gchatReceiptWebhookUrl: null,
+    };
+    const updated: AppSettingsRecord = { ...existing, ...patch };
+    this.rows.set(tenantId, updated);
+    return updated;
   }
 }

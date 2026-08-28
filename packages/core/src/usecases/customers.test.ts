@@ -4,6 +4,7 @@ import {
   createCustomer,
   deactivateCustomer,
   getCustomerDetail,
+  listCustomers,
   searchCustomersByFamilyName,
   updateCustomer,
 } from './customers';
@@ -121,5 +122,18 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     expect(await deps.customers.listActiveExternalIds(tenantId, 'reserva')).toEqual([]);
     const detail = await getCustomerDetail(deps, tenantId, created.id);
     expect(detail?.deactivatedAt).not.toBeNull();
+  });
+
+  it('listCustomersは有効な顧客全件を復号して返し、地区の重複無し・五十音順一覧も返す', async () => {
+    const deactivated = await createCustomer(deps, { tenantId, name: '田中 一郎', city: '港区' });
+    await createCustomer(deps, { tenantId, name: '佐藤 花子', city: '渋谷区' });
+    await createCustomer(deps, { tenantId, name: '鈴木 三郎', city: '渋谷区' });
+    await createCustomer(deps, { tenantId, name: '高橋 四郎' });
+    await deactivateCustomer(deps, tenantId, deactivated.id);
+
+    const result = await listCustomers(deps, tenantId);
+
+    expect(result.customers.map((c) => c.name).sort()).toEqual(['佐藤 花子', '鈴木 三郎', '高橋 四郎']);
+    expect(result.cities).toEqual(['渋谷区']);
   });
 });

@@ -27,6 +27,17 @@ const envSchema = z.object({
 
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
+  // 日報/事故報告生成・領収書OCRに使うモデル名(未設定時はGAS版と同じデフォルトを使う)。
+  GEMINI_MODEL_REPORT: z.string().optional(),
+  GEMINI_MODEL_OCR: z.string().optional(),
+
+  // Google Chat Incoming Webhook。GAS版GoogleChat.jsのScript Propertiesと同じ役割。
+  // 未設定の場合は通知を送らずスキップする(GAS版と同じフォールバック)。
+  GCHAT_REPORT_WEBHOOK_URL: z.string().optional(),
+  GCHAT_RECEIPT_WEBHOOK_URL: z.string().optional(),
+
+  // 領収書画像の保存先(ローカル開発用ファイルシステムパス)。本番はGCS(Phase 5)に置き換える。
+  LOCAL_RECEIPT_STORAGE_DIR: z.string().default('./data/receipts'),
 
   // スプレッドシート脱却時はここを false にするだけでミラーが止まる
   MIRROR_TO_GOOGLE_SHEETS: z.coerce.boolean().default(false),

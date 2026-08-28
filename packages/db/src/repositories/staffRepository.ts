@@ -1,4 +1,9 @@
-import type { NewStaffInput, StaffRecord, StaffRepositoryPort } from '@katahimo/core/ports';
+import type {
+  ActiveStaffRecord,
+  NewStaffInput,
+  StaffRecord,
+  StaffRepositoryPort,
+} from '@katahimo/core/ports';
 import { eq } from 'drizzle-orm';
 import type { Database } from '../client';
 import { withTenant } from '../client';
@@ -64,6 +69,16 @@ export class DrizzleStaffRepository implements StaffRepositoryPort {
   async upgradeToArgon2Hash(tenantId: string, staffId: string, passwordHash: string): Promise<void> {
     await withTenant(this.db, tenantId, async (tx) => {
       await tx.update(staff).set({ passwordHash, legacyPasswordHash: null }).where(eq(staff.id, staffId));
+    });
+  }
+
+  async listActive(tenantId: string): Promise<ActiveStaffRecord[]> {
+    return withTenant(this.db, tenantId, async (tx) => {
+      const rows = await tx.select().from(staff);
+      const todayStr = new Date().toISOString().slice(0, 10);
+      return rows
+        .filter((r) => !r.retirementDate || r.retirementDate > todayStr)
+        .map((r) => ({ id: r.id, name: { ciphertext: r.nameCiphertext, keyVersion: r.nameKeyVersion } }));
     });
   }
 }

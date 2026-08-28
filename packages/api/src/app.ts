@@ -6,6 +6,10 @@ import type { Env } from './env';
 import { createAttendanceRoutes } from './routes/attendance';
 import { createAuthRoutes } from './routes/auth';
 import { createCustomerRoutes } from './routes/customers';
+import { createReceiptRoutes } from './routes/receipts';
+import { createReportRoutes } from './routes/reports';
+import { createSettingsRoutes } from './routes/settings';
+import { createStaffRoutes } from './routes/staff';
 
 export interface AppDeps {
   env: Env;
@@ -32,6 +36,10 @@ export function createApp(deps: AppDeps) {
   app.route('/api/auth', createAuthRoutes(container, deps.env.NODE_ENV === 'production'));
   app.route('/api/customers', createCustomerRoutes(container));
   app.route('/api/attendance', createAttendanceRoutes(container));
+  app.route('/api/reports', createReportRoutes(container));
+  app.route('/api/receipts', createReceiptRoutes(container));
+  app.route('/api/settings', createSettingsRoutes(container));
+  app.route('/api/staff', createStaffRoutes(container));
 
   app.notFound((c) => c.json({ code: 'not_found', message: '該当するAPIがありません' }, 404));
 

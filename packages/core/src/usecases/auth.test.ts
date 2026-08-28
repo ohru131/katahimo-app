@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { computeLegacyHash } from '../domain';
 import type { AuthDeps } from './auth';
-import { decodeSessionCookie, importLegacyStaff, login, registerStaff, resolveSession } from './auth';
+import {
+  changePassword,
+  decodeSessionCookie,
+  importLegacyStaff,
+  login,
+  registerStaff,
+  resolveSession,
+} from './auth';
 import {
   FakeBlindIndexPort,
   FakeCryptoPort,
@@ -170,5 +177,79 @@ describe('GAS版レガシーパスワードハッシュからの移行ログイ�
       password: 'legacy-password',
     });
     expect(result).toEqual({ ok: false, reason: 'invalid_credentials' });
+  });
+
+  it('changePasswordは、GAS版のレガシーハッシュのままでも現在のパスワードを検証して変更でき、以後argon2idだけでログインできる', async () => {
+    const staffRecord = await deps.staff.findByEmailBlindIndex(
+      tenantId,
+      await deps.blindIndex.compute(tenantId, 'jiro@example.com'),
+    );
+    if (!staffRecord) throw new Error('unreachable');
+
+    const result = await changePassword(deps, tenantId, staffRecord.id, 'legacy-password', 'new-password');
+    expect(result).toEqual({ ok: true });
+
+    const failedWithOld = await login(deps, {
+      tenantSlug: 'test-tenant',
+      email: 'jiro@example.com',
+      password: 'legacy-password',
+    });
+    expect(failedWithOld.ok).toBe(false);
+
+    const succeededWithNew = await login(deps, {
+      tenantSlug: 'test-tenant',
+      email: 'jiro@example.com',
+      password: 'new-password',
+    });
+    expect(succeededWithNew.ok).toBe(true);
+  });
+});
+
+describe('changePassword', () => {
+  let deps: AuthDeps;
+  let tenantId: string;
+  let staffId: string;
+
+  beforeEach(async () => {
+    deps = {
+      tenants: new FakeTenantRepository(),
+      staff: new FakeStaffRepository(),
+      sessions: new FakeSessionRepository(),
+      crypto: new FakeCryptoPort(),
+      blindIndex: new FakeBlindIndexPort(),
+      passwordHasher: new FakePasswordHasherPort(),
+    };
+    const tenant = await deps.tenants.create({ name: 'テスト法人', slug: 'test-tenant' });
+    tenantId = tenant.id;
+    const created = await registerStaff(deps, {
+      tenantId,
+      name: '佐藤 花子',
+      email: 'hanako@example.com',
+      password: 'correct-horse',
+      isAdmin: false,
+    });
+    staffId = created.id;
+  });
+
+  it('現在のパスワードが正しければ変更できる', async () => {
+    const result = await changePassword(deps, tenantId, staffId, 'correct-horse', 'new-password');
+    expect(result).toEqual({ ok: true });
+
+    const loginResult = await login(deps, {
+      tenantSlug: 'test-tenant',
+      email: 'hanako@example.com',
+      password: 'new-password',
+    });
+    expect(loginResult.ok).toBe(true);
+  });
+
+  it('現在のパスワードが間違っていれば変更を拒否する', async () => {
+    const result = await changePassword(deps, tenantId, staffId, 'wrong-password', 'new-password');
+    expect(result).toEqual({ ok: false, reason: 'incorrect_current_password' });
+  });
+
+  it('存在しないstaffIdでは無効セッション扱いにする', async () => {
+    const result = await changePassword(deps, tenantId, 'no-such-staff', 'correct-horse', 'new-password');
+    expect(result).toEqual({ ok: false, reason: 'invalid_session' });
   });
 });

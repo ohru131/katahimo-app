@@ -1,4 +1,4 @@
-import { getCustomerDetail, searchCustomersByFamilyName } from '@katahimo/core';
+import { getCustomerDetail, listCustomers, searchCustomersByFamilyName } from '@katahimo/core';
 import { Hono } from 'hono';
 import type { Container } from '../container';
 import { getAuthenticatedSession } from '../session';
@@ -7,7 +7,10 @@ export function createCustomerRoutes(container: Container) {
   const app = new Hono();
 
   /**
-   * 苗字(姓)の完全一致検索。tenantIdは必ずセッションから取得したものだけを使い、
+   * `familyName`クエリ省略時は有効な顧客を全件返す(GAS版Main.js fetchDataFromSheetが顧客DB全件を
+   * 一度にクライアントへ返し、名前の部分一致・地区絞り込み・並び替えはブラウザ側で行っていたのと
+   * 同じ「訪問先一覧」タブの既定表示に使う)。`familyName`を指定した場合のみ、従来通り苗字の
+   * ブラインドインデックス完全一致検索を行う。tenantIdは必ずセッションから取得したものだけを使い、
    * クエリパラメータでtenantIdを受け取ることはしない(他テナントの顧客を覗けてしまうため)。
    */
   app.get('/', async (c) => {
@@ -16,7 +19,8 @@ export function createCustomerRoutes(container: Container) {
 
     const familyName = c.req.query('familyName');
     if (!familyName) {
-      return c.json({ code: 'validation_failed', message: 'familyNameクエリパラメータが必要です' }, 400);
+      const { customers, cities } = await listCustomers(container, session.tenantId);
+      return c.json({ customers, cities });
     }
 
     const results = await searchCustomersByFamilyName(container, session.tenantId, familyName);

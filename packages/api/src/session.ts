@@ -35,3 +35,21 @@ export function resolveAttendanceTargetStaffId(
   const requested = (requestedStaffId ?? '').trim();
   return requested || session.staffId;
 }
+
+/**
+ * 日報/事故報告/領収書登録用。管理者以外は自分自身のstaffIdに強制し、管理者だけが
+ * 明示的なstaffId指定で他スタッフの名義の報告を保存できるようにする。
+ *
+ * GAS版Main.js saveReport/saveAccidentReportの
+ * `if (!session.isAdmin || !reportData.staffName) { reportData.staffName = session.name; }`
+ * と同じ規則(resolveAttendanceTargetStaffIdと判定ロジックは同一だが、CLAUDE.mdの方針
+ * (アクセスコンテキストごとに独立実装する)に沿って報告系専用の関数として分けている)。
+ */
+export function resolveReportTargetStaffId(
+  session: ResolvedSession,
+  requestedStaffId: string | undefined,
+): string {
+  if (!session.isAdmin) return session.staffId;
+  const requested = (requestedStaffId ?? '').trim();
+  return requested || session.staffId;
+}

@@ -172,6 +172,42 @@ export async function resolveSession(deps: AuthDeps, cookieValue: string): Promi
   };
 }
 
+export type ChangePasswordResult =
+  | { ok: true }
+  | { ok: false; reason: 'invalid_session' | 'incorrect_current_password' };
+
+/**
+ * ログイン中スタッフ自身のパスワード変更。GAS版Auth.js changePasswordに対応。
+ * 現在のパスワードはargon2idを優先して検証し、まだargon2id化していないスタッフは
+ * レガシーハッシュ(sha256+salt)でも検証する(loginのサイレント再ハッシュと同じ考え方)。
+ * 新パスワードは常にargon2idで保存し、legacyPasswordHashは(あれば)クリアする。
+ */
+export async function changePassword(
+  deps: AuthDeps,
+  tenantId: string,
+  staffId: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<ChangePasswordResult> {
+  const staffRecord = await deps.staff.findById(tenantId, staffId);
+  if (!staffRecord) return { ok: false, reason: 'invalid_session' };
+
+  let matched = staffRecord.passwordHash
+    ? await deps.passwordHasher.verify(staffRecord.passwordHash, currentPassword)
+    : false;
+
+  if (!matched && staffRecord.legacyPasswordHash && deps.legacyAuthSalt) {
+    const legacyHash = computeLegacyHash(currentPassword, deps.legacyAuthSalt);
+    matched = legacyHash === staffRecord.legacyPasswordHash;
+  }
+
+  if (!matched) return { ok: false, reason: 'incorrect_current_password' };
+
+  const newHash = await deps.passwordHasher.hash(newPassword);
+  await deps.staff.upgradeToArgon2Hash(tenantId, staffId, newHash);
+  return { ok: true };
+}
+
 export interface RegisterStaffInput {
   tenantId: string;
   name: string;

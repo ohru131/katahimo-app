@@ -275,6 +275,38 @@ export async function searchCustomersByFamilyName(
   );
 }
 
+export interface CustomerListResult {
+  customers: CustomerView[];
+  /** 地区(市区町村)の重複無し・昇順一覧。「訪問先一覧」タブの地区絞り込みセレクトに使う。 */
+  cities: string[];
+}
+
+/**
+ * 有効な顧客を全件、復号した状態で返す。GAS版Main.js fetchDataFromSheetが顧客DB全件を
+ * 一度にクライアントへ返し、以後の名前の部分一致検索・地区絞り込み・並び替えは全てブラウザ側の
+ * 処理(index.htmlのfilterCustomers())だったのと同じ設計にするための一覧取得。
+ * (searchCustomersByFamilyNameのブラインドインデックス完全一致検索とは別の用途で、
+ * 「訪問先一覧」タブの既定表示・絞り込みにはこちらを使う。)
+ */
+export async function listCustomers(deps: CustomerDeps, tenantId: string): Promise<CustomerListResult> {
+  const rows = await deps.customers.listActive(tenantId);
+
+  const customerViews = await Promise.all(
+    rows.map(async (row) => ({
+      id: row.id,
+      name: await deps.crypto.decrypt(tenantId, row.name),
+      phone: row.phone ? await deps.crypto.decrypt(tenantId, row.phone) : null,
+      city: row.city ? await deps.crypto.decrypt(tenantId, row.city) : null,
+    })),
+  );
+
+  const cities = Array.from(
+    new Set(customerViews.map((c) => c.city).filter((c): c is string => Boolean(c))),
+  ).sort((a, b) => a.localeCompare(b, 'ja'));
+
+  return { customers: customerViews, cities };
+}
+
 export interface FamilyMemberView {
   id: string;
   name: string;

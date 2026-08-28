@@ -187,6 +187,13 @@ export class DrizzleCustomerRepository implements CustomerRepositoryPort {
     });
   }
 
+  async listActive(tenantId: string): Promise<CustomerRecord[]> {
+    return withTenant(this.db, tenantId, async (tx) => {
+      const rows = await tx.select().from(customers).where(isNull(customers.deactivatedAt));
+      return rows.map(toRecord);
+    });
+  }
+
   async update(tenantId: string, customerId: string, patch: CustomerPatchInput): Promise<CustomerRecord> {
     return withTenant(this.db, tenantId, async (tx) => {
       const rows = await tx

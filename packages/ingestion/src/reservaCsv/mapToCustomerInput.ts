@@ -1,3 +1,4 @@
+import { extractCityFromAddress } from '@katahimo/core/domain';
 import type { CreateCustomerInput } from '@katahimo/core/usecases';
 import type { ReservaCsvRow } from './types';
 
@@ -26,8 +27,10 @@ export function mapReservaRowToCustomerInput(tenantId: string, row: ReservaCsvRo
     email: orUndefined(row.email),
     phone: orUndefined(row.phone),
     addressDetail: orUndefined(row.address),
-    // city(市区町村)は住所文字列からの自動抽出をしない(信頼できるパーサーが無いため対象外。
-    // 必要なら別途アドレス管理者が手動で設定する運用とする)。
+    // city(市区町村/地区)はGAS版Main.js fetchDataFromSheetの住所パーサーをそのまま移植して
+    // 自動抽出する(訪問先一覧の地区絞り込みセレクトに使う値で、完全な住所パーサーである
+    // 必要はなく、GAS版が実務で使っている粒度で合っていれば十分なため)。
+    city: orUndefined(extractCityFromAddress(row.address)),
     parkingArea: orUndefined(row.parkingArea),
     parkingDetail: orUndefined(row.parkingDetail),
     emergencyContact: orUndefined(row.emergencyContact),
