@@ -1,34 +1,68 @@
-import { useMutation } from '@tanstack/react-query';
-import { useState } from 'react';
-import { searchCustomersByFamilyName } from './api';
+import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { fetchAllCustomers } from './api';
 import { CustomerDetail } from './CustomerDetail';
+import { getRecentCustomerIds } from './recentCustomers';
+import { HistoryModal } from './reports/HistoryModal';
+import { ReportModal } from './reports/ReportModal';
 
 /**
- * 「訪問先一覧」タブ。GAS版のtabVisitors(index.html)と同じ検索欄・カード一覧の見た目にしている
- * (移行時の混乱を減らすため)。ただしGAS版は顧客名の部分一致でその場で絞り込むのに対し、
- * こちらはブラインドインデックス方式のため「苗字の完全一致」のみ対応(検索ボタンを押して
- * サーバーに問い合わせる方式)。プレースホルダー文言はその違いが伝わるようにしている。
+ * 「訪問先一覧」タブ。GAS版のtabVisitors(index.html)と同じく、有効な顧客を一度に全件取得して
+ * ブラウザ側で絞り込む方式にしている(GAS版のallCustomers/filterCustomers()と同じ設計)。
+ * - 顧客名は部分一致・as-you-typeで絞り込む(GAS版のsearchInput/oninput="filterCustomers()"と同じ)。
+ * - 地区(市区町村)セレクトで絞り込める(GAS版のcityFilter/onchange="filterCustomers()"と同じ)。
+ * - 検索・地区絞り込みのどちらも指定していない既定表示は、直近保存/領収書登録した顧客が
+ *   先頭にくる「最近使った順」にする(GAS版filterCustomers()の`if (!search && !city)`分岐と同じ。
+ *   recentCustomers.tsのlocalStorage 'recent_customers'を参照)。
+ *
+ * カードタップ時の挙動もGAS版のopenModal(customer)と同じにしている: カード本体のタップは
+ * 日報/事故報告作成モーダル(ReportModal)を開き、「顧客情報」「活動記録」は別ボタンから
+ * それぞれ別モーダル(CustomerDetail/HistoryModal)を開く(この3つを混同しないこと)。
  */
 export function CustomerSearch() {
-  const [familyName, setFamilyName] = useState('');
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const mutation = useMutation({ mutationFn: (name: string) => searchCustomersByFamilyName(name) });
+  const [searchText, setSearchText] = useState('');
+  const [cityFilter, setCityFilter] = useState('');
+  const [reportCustomerId, setReportCustomerId] = useState<string | null>(null);
+  const [detailCustomerId, setDetailCustomerId] = useState<string | null>(null);
+  const [historyCustomer, setHistoryCustomer] = useState<{ id: string; name: string } | null>(null);
+  // 報告作成モーダルを閉じるたびに1増やし、useMemoに「最近使った顧客」の並びを再評価させる
+  // (保存直後にlocalStorageの'recent_customers'が更新されている可能性があるため)。
+  const [recentTick, setRecentTick] = useState(0);
+
+  const query = useQuery({ queryKey: ['customers', 'all'], queryFn: fetchAllCustomers });
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: recentTickは再評価トリガー専用の意図的な依存
+  const filteredCustomers = useMemo(() => {
+    const customers = query.data?.customers ?? [];
+    const search = searchText.trim().toLowerCase();
+
+    const filtered = customers.filter((c) => {
+      const matchesCity = cityFilter ? c.city === cityFilter : true;
+      const matchesSearch = search ? c.name.toLowerCase().includes(search) : true;
+      return matchesCity && matchesSearch;
+    });
+
+    if (!search && !cityFilter) {
+      const recentRank = new Map(getRecentCustomerIds().map((id, index) => [id, index]));
+      filtered.sort((a, b) => {
+        const rankA = recentRank.get(a.id) ?? Number.POSITIVE_INFINITY;
+        const rankB = recentRank.get(b.id) ?? Number.POSITIVE_INFINITY;
+        return rankA - rankB;
+      });
+    }
+
+    return filtered;
+  }, [query.data, searchText, cityFilter, recentTick]);
 
   return (
     <div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (familyName.trim()) mutation.mutate(familyName.trim());
-        }}
-        className="mb-6 space-y-3"
-      >
+      <div className="mb-6 space-y-3">
         <div className="relative flex-grow">
           <input
             type="text"
-            value={familyName}
-            onChange={(e) => setFamilyName(e.target.value)}
-            placeholder="苗字で検索(完全一致・例: 佐藤)"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="顧客名で検索..."
             className="w-full pl-10 pr-4 py-3 rounded-xl border-none ring-1 ring-gray-200 focus:ring-2 focus:ring-blue-500 bg-gray-50 text-base shadow-sm transition-all"
           />
           <svg
@@ -46,61 +80,110 @@ export function CustomerSearch() {
             />
           </svg>
         </div>
-        <button
-          type="submit"
-          disabled={mutation.isPending}
-          className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl transition-colors"
-        >
-          {mutation.isPending ? '検索中…' : '検索'}
-        </button>
-      </form>
 
-      {mutation.isError && <p className="text-red-500 text-sm mb-3">{mutation.error.message}</p>}
+        <div className="relative">
+          <select
+            value={cityFilter}
+            onChange={(e) => setCityFilter(e.target.value)}
+            className="w-full appearance-none pl-4 pr-10 py-3 rounded-xl border-none ring-1 ring-gray-200 focus:ring-2 focus:ring-blue-500 bg-gray-50 text-base shadow-sm transition-all"
+          >
+            <option value="">全ての地域</option>
+            {(query.data?.cities ?? []).map((city) => (
+              <option key={city} value={city}>
+                {city}
+              </option>
+            ))}
+          </select>
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+            <svg className="fill-current h-4 w-4" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+            </svg>
+          </div>
+        </div>
+      </div>
 
-      {mutation.isPending && (
+      {query.isError && <p className="text-red-500 text-sm mb-3">{(query.error as Error).message}</p>}
+
+      {query.isPending && (
         <div className="flex justify-center py-8">
           <div className="w-8 h-8 rounded-full border-4 border-gray-200 loading-spinner" />
         </div>
       )}
 
-      {mutation.isSuccess && (
+      {query.isSuccess && (
         <div className="space-y-3">
-          {mutation.data.length === 0 && (
+          {filteredCustomers.length === 0 && (
             <div className="text-center text-gray-400 py-8">該当する顧客がいません</div>
           )}
-          {mutation.data.map((c) => (
-            <button
+          {filteredCustomers.map((c) => (
+            <div
               key={c.id}
-              type="button"
-              onClick={() => setSelectedCustomerId(c.id)}
-              className="w-full bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center cursor-pointer hover:shadow-md transition-shadow active:bg-gray-50 text-left"
+              className="w-full bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
             >
-              <div className="flex-grow">
-                <h3 className="font-bold text-gray-800 text-lg">{c.name}</h3>
-                {c.city && (
-                  <p className="text-sm text-gray-500 flex items-center gap-1">
-                    <span className="inline-block px-2 py-0.5 bg-gray-100 rounded text-xs">{c.city}</span>
-                  </p>
-                )}
-              </div>
-              <div className="text-blue-500">
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
+              <button
+                type="button"
+                onClick={() => setReportCustomerId(c.id)}
+                className="w-full p-4 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors text-left"
+              >
+                <div className="flex-grow">
+                  <h3 className="font-bold text-gray-800 text-lg">{c.name}</h3>
+                  {c.city && (
+                    <p className="text-sm text-gray-500 flex items-center gap-1">
+                      <span className="inline-block px-2 py-0.5 bg-gray-100 rounded text-xs">{c.city}</span>
+                    </p>
+                  )}
+                </div>
+                <div className="text-blue-500">
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
+              <div className="flex border-t border-gray-100 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setDetailCustomerId(c.id)}
+                  className="flex-1 py-2 text-gray-600 hover:bg-gray-50 font-medium"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+                  👤 顧客情報
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryCustomer({ id: c.id, name: c.name })}
+                  className="flex-1 py-2 text-gray-600 hover:bg-gray-50 font-medium border-l border-gray-100"
+                >
+                  📋 活動記録
+                </button>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       )}
 
-      {selectedCustomerId && (
-        <CustomerDetail customerId={selectedCustomerId} onClose={() => setSelectedCustomerId(null)} />
+      {reportCustomerId && (
+        <ReportModal
+          customerId={reportCustomerId}
+          onClose={() => {
+            setReportCustomerId(null);
+            setRecentTick((t) => t + 1);
+          }}
+        />
+      )}
+      {detailCustomerId && (
+        <CustomerDetail customerId={detailCustomerId} onClose={() => setDetailCustomerId(null)} />
+      )}
+      {historyCustomer && (
+        <HistoryModal
+          customerId={historyCustomer.id}
+          customerName={historyCustomer.name}
+          onClose={() => setHistoryCustomer(null)}
+        />
       )}
     </div>
   );

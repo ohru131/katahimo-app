@@ -2,6 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { applyTextSize, getStoredTextSize } from './settings/textSize';
+
+applyTextSize(getStoredTextSize());
 
 const queryClient = new QueryClient({
   defaultOptions: {

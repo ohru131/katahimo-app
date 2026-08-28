@@ -23,6 +23,35 @@
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
       }
+
+      /* 文字サイズ設定(GAS版index.htmlの同名ルールと同じ)。 */
+      html[data-text-size='medium'] .text-xs {
+        font-size: 0.875rem !important;
+        line-height: 1.4 !important;
+      }
+      html[data-text-size='medium'] .text-sm {
+        font-size: 1rem !important;
+        line-height: 1.5 !important;
+      }
+      html[data-text-size='medium'] .text-base {
+        font-size: 1.05rem !important;
+      }
+      html[data-text-size='large'] .text-xs {
+        font-size: 1rem !important;
+        line-height: 1.5 !important;
+      }
+      html[data-text-size='large'] .text-sm {
+        font-size: 1.125rem !important;
+        line-height: 1.6 !important;
+      }
+      html[data-text-size='large'] .text-base {
+        font-size: 1.2rem !important;
+      }
+      html[data-text-size='large'] input,
+      html[data-text-size='large'] textarea,
+      html[data-text-size='large'] button {
+        font-size: 1.1rem !important;
+      }
     </style>
   </head>
   <body class="bg-gray-100 min-h-screen text-gray-800 flex justify-center">

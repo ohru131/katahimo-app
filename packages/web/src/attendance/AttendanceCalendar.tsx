@@ -28,7 +28,7 @@ const CAL_TIME_AXIS_WIDTH = 24;
  * Googleカレンダー連携(Phase 5)が無くても動く。GAS版にあった「📅 カレンダーから取得」
  * (実際のGoogleカレンダーの内容を出勤簿へ反映するボタン)は、その連携が無いため含めていない。
  */
-export function AttendanceCalendar() {
+export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
   const queryClient = useQueryClient();
   const [weekAnchor, setWeekAnchor] = useState(() => calGetWeekStart(new Date()));
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
@@ -45,14 +45,14 @@ export function AttendanceCalendar() {
   const weekEndStr = calYmd(weekEnd);
 
   const weekQuery = useQuery({
-    queryKey: ['attendance-week', weekStartStr, weekEndStr],
-    queryFn: () => fetchAttendanceWeekEvents(weekStartStr, weekEndStr),
+    queryKey: ['attendance-week', weekStartStr, weekEndStr, staffId],
+    queryFn: () => fetchAttendanceWeekEvents(weekStartStr, weekEndStr, staffId),
   });
 
   const dayQuery = useQuery({
-    queryKey: ['attendance-day', selectedDate],
+    queryKey: ['attendance-day', selectedDate, staffId],
     queryFn: async () => {
-      const result = await fetchAttendanceDay(selectedDate);
+      const result = await fetchAttendanceDay(selectedDate, staffId);
       setDayRowData(result.rowData);
       return result;
     },
@@ -60,11 +60,11 @@ export function AttendanceCalendar() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (rowData: AttendanceRowData) => saveAttendanceDay(selectedDate, rowData),
+    mutationFn: (rowData: AttendanceRowData) => saveAttendanceDay(selectedDate, rowData, staffId),
     onSuccess: (result) => {
       setDayRowData(result.rowData);
-      queryClient.invalidateQueries({ queryKey: ['attendance-day', selectedDate] });
-      queryClient.invalidateQueries({ queryKey: ['attendance-week', weekStartStr, weekEndStr] });
+      queryClient.invalidateQueries({ queryKey: ['attendance-day', selectedDate, staffId] });
+      queryClient.invalidateQueries({ queryKey: ['attendance-week', weekStartStr, weekEndStr, staffId] });
       queryClient.invalidateQueries({ queryKey: ['attendance-month'] });
     },
   });

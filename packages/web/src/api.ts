@@ -86,12 +86,114 @@ export async function logout(): Promise<void> {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
 }
 
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const res = await fetch('/api/auth/change-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'パスワードの変更に失敗しました');
+}
+
+export interface ActiveStaffView {
+  id: string;
+  name: string;
+}
+
+/** 管理者向け「対象スタッフ」一覧(退職者を除く)。管理者以外は空配列が返る。 */
+export async function fetchActiveStaffForAdmin(): Promise<ActiveStaffView[]> {
+  const res = await fetch('/api/staff', { credentials: 'include' });
+  const body = await parseJsonOrThrow<{ staff: ActiveStaffView[] }>(res);
+  return body.staff;
+}
+
+// ── 管理者設定(GAS版の設定モーダル「管理者設定」に対応) ──
+
+export interface AdminSettingsView {
+  geminiApiKey: string;
+  geminiReportModel: string;
+  geminiOcrModel: string;
+  gchatReportWebhookUrl: string;
+  gchatReceiptWebhookUrl: string;
+}
+
+export async function fetchAdminSettings(): Promise<AdminSettingsView> {
+  const res = await fetch('/api/settings/admin', { credentials: 'include' });
+  const body = await parseJsonOrThrow<{ settings: AdminSettingsView }>(res);
+  return body.settings;
+}
+
+export interface SaveSettingsResult {
+  ok: boolean;
+  message: string;
+}
+
+async function postSettings(path: string, payload: unknown): Promise<SaveSettingsResult> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  return parseJsonOrThrow<SaveSettingsResult>(res);
+}
+
+export function saveGeminiApiKey(apiKey: string): Promise<SaveSettingsResult> {
+  return postSettings('/api/settings/admin/gemini-key', { apiKey });
+}
+
+export function saveGeminiModelSettings(reportModel: string, ocrModel: string): Promise<SaveSettingsResult> {
+  return postSettings('/api/settings/admin/gemini-models', { reportModel, ocrModel });
+}
+
+export function saveGoogleChatWebhookSettings(
+  reportWebhookUrl: string,
+  receiptWebhookUrl: string,
+): Promise<SaveSettingsResult> {
+  return postSettings('/api/settings/admin/gchat-webhooks', { reportWebhookUrl, receiptWebhookUrl });
+}
+
+export interface GeminiModelInfo {
+  name: string;
+  displayName: string;
+}
+
+export async function listAvailableGeminiModels(apiKey: string): Promise<GeminiModelInfo[]> {
+  const res = await fetch('/api/settings/admin/gemini-models/available', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ apiKey }),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; models?: GeminiModelInfo[]; message?: string }>(
+    res,
+  );
+  if (!body.success) throw new Error(body.message || 'モデル一覧の取得に失敗しました');
+  return body.models ?? [];
+}
+
 export async function searchCustomersByFamilyName(familyName: string): Promise<CustomerView[]> {
   const res = await fetch(`/api/customers?familyName=${encodeURIComponent(familyName)}`, {
     credentials: 'include',
   });
   const body = await parseJsonOrThrow<{ customers: CustomerView[] }>(res);
   return body.customers;
+}
+
+export interface CustomerListResult {
+  customers: CustomerView[];
+  cities: string[];
+}
+
+/**
+ * 有効な顧客を全件取得する。GAS版のgetData()相当(訪問先一覧の既定表示・名前の部分一致検索・
+ * 地区絞り込みは全てこれで取得した一覧をブラウザ側で絞り込む)。
+ */
+export async function fetchAllCustomers(): Promise<CustomerListResult> {
+  const res = await fetch('/api/customers', { credentials: 'include' });
+  return parseJsonOrThrow<CustomerListResult>(res);
 }
 
 export async function fetchCustomerDetail(customerId: string): Promise<CustomerDetailView> {
@@ -172,8 +274,11 @@ export interface AttendanceMonthView {
   totals: AttendanceMonthlyTotals;
 }
 
-export async function fetchAttendanceDay(date: string): Promise<AttendanceDayView> {
-  const res = await fetch(`/api/attendance/day?date=${encodeURIComponent(date)}`, { credentials: 'include' });
+/** staffIdは管理者が「対象スタッフ」を選んでいる場合のみ渡す(非管理者は常に自分自身なので不要)。 */
+export async function fetchAttendanceDay(date: string, staffId?: string): Promise<AttendanceDayView> {
+  const params = new URLSearchParams({ date });
+  if (staffId) params.set('staffId', staffId);
+  const res = await fetch(`/api/attendance/day?${params.toString()}`, { credentials: 'include' });
   const body = await parseJsonOrThrow<{ attendance: AttendanceDayView }>(res);
   return body.attendance;
 }
@@ -181,19 +286,25 @@ export async function fetchAttendanceDay(date: string): Promise<AttendanceDayVie
 export async function saveAttendanceDay(
   date: string,
   rowData: AttendanceRowData,
+  staffId?: string,
 ): Promise<AttendanceDayView> {
   const res = await fetch('/api/attendance/day', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ date, rowData }),
+    body: JSON.stringify({ date, rowData, staffId }),
   });
   const body = await parseJsonOrThrow<{ attendance: AttendanceDayView }>(res);
   return body.attendance;
 }
 
-export async function fetchAttendanceMonth(yearMonth: string): Promise<AttendanceMonthView> {
-  const res = await fetch(`/api/attendance/month?month=${encodeURIComponent(yearMonth)}`, {
+export async function fetchAttendanceMonth(
+  yearMonth: string,
+  staffId?: string,
+): Promise<AttendanceMonthView> {
+  const params = new URLSearchParams({ month: yearMonth });
+  if (staffId) params.set('staffId', staffId);
+  const res = await fetch(`/api/attendance/month?${params.toString()}`, {
     credentials: 'include',
   });
   const body = await parseJsonOrThrow<{ month: AttendanceMonthView }>(res);
@@ -211,11 +322,219 @@ export interface ScheduleEvent {
   end: string;
 }
 
-export async function fetchAttendanceWeekEvents(start: string, end: string): Promise<ScheduleEvent[]> {
-  const res = await fetch(
-    `/api/attendance/week?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
-    { credentials: 'include' },
-  );
+export async function fetchAttendanceWeekEvents(
+  start: string,
+  end: string,
+  staffId?: string,
+): Promise<ScheduleEvent[]> {
+  const params = new URLSearchParams({ start, end });
+  if (staffId) params.set('staffId', staffId);
+  const res = await fetch(`/api/attendance/week?${params.toString()}`, { credentials: 'include' });
   const body = await parseJsonOrThrow<{ events: ScheduleEvent[] }>(res);
   return body.events;
+}
+
+// ── 日報/事故報告/活動記録/領収書登録(gas-childcare-visit-appの訪問先カード内モーダルに対応) ──
+
+export interface DailyReportDraft {
+  warnings: string[];
+  internal: string;
+  customer: string;
+}
+
+export interface AccidentReportDraft {
+  occurrenceTime: string;
+  location: string;
+  accidentContent: string;
+  situation: string;
+  immediateResponse: string;
+  parentCorrespondence: string;
+  diagnosisTreatment: string;
+  prevention: string;
+}
+
+export interface AccidentReportDraftError {
+  error: string;
+}
+
+export async function generateDailyReportDraft(
+  text: string,
+  start?: string,
+  end?: string,
+): Promise<DailyReportDraft> {
+  const res = await fetch('/api/reports/daily/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ text, start, end }),
+  });
+  const body = await parseJsonOrThrow<{ draft: DailyReportDraft }>(res);
+  return body.draft;
+}
+
+export async function generateAccidentReportDraft(
+  text: string,
+  start?: string,
+  end?: string,
+): Promise<AccidentReportDraft | AccidentReportDraftError> {
+  const res = await fetch('/api/reports/accident/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ text, start, end }),
+  });
+  const body = await parseJsonOrThrow<{ draft: AccidentReportDraft | AccidentReportDraftError }>(res);
+  return body.draft;
+}
+
+export interface SaveDailyReportInput {
+  reportId?: string;
+  customerId: string;
+  reportDate?: string;
+  startTime: string;
+  endTime: string;
+  inputText: string;
+  internalText: string;
+  customerText: string;
+  riskRating: number | null;
+  esRating: number | null;
+}
+
+export interface DailyReportView {
+  id: string;
+  occurredAt: string;
+  staffId: string;
+  customerId: string;
+  riskRating: number | null;
+  esRating: number | null;
+}
+
+export async function saveDailyReport(input: SaveDailyReportInput): Promise<DailyReportView> {
+  const res = await fetch('/api/reports/daily', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; report: DailyReportView; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || '日報の保存に失敗しました');
+  return body.report;
+}
+
+export interface SaveAccidentReportInput {
+  reportId?: string;
+  customerId: string;
+  reportType?: string;
+  targetName: string;
+  targetDob: string;
+  occurrenceTime: string;
+  location: string;
+  accidentContent: string;
+  situation: string;
+  immediateResponse: string;
+  parentCorrespondence: string;
+  diagnosisTreatment: string;
+  prevention: string;
+  inputText: string;
+}
+
+export interface AccidentReportView {
+  id: string;
+  occurredAt: string;
+  staffId: string;
+  customerId: string;
+  reportType: string;
+}
+
+export async function saveAccidentReport(input: SaveAccidentReportInput): Promise<AccidentReportView> {
+  const res = await fetch('/api/reports/accident', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; report: AccidentReportView; message?: string }>(
+    res,
+  );
+  if (!body.success) throw new Error(body.message || '事故報告の保存に失敗しました');
+  return body.report;
+}
+
+export interface HistoryItem {
+  type: 'daily' | 'accident';
+  id: string;
+  occurredAtIso: string;
+  timestamp: string;
+  staff: string;
+  original: string;
+  internal: string;
+  customer: string;
+  risk?: number | null;
+  es?: number | null;
+  isAccident?: boolean;
+  subtype?: string;
+}
+
+export async function fetchCustomerHistory(customerId: string, before?: string): Promise<HistoryItem[]> {
+  const params = new URLSearchParams({ customerId });
+  if (before) params.set('before', before);
+  const res = await fetch(`/api/reports/history?${params.toString()}`, { credentials: 'include' });
+  const body = await parseJsonOrThrow<{ items: HistoryItem[] }>(res);
+  return body.items;
+}
+
+export interface ReceiptImageUpload {
+  data: string;
+  amount?: string | number | null;
+  storeName?: string | null;
+  receiptDate?: string | null;
+}
+
+export interface UploadReceiptsInput {
+  customerId: string | null;
+  images: ReceiptImageUpload[];
+  receiptTimestamp?: string;
+  handoffText?: string;
+}
+
+export interface ReceiptDuplicateInfo {
+  index: number;
+  timestamp: string;
+  amount: string;
+  storeName: string;
+}
+
+export interface UploadReceiptsResult {
+  success: boolean;
+  message: string;
+  uploadedCount: number;
+  duplicateCount: number;
+  duplicates: ReceiptDuplicateInfo[];
+}
+
+export async function uploadReceipts(input: UploadReceiptsInput): Promise<UploadReceiptsResult> {
+  const res = await fetch('/api/receipts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  return parseJsonOrThrow<UploadReceiptsResult>(res);
+}
+
+export interface ReceiptOcrResult {
+  amount: string | number;
+  storeName: string;
+  receiptDate: string;
+}
+
+export async function extractReceiptOcr(image: string): Promise<ReceiptOcrResult> {
+  const res = await fetch('/api/receipts/ocr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ image }),
+  });
+  const body = await parseJsonOrThrow<{ result: ReceiptOcrResult }>(res);
+  return body.result;
 }

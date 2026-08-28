@@ -6,13 +6,14 @@ import { fetchMe, logout } from './api';
 import { CustomerSearch } from './CustomerSearch';
 import { LoginForm } from './LoginForm';
 import { ScheduleTab } from './ScheduleTab';
+import { SettingsModal } from './settings/SettingsModal';
 
 type HomeTab = 'schedule' | 'visitors' | 'attendance';
 
-const TABS: { key: HomeTab; label: string }[] = [
-  { key: 'schedule', label: '📅 予定' },
-  { key: 'visitors', label: '🏠 訪問先一覧' },
-  { key: 'attendance', label: '🕒 勤怠' },
+const TABS: { key: HomeTab; icon: string; label: string }[] = [
+  { key: 'schedule', icon: '📅', label: '予定' },
+  { key: 'visitors', icon: '🏠', label: '訪問先一覧' },
+  { key: 'attendance', icon: '🕒', label: '勤怠' },
 ];
 
 /**
@@ -20,9 +21,16 @@ const TABS: { key: HomeTab; label: string }[] = [
  * 単一ページアプリにしている(移行時の混乱を減らすため)。GAS版はURLルーティングを一切使わず
  * タブの表示/非表示切り替えだけで画面遷移するため、こちらもURLは変えずタブをstateで切り替える
  * 作りにしている(react-router-domは使わない)。
+ *
+ * タブ切り替えはGAS版と同様、スマホでの操作性のため下部固定ボタンにしている(GAS版
+ * gas-childcare-visit-app/index.htmlのホームタブと同じ配置)。ルート要素が`overflow-hidden`
+ * (下記)なので`sticky`は本文が長い時に画面外へクリップされる。GAS版と同じ理由で`fixed`にし、
+ * ビューポート基準+`left-1/2 -translate-x-1/2`でアプリ幅(`max-width: 480px`、index.htmlの
+ * #rootと同じ)に中央寄せして常に表示されるようにする。
  */
 function AppShell({ staff, onLogout }: { staff: StaffView; onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<HomeTab>('schedule');
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
     <div className="min-h-screen flex flex-col relative bg-white shadow-xl overflow-hidden">
@@ -33,6 +41,27 @@ function AppShell({ staff, onLogout }: { staff: StaffView; onLogout: () => void 
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm font-medium opacity-90">{staff.name}</span>
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+            title="設定"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+          </button>
           <button
             type="button"
             onClick={onLogout}
@@ -51,26 +80,32 @@ function AppShell({ staff, onLogout }: { staff: StaffView; onLogout: () => void 
         </div>
       </header>
 
-      <nav className="flex bg-white border-b border-gray-200 sticky top-[60px] z-10">
+      <main className="flex-grow p-4 overflow-y-auto pb-24">
+        {activeTab === 'schedule' && <ScheduleTab />}
+        {activeTab === 'visitors' && <CustomerSearch />}
+        {activeTab === 'attendance' && <AttendanceTab staff={staff} />}
+      </main>
+
+      <nav
+        className="fixed bottom-0 left-1/2 -translate-x-1/2 z-20 flex bg-white border-t border-gray-200"
+        style={{ width: '100%', maxWidth: '480px' }}
+      >
         {TABS.map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 py-3 text-sm font-bold text-center border-b-2 transition-colors ${
+            className={`flex-1 py-2 flex flex-col items-center gap-0.5 text-xs font-bold border-t-2 transition-colors ${
               activeTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400'
             }`}
           >
-            {tab.label}
+            <span className="text-lg leading-none">{tab.icon}</span>
+            <span>{tab.label}</span>
           </button>
         ))}
       </nav>
 
-      <main className="flex-grow p-4 overflow-y-auto pb-24">
-        {activeTab === 'schedule' && <ScheduleTab />}
-        {activeTab === 'visitors' && <CustomerSearch />}
-        {activeTab === 'attendance' && <AttendanceTab />}
-      </main>
+      {showSettings && <SettingsModal staff={staff} onClose={() => setShowSettings(false)} />}
     </div>
   );
 }
