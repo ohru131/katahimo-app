@@ -1,9 +1,14 @@
 import { createHash, createHmac } from 'node:crypto';
 import type { BlindIndexPort, CryptoPort, EncryptedValue } from '../ports/crypto';
 import type {
+  CustomerPatchInput,
+  CustomerProfileFields,
   CustomerRecord,
   CustomerRepositoryPort,
+  FamilyMemberRecord,
+  FamilyMemberRepositoryPort,
   NewCustomerInput,
+  NewFamilyMemberInput,
   NewSessionInput,
   NewStaffInput,
   NewTenantInput,
@@ -109,6 +114,36 @@ export class FakeSessionRepository implements SessionRepositoryPort {
   }
 }
 
+const EMPTY_PROFILE_FIELDS: CustomerProfileFields = {
+  externalSource: null,
+  externalId: null,
+  familyNameKana: null,
+  givenNameKana: null,
+  email: null,
+  phone: null,
+  addressDetail: null,
+  city: null,
+  parkingArea: null,
+  parkingDetail: null,
+  emergencyContact: null,
+  emergencyContactRelation: null,
+  evacuationSite: null,
+  memo: null,
+  benefitMemberId: null,
+  address2: null,
+  address2StartDate: null,
+  address2EndDate: null,
+  latLng: null,
+  memberType: null,
+  memberStatus: null,
+  paymentMethod: null,
+  paymentStatus: null,
+  gender: null,
+  ageBracket: null,
+  registeredAt: null,
+  externalLastUpdatedAt: null,
+};
+
 interface StoredCustomer {
   record: CustomerRecord;
   familyNameBlindIndex: string;
@@ -120,15 +155,21 @@ export class FakeCustomerRepository implements CustomerRepositoryPort {
 
   async create(input: NewCustomerInput): Promise<CustomerRecord> {
     const record: CustomerRecord = {
+      ...EMPTY_PROFILE_FIELDS,
+      ...input,
       id: `customer-${++this.seq}`,
-      tenantId: input.tenantId,
-      name: input.name,
-      phone: input.phone,
-      city: input.city,
+      deactivatedAt: null,
     };
     this.rows.push({ record, familyNameBlindIndex: input.familyNameBlindIndex });
     return record;
   }
+
+  async findById(tenantId: string, customerId: string): Promise<CustomerRecord | null> {
+    return (
+      this.rows.find((r) => r.record.tenantId === tenantId && r.record.id === customerId)?.record ?? null
+    );
+  }
+
   async findByFamilyNameBlindIndex(
     tenantId: string,
     familyNameBlindIndex: string,
@@ -136,5 +177,90 @@ export class FakeCustomerRepository implements CustomerRepositoryPort {
     return this.rows
       .filter((r) => r.record.tenantId === tenantId && r.familyNameBlindIndex === familyNameBlindIndex)
       .map((r) => r.record);
+  }
+
+  async findByExternalId(
+    tenantId: string,
+    externalSource: string,
+    externalId: string,
+  ): Promise<CustomerRecord | null> {
+    return (
+      this.rows.find(
+        (r) =>
+          r.record.tenantId === tenantId &&
+          r.record.externalSource === externalSource &&
+          r.record.externalId === externalId,
+      )?.record ?? null
+    );
+  }
+
+  async listActiveExternalIds(tenantId: string, externalSource: string): Promise<string[]> {
+    return this.rows
+      .filter(
+        (r) =>
+          r.record.tenantId === tenantId &&
+          r.record.externalSource === externalSource &&
+          r.record.externalId !== null &&
+          r.record.deactivatedAt === null,
+      )
+      .map((r) => r.record.externalId as string);
+  }
+
+  async update(tenantId: string, customerId: string, patch: CustomerPatchInput): Promise<CustomerRecord> {
+    const stored = this.rows.find((r) => r.record.tenantId === tenantId && r.record.id === customerId);
+    if (!stored) throw new Error(`customer not found: ${customerId}`);
+    stored.record = { ...stored.record, ...patch };
+    if (patch.familyNameBlindIndex) stored.familyNameBlindIndex = patch.familyNameBlindIndex;
+    return stored.record;
+  }
+
+  async deactivate(tenantId: string, customerId: string): Promise<void> {
+    const stored = this.rows.find((r) => r.record.tenantId === tenantId && r.record.id === customerId);
+    if (stored) stored.record = { ...stored.record, deactivatedAt: new Date() };
+  }
+}
+
+interface StoredFamilyMember {
+  record: FamilyMemberRecord;
+}
+
+export class FakeFamilyMemberRepository implements FamilyMemberRepositoryPort {
+  private readonly rows: StoredFamilyMember[] = [];
+  private seq = 0;
+
+  private toRecord(input: NewFamilyMemberInput): FamilyMemberRecord {
+    return {
+      id: `family-member-${++this.seq}`,
+      tenantId: input.tenantId,
+      customerId: input.customerId,
+      name: input.name,
+      dob: input.dob,
+      info: input.info,
+    };
+  }
+
+  async createMany(inputs: NewFamilyMemberInput[]): Promise<FamilyMemberRecord[]> {
+    const created = inputs.map((i) => this.toRecord(i));
+    this.rows.push(...created.map((record) => ({ record })));
+    return created;
+  }
+
+  async listByCustomerId(tenantId: string, customerId: string): Promise<FamilyMemberRecord[]> {
+    return this.rows
+      .filter((r) => r.record.tenantId === tenantId && r.record.customerId === customerId)
+      .map((r) => r.record);
+  }
+
+  async replaceForCustomer(
+    tenantId: string,
+    customerId: string,
+    inputs: NewFamilyMemberInput[],
+  ): Promise<FamilyMemberRecord[]> {
+    const keep = this.rows.filter(
+      (r) => !(r.record.tenantId === tenantId && r.record.customerId === customerId),
+    );
+    this.rows.length = 0;
+    this.rows.push(...keep);
+    return this.createMany(inputs);
   }
 }

@@ -11,7 +11,8 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "build": "tsup src/server.ts --format esm --clean",
-    "seed": "tsx src/scripts/seed.ts"
+    "seed": "tsx src/scripts/seed.ts",
+    "import:reserva": "tsx src/scripts/importReservaCsv.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

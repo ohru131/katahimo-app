@@ -15,6 +15,13 @@
       "when": 1787889550393,
       "tag": "0001_cute_cerebro",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787892421627,
+      "tag": "0002_mighty_master_chief",
+      "breakpoints": true
     }
   ]
 }

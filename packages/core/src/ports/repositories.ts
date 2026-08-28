@@ -77,26 +77,101 @@ export interface TenantRepositoryPort {
   create(input: NewTenantInput): Promise<TenantRecord>;
 }
 
-export interface CustomerRecord {
+/**
+ * 顧客プロファイル。RESERVA CSVの全列(パスワード列を除く)に対応するフィールドを持つ
+ * (packages/db/src/schema/customers.ts参照)。個人特定につながる値は全てEncryptedField、
+ * 会員種別・支払状況等の分類情報はプレーンな文字列/日付として保持する。
+ */
+export interface CustomerProfileFields {
+  externalSource: string | null;
+  externalId: string | null;
+  familyNameKana: EncryptedField | null;
+  givenNameKana: EncryptedField | null;
+  email: EncryptedField | null;
+  phone: EncryptedField | null;
+  addressDetail: EncryptedField | null;
+  city: EncryptedField | null;
+  parkingArea: EncryptedField | null;
+  parkingDetail: EncryptedField | null;
+  emergencyContact: EncryptedField | null;
+  emergencyContactRelation: EncryptedField | null;
+  evacuationSite: EncryptedField | null;
+  memo: EncryptedField | null;
+  benefitMemberId: EncryptedField | null;
+  address2: EncryptedField | null;
+  address2StartDate: string | null;
+  address2EndDate: string | null;
+  latLng: EncryptedField | null;
+  memberType: string | null;
+  memberStatus: string | null;
+  paymentMethod: string | null;
+  paymentStatus: string | null;
+  gender: string | null;
+  ageBracket: string | null;
+  registeredAt: Date | null;
+  externalLastUpdatedAt: Date | null;
+}
+
+export interface CustomerRecord extends CustomerProfileFields {
   id: string;
   tenantId: string;
   name: EncryptedField;
-  phone: EncryptedField | null;
-  city: EncryptedField | null;
+  deactivatedAt: Date | null;
 }
 
-export interface NewCustomerInput {
+export interface NewCustomerInput extends Partial<CustomerProfileFields> {
   tenantId: string;
   name: EncryptedField;
   familyNameBlindIndex: string;
   givenNameBlindIndex: string;
-  phone: EncryptedField | null;
-  phoneBlindIndex: string | null;
-  city: EncryptedField | null;
-  cityBlindIndex: string | null;
+  phoneBlindIndex?: string | null;
+  cityBlindIndex?: string | null;
+  emailBlindIndex?: string | null;
 }
+
+/** 顧客の更新は「渡されたフィールドだけ上書きする」部分更新(PATCH)方式。 */
+export type CustomerPatchInput = Partial<NewCustomerInput>;
 
 export interface CustomerRepositoryPort {
   create(input: NewCustomerInput): Promise<CustomerRecord>;
+  findById(tenantId: string, customerId: string): Promise<CustomerRecord | null>;
   findByFamilyNameBlindIndex(tenantId: string, familyNameBlindIndex: string): Promise<CustomerRecord[]>;
+  findByExternalId(
+    tenantId: string,
+    externalSource: string,
+    externalId: string,
+  ): Promise<CustomerRecord | null>;
+  /** 差分取込の比較対象にする、有効(未deactivate)な外部ID一覧。 */
+  listActiveExternalIds(tenantId: string, externalSource: string): Promise<string[]>;
+  update(tenantId: string, customerId: string, patch: CustomerPatchInput): Promise<CustomerRecord>;
+  /** 物理削除はせず、deactivatedAtを設定するソフトデリート。 */
+  deactivate(tenantId: string, customerId: string): Promise<void>;
+}
+
+export interface FamilyMemberRecord {
+  id: string;
+  tenantId: string;
+  customerId: string;
+  name: EncryptedField;
+  dob: EncryptedField | null;
+  info: EncryptedField | null;
+}
+
+export interface NewFamilyMemberInput {
+  tenantId: string;
+  customerId: string;
+  name: EncryptedField;
+  dob: EncryptedField | null;
+  info: EncryptedField | null;
+}
+
+export interface FamilyMemberRepositoryPort {
+  createMany(inputs: NewFamilyMemberInput[]): Promise<FamilyMemberRecord[]>;
+  listByCustomerId(tenantId: string, customerId: string): Promise<FamilyMemberRecord[]>;
+  /** 更新時は全件入れ替え(現在の世帯構成員一覧で置き換える)。誰が増減したかの追跡はしない。 */
+  replaceForCustomer(
+    tenantId: string,
+    customerId: string,
+    inputs: NewFamilyMemberInput[],
+  ): Promise<FamilyMemberRecord[]>;
 }

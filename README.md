@@ -100,6 +100,20 @@ pnpm --filter @katahimo/web dev     # http://localhost:5173
 (`psql -U katahimo -d katahimo_dev -c "SELECT name_ciphertext FROM customers LIMIT 1"`)、暗号文であって
 平文が保存されていないことを確認できる。
 
+## 動作デモ(RESERVA CSV取込)
+
+実際のRESERVA(外部予約システム)エクスポート形式のサンプルCSV(`01_GAS/Kokyaku_202601191958_1_dummy.csv`、
+ダミー顧客398件)を取り込める。
+
+```bash
+cd packages/api
+pnpm exec tsx src/scripts/importReservaCsv.ts demo ../../Kokyaku_202601191958_1_dummy.csv
+# 差分計画(作成/更新/消失件数)を表示したうえで適用する。2回目以降は冪等(既存顧客はupdate扱い)。
+# 消失率が既存件数の20%を超える場合は最後に --force を付けない限り拒否される(安全装置)。
+```
+
+取り込んだ顧客の世帯構成員(子ども等)は`family_members`テーブルに保存され、`getCustomerDetail`(現時点ではAPI未公開、usecase単体)で復号して確認できる。
+
 ## 検証コマンド
 
 | コマンド | 内容 |
@@ -124,7 +138,7 @@ pnpm --filter @katahimo/web dev     # http://localhost:5173
 - [x] **Phase 0 — 基盤構築**: モノレポ・TS strict・Biome・Vitest・Docker/ローカルPostgreSQL・Hono空サーバー・Vite PWA雛形・health/DB疎通。
 - [x] **Phase 1 — スキーマとテナント分離(RLS)**: tenants/staff/sessions/customers/outbox_jobsをDrizzleで定義し、tenant_idを持つ全テーブルにRLSポリシーを適用(katahimo=所有者/DDL用、katahimo_app=RLS対象のアプリ用ロールに分離。実際にRLSがブロックすることを確認済み)。
 - [x] **Phase 2 — 認証(メール、一部)**: argon2idパスワードハッシュ、httpOnly Cookieセッション(tenantId埋め込みでRLSのチキン&エッグ問題を回避)、`POST /api/auth/login`・`GET /api/auth/me`・`POST /api/auth/logout`。Google認証・GAS版レガシーハッシュ引き継ぎは未着手。
-- [ ] Phase 3 — 取込・アップサート基盤
+- [x] **Phase 3 — 取込・アップサート基盤(RESERVA CSV)**: `parseFamilyInfo`/`normalizeDateStr`(GAS版`CsvImport.js`から完全移植、実サンプル398行でGAS実行結果と1件残らず一致することを検証済み)・Excelシリアル日時変換を追加し、RESERVA顧客CSV(UTF-16LE・タブ区切り・30列、パスワード列を除く全項目)のデコード/パース/外部ID突合による差分計算(作成/更新/ソフトデリート)/適用を実装。世帯構成員(子ども等)は`family_members`テーブルに全件保存し、詳細取得で復号して確認できる。消失率(取込データから消えた顧客の割合)が閾値を超えると適用を拒否する安全装置つき。実データ(`01_GAS/Kokyaku_202601191958_1_dummy.csv`、398件)を実際にPostgreSQLへ取り込み、冪等性(再取込で重複しないこと)も確認済み。
 - [ ] Phase 4 — ドメイン移植とPWA(読み取り系)
 - [ ] Phase 5 — 外部連携(Sheets/Drive/Calendar/Maps/Chat/Gemini、ミラーはoutbox)
 - [ ] Phase 6 — 勤怠(給与直結。GAS版との数値一致が必須ゲート)
