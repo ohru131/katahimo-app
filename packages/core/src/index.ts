@@ -6,3 +6,4 @@
 // この層は無変更で済む、という境界を守るためのルール。
 export * from './domain';
 export * from './ports';
+export * from './usecases';

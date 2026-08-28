@@ -72,6 +72,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@katahimo/core':
+        specifier: workspace:*
+        version: link:../core
       '@katahimo/shared':
         specifier: workspace:*
         version: link:../shared

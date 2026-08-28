@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema/index.ts"
+    "./schema": "./src/schema/index.ts",
+    "./repositories": "./src/repositories/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -18,7 +19,8 @@
     "@katahimo/shared": "workspace:*",
     "drizzle-orm": "^0.38.2",
     "postgres": "^3.4.5",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "@katahimo/core": "workspace:*"
   },
   "devDependencies": {
     "drizzle-kit": "^0.30.1"

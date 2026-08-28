@@ -78,6 +78,28 @@ curl http://localhost:8080/api/health       # {"status":"ok"}
 curl http://localhost:8080/api/health/db     # {"status":"ok","now":"..."}  ← DB接続まで確認
 ```
 
+## 動作デモ(ログイン+苗字検索)
+
+Phase 1/2の範囲で、実際にブラウザで触れるところまで実装済み。
+
+```bash
+# 1. マイグレーション適用(初回のみ。DATABASE_URLはkatahimo_app、MIGRATION_DATABASE_URLはkatahimo)
+pnpm --filter @katahimo/db exec tsx src/migrate.ts
+
+# 2. デモ用テナント・管理者・顧客データを投入(何度実行しても冪等)
+pnpm --filter @katahimo/api seed
+# -> tenantSlug=demo, admin@example.com / admin1234 が作られる
+
+# 3. APIとWebをそれぞれ起動
+pnpm --filter @katahimo/api start   # http://localhost:8080
+pnpm --filter @katahimo/web dev     # http://localhost:5173
+```
+
+`http://localhost:5173` を開き、法人ID `demo` / `admin@example.com` / `admin1234` でログイン後、「佐藤」で検索すると
+ブラインドインデックス経由で該当顧客(氏名・電話・市区町村は復号済み)が一覧表示される。DBの生カラムを直接見ると
+(`psql -U katahimo -d katahimo_dev -c "SELECT name_ciphertext FROM customers LIMIT 1"`)、暗号文であって
+平文が保存されていないことを確認できる。
+
 ## 検証コマンド
 
 | コマンド | 内容 |
@@ -100,8 +122,8 @@ curl http://localhost:8080/api/health/db     # {"status":"ok","now":"..."}  ← 
 ## 進捗(フェーズ)
 
 - [x] **Phase 0 — 基盤構築**: モノレポ・TS strict・Biome・Vitest・Docker/ローカルPostgreSQL・Hono空サーバー・Vite PWA雛形・health/DB疎通。
-- [ ] Phase 1 — スキーマとテナント分離(RLS)
-- [ ] Phase 2 — 認証(メール+Google、既存ハッシュ引き継ぎ)
+- [x] **Phase 1 — スキーマとテナント分離(RLS)**: tenants/staff/sessions/customers/outbox_jobsをDrizzleで定義し、tenant_idを持つ全テーブルにRLSポリシーを適用(katahimo=所有者/DDL用、katahimo_app=RLS対象のアプリ用ロールに分離。実際にRLSがブロックすることを確認済み)。
+- [x] **Phase 2 — 認証(メール、一部)**: argon2idパスワードハッシュ、httpOnly Cookieセッション(tenantId埋め込みでRLSのチキン&エッグ問題を回避)、`POST /api/auth/login`・`GET /api/auth/me`・`POST /api/auth/logout`。Google認証・GAS版レガシーハッシュ引き継ぎは未着手。
 - [ ] Phase 3 — 取込・アップサート基盤
 - [ ] Phase 4 — ドメイン移植とPWA(読み取り系)
 - [ ] Phase 5 — 外部連携(Sheets/Drive/Calendar/Maps/Chat/Gemini、ミラーはoutbox)

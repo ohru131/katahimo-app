@@ -11,6 +11,12 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL が必要です'),
   SESSION_SECRET: z.string().min(16, 'SESSION_SECRET は16文字以上にしてください'),
 
+  // CryptoPort/BlindIndexPortの開発用実装(LocalCryptoPort)が使うマスターキー。
+  // 32バイト(64桁hex)。本番はここではなくCloud KMSに置き換える(Phase 5)。
+  LOCAL_DEV_MASTER_KEY: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/i, 'LOCAL_DEV_MASTER_KEY は32バイト(64桁の16進数)にしてください'),
+
   // 移行期のみ必要: GAS版 Script Properties の AUTH_SALT と同じ値。
   // 未設定でも起動はできるが、既存パスワードでのログインは失敗する。
   LEGACY_AUTH_SALT: z.string().optional(),
