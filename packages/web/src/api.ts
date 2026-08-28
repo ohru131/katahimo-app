@@ -409,6 +409,23 @@ export interface DailyReportView {
   esRating: number | null;
 }
 
+/** 「訪問完了」通知のみを送信する(DB書き込みなし)。GAS版sendVisitComplete相当。 */
+export async function sendVisitCompleteNotification(
+  customerId: string,
+  visitDate: string,
+  startTime: string,
+  endTime: string,
+): Promise<void> {
+  const res = await fetch('/api/reports/visit-complete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ customerId, visitDate, startTime, endTime }),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || '訪問完了通知の送信に失敗しました');
+}
+
 export async function saveDailyReport(input: SaveDailyReportInput): Promise<DailyReportView> {
   const res = await fetch('/api/reports/daily', {
     method: 'POST',

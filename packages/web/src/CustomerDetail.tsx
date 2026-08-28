@@ -11,6 +11,74 @@ function Field({ label, value }: { label: string; value: string | null | undefin
   );
 }
 
+/**
+ * メール/電話番号の値にワンタップ操作ボタン(mailto:/tel:)を添える。GAS版showCustomerDetailの
+ * 「キーに'メール'/'電話'を含む場合はボタンを付ける」ロジックと同じ配色・ラベルにしている。
+ */
+function ContactField({
+  label,
+  value,
+  type,
+}: {
+  label: string;
+  value: string | null | undefined;
+  type: 'email' | 'phone';
+}) {
+  if (!value) return null;
+  const href = type === 'email' ? `mailto:${value}` : `tel:${value}`;
+  const badgeLabel = type === 'email' ? 'メール' : '電話';
+  const badgeClass =
+    type === 'email'
+      ? 'bg-teal-100 text-teal-700 hover:bg-teal-200'
+      : 'bg-green-100 text-green-700 hover:bg-green-200';
+  return (
+    <div>
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd className="text-sm text-gray-800 flex items-start gap-2">
+        <span className="flex-grow break-words">{value}</span>
+        <a href={href} className={`shrink-0 px-2 py-1 text-xs rounded transition-colors ${badgeClass}`}>
+          {badgeLabel}
+        </a>
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * 住所の値にGoogleMap表示ボタンを添える。GAS版showCustomerDetailと同じく、緯度経度が
+ * わかっていればそちらを優先してクエリに使う(住所文字列だけより正確なため)。GAS版が
+ * 「住所2」を対象外にしている(`!key.includes('2')`)のと同じく、この関数は主住所にのみ使う。
+ */
+function AddressField({
+  label,
+  value,
+  latLng,
+}: {
+  label: string;
+  value: string | null | undefined;
+  latLng: string | null | undefined;
+}) {
+  if (!value) return null;
+  const mapQuery = latLng?.trim() ? latLng.trim() : value;
+  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
+  return (
+    <div>
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd className="text-sm text-gray-800 flex items-start gap-2">
+        <span className="flex-grow break-words">{value}</span>
+        <a
+          href={mapUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="shrink-0 px-2 py-1 bg-blue-100 text-blue-600 text-xs rounded hover:bg-blue-200 transition-colors"
+        >
+          Map
+        </a>
+      </dd>
+    </div>
+  );
+}
+
 function formatDateTime(value: string | null): string | null {
   if (!value) return null;
   return new Date(value).toLocaleString('ja-JP');
@@ -68,15 +136,15 @@ export function CustomerDetail({ customerId, onClose }: { customerId: string; on
                   <Field label="名カナ" value={query.data.givenNameKana} />
                   <Field label="性別" value={query.data.gender} />
                   <Field label="年代" value={query.data.ageBracket} />
-                  <Field label="メールアドレス" value={query.data.email} />
-                  <Field label="電話番号" value={query.data.phone} />
+                  <ContactField label="メールアドレス" value={query.data.email} type="email" />
+                  <ContactField label="電話番号" value={query.data.phone} type="phone" />
                 </dl>
               </section>
 
               <section>
                 <h3 className="font-bold text-gray-700 text-sm mb-2">住所・駐車場</h3>
                 <dl className="grid grid-cols-2 gap-3">
-                  <Field label="住所" value={query.data.addressDetail} />
+                  <AddressField label="住所" value={query.data.addressDetail} latLng={query.data.latLng} />
                   <Field label="住所2" value={query.data.address2} />
                   <Field label="駐車場" value={query.data.parkingArea} />
                   <Field label="駐車場詳細" value={query.data.parkingDetail} />

@@ -8,11 +8,29 @@ import {
   generateDailyReportDraft,
   saveAccidentReport,
   saveDailyReport,
+  sendVisitCompleteNotification,
   uploadReceipts,
 } from '../api';
 import { markCustomerRecentlyUsed } from '../recentCustomers';
+import { useVoiceInput } from './useVoiceInput';
 
 type Mode = 'daily' | 'accident';
+
+/** GAS版index.htmlのpopulateHours()と同じ('00'〜'23')。 */
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+/** GAS版index.htmlのstartMinute/endMinuteの選択肢と同じ。 */
+const MINUTES = ['00', '15', '30', '45'];
+const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
+
+/** GAS版updateDateDisplay()と同じ表示形式。 */
+function formatDateDisplay(d: Date): string {
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日(${WEEKDAY_LABELS[d.getDay()]})`;
+}
+
+/** 'YYYY-MM-DD'(タイムゾーンのずれを避けるためtoLocaleDateString('sv-SE')を使う。AttendanceTabと同じ手法)。 */
+function formatDateKey(d: Date): string {
+  return d.toLocaleDateString('sv-SE');
+}
 
 function StarRating({
   value,
@@ -135,11 +153,67 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [mode, setMode] = useState<Mode>('daily');
   const [selectedFamilyId, setSelectedFamilyId] = useState('');
 
+  // ── 日付・時間(保育日報/事故報告で共有。GAS版のmodalDateSection/modalTimeSectionと同じ) ──
+  const [visitDate, setVisitDate] = useState(() => new Date());
+  const [startHour, setStartHour] = useState(() => localStorage.getItem('last_start_hour') || '09');
+  const [startMinute, setStartMinute] = useState(() => localStorage.getItem('last_start_minute') || '00');
+  const [endHour, setEndHour] = useState('11');
+  const [endMinute, setEndMinute] = useState('00');
+  const [sendingVisitComplete, setSendingVisitComplete] = useState(false);
+  const [visitCompleteMessage, setVisitCompleteMessage] = useState<string | null>(null);
+
+  /** GAS版changeDate()と同じ。未来日への変更は禁止する。 */
+  const changeDate = (offsetDays: number) => {
+    setVisitDate((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() + offsetDays);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const check = new Date(next);
+      check.setHours(0, 0, 0, 0);
+      if (offsetDays > 0 && check > today) return prev;
+      return next;
+    });
+  };
+  const isNextDateDisabled = (() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(visitDate);
+    target.setHours(0, 0, 0, 0);
+    return target >= today;
+  })();
+
+  /** GAS版autoSetEndTime()と同じ(開始+2時間、分は開始と同じ)。 */
+  const handleStartHourChange = (value: string) => {
+    setStartHour(value);
+    localStorage.setItem('last_start_hour', value);
+    setEndHour(String((Number.parseInt(value, 10) + 2) % 24).padStart(2, '0'));
+  };
+  const handleStartMinuteChange = (value: string) => {
+    setStartMinute(value);
+    localStorage.setItem('last_start_minute', value);
+    setEndMinute(value);
+  };
+
+  const handleVisitComplete = async () => {
+    setSendingVisitComplete(true);
+    setVisitCompleteMessage(null);
+    try {
+      await sendVisitCompleteNotification(
+        customerId,
+        formatDateKey(visitDate),
+        `${startHour}:${startMinute}`,
+        `${endHour}:${endMinute}`,
+      );
+      setVisitCompleteMessage('訪問完了の通知を送信しました');
+    } catch (e) {
+      setVisitCompleteMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSendingVisitComplete(false);
+    }
+  };
+
   // ── 保育日報 ──
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const [reportDate, setReportDate] = useState(todayStr);
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
   const [riskRating, setRiskRating] = useState<number | null>(null);
   const [esRating, setEsRating] = useState<number | null>(null);
   const [memoText, setMemoText] = useState('');
@@ -150,10 +224,14 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [savingDaily, setSavingDaily] = useState(false);
   const [dailyMessage, setDailyMessage] = useState<string | null>(null);
   const [dailyError, setDailyError] = useState<string | null>(null);
+  const dailyVoice = useVoiceInput((text) => setMemoText((prev) => (prev ? `${prev}\n${text}` : text)));
 
   // ── 事故報告/ヒヤリハット ──
   const [reportType, setReportType] = useState<'事故報告' | 'ヒヤリハット'>('事故報告');
   const [accidentMemo, setAccidentMemo] = useState('');
+  const accidentVoice = useVoiceInput((text) =>
+    setAccidentMemo((prev) => (prev ? `${prev}\n${text}` : text)),
+  );
   const [occurrenceTime, setOccurrenceTime] = useState('');
   const [location, setLocation] = useState('');
   const [accidentContent, setAccidentContent] = useState('');
@@ -182,7 +260,11 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     setGeneratingDaily(true);
     setDailyError(null);
     try {
-      const draft = await generateDailyReportDraft(memoText, startTime || undefined, endTime || undefined);
+      const draft = await generateDailyReportDraft(
+        memoText,
+        `${startHour}:${startMinute}`,
+        `${endHour}:${endMinute}`,
+      );
       setWarnings(draft.warnings);
       setInternalText(draft.internal);
       setCustomerText(draft.customer);
@@ -201,9 +283,9 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     try {
       await saveDailyReport({
         customerId,
-        reportDate,
-        startTime,
-        endTime,
+        reportDate: formatDateKey(visitDate),
+        startTime: `${startHour}:${startMinute}`,
+        endTime: `${endHour}:${endMinute}`,
         inputText: memoText,
         internalText,
         customerText,
@@ -224,7 +306,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     setGeneratingAccident(true);
     setAccidentError(null);
     try {
-      const draft = await generateAccidentReportDraft(accidentMemo, occurrenceTime || undefined);
+      const draft = await generateAccidentReportDraft(accidentMemo, `${startHour}:${startMinute}`);
       if ('error' in draft) {
         setAccidentError(draft.error);
         return;
@@ -424,56 +506,139 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
             </div>
           )}
 
-          {mode === 'daily' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label htmlFor="reportDate" className="text-xs text-gray-500 block mb-1">
-                    日付
-                  </label>
-                  <input
-                    id="reportDate"
-                    type="date"
-                    value={reportDate}
-                    onChange={(e) => setReportDate(e.target.value)}
-                    className="w-full border rounded-lg px-2 py-2 text-sm bg-gray-50"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="startTime" className="text-xs text-gray-500 block mb-1">
-                    開始時刻
-                  </label>
-                  <input
-                    id="startTime"
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full border rounded-lg px-2 py-2 text-sm bg-gray-50"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="endTime" className="text-xs text-gray-500 block mb-1">
-                    終了時刻
-                  </label>
-                  <input
-                    id="endTime"
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full border rounded-lg px-2 py-2 text-sm bg-gray-50"
-                  />
+          {/* 日付(保育日報/事故報告で共有)。GAS版modalDateSectionと同じ。 */}
+          <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-300">
+            <button
+              type="button"
+              onClick={() => changeDate(-1)}
+              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+            >
+              ‹
+            </button>
+            <div className="text-base font-bold text-gray-800">{formatDateDisplay(visitDate)}</div>
+            <button
+              type="button"
+              onClick={() => changeDate(1)}
+              disabled={isNextDateDisabled}
+              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              ›
+            </button>
+          </div>
+
+          {/* 時間(保育日報/事故報告で共有)。GAS版modalTimeSectionと同じ(hour/minuteセレクト)。 */}
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="startHour" className="text-xs text-gray-500 block mb-1">
+                開始時間/発生時間
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  id="startHour"
+                  value={startHour}
+                  onChange={(e) => handleStartHourChange(e.target.value)}
+                  className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
+                >
+                  {HOURS.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-gray-400">:</span>
+                <select
+                  value={startMinute}
+                  onChange={(e) => handleStartMinuteChange(e.target.value)}
+                  className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
+                >
+                  {MINUTES.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {mode === 'daily' && (
+              <div>
+                <label htmlFor="endHour" className="text-xs text-gray-500 block mb-1">
+                  終了時間
+                </label>
+                <div className="flex items-center gap-2">
+                  <select
+                    id="endHour"
+                    value={endHour}
+                    onChange={(e) => setEndHour(e.target.value)}
+                    className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
+                  >
+                    {HOURS.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-gray-400">:</span>
+                  <select
+                    value={endMinute}
+                    onChange={(e) => setEndMinute(e.target.value)}
+                    className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
+                  >
+                    {MINUTES.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
+            )}
 
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={handleVisitComplete}
+                disabled={sendingVisitComplete}
+                className="text-xs bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-3 py-1.5 rounded-md font-bold transition-colors"
+              >
+                {sendingVisitComplete ? '送信中...' : '訪問完了'}
+              </button>
+              {visitCompleteMessage && <p className="text-xs text-gray-500 mt-1">{visitCompleteMessage}</p>}
+            </div>
+          </div>
+
+          {mode === 'daily' && (
+            <div className="space-y-4">
               <div className="space-y-1">
                 <StarRating value={riskRating} onChange={setRiskRating} label="PSI" />
                 <StarRating value={esRating} onChange={setEsRating} label="満足度" />
               </div>
 
               <div>
-                <label htmlFor="memoText" className="text-xs text-gray-500 block mb-1">
-                  訪問メモ(口語でOK)
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label htmlFor="memoText" className="text-xs text-gray-500">
+                    訪問メモ(口語でOK・音声入力可)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={dailyVoice.toggle}
+                    className={`text-xs px-2 py-1 rounded-md flex items-center gap-1 transition-colors ${
+                      dailyVoice.listening
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                    }`}
+                  >
+                    {dailyVoice.listening ? (
+                      <>
+                        <span className="animate-pulse">🔴</span> <span>停止する</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>🎤</span> <span>音声入力</span>
+                      </>
+                    )}
+                  </button>
+                </div>
                 <textarea
                   id="memoText"
                   value={memoText}
@@ -482,6 +647,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                   placeholder="①訪問当日のサポート内容\n②お客様情報\n③振り返り"
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
                 />
+                {dailyVoice.error && <p className="text-red-500 text-xs mt-1">{dailyVoice.error}</p>}
               </div>
 
               <button
@@ -679,23 +845,30 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
               </div>
 
               <div>
-                <label htmlFor="occurrenceTime" className="text-xs text-gray-500 block mb-1">
-                  発生時間の目安
-                </label>
-                <input
-                  id="occurrenceTime"
-                  type="text"
-                  value={occurrenceTime}
-                  onChange={(e) => setOccurrenceTime(e.target.value)}
-                  placeholder="例: 14時頃"
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="accidentMemo" className="text-xs text-gray-500 block mb-1">
-                  状況メモ(口語でOK)
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label htmlFor="accidentMemo" className="text-xs text-gray-500">
+                    状況メモ(口語でOK・音声入力可)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={accidentVoice.toggle}
+                    className={`text-xs px-2 py-1 rounded-md flex items-center gap-1 transition-colors ${
+                      accidentVoice.listening
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                    }`}
+                  >
+                    {accidentVoice.listening ? (
+                      <>
+                        <span className="animate-pulse">🔴</span> <span>停止する</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>🎤</span> <span>音声入力</span>
+                      </>
+                    )}
+                  </button>
+                </div>
                 <textarea
                   id="accidentMemo"
                   value={accidentMemo}
@@ -704,6 +877,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                   placeholder="①事実を時系列で、客観的に&#10;②5W1H+初動対応&#10;③ヒヤリハットも記録"
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
                 />
+                {accidentVoice.error && <p className="text-red-500 text-xs mt-1">{accidentVoice.error}</p>}
               </div>
 
               <button
@@ -716,6 +890,19 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
               </button>
 
               {accidentError && <p className="text-red-500 text-sm">{accidentError}</p>}
+
+              <div>
+                <label htmlFor="accOccurrenceTime" className="text-xs text-gray-500 block mb-1">
+                  発生日時
+                </label>
+                <input
+                  id="accOccurrenceTime"
+                  type="text"
+                  value={occurrenceTime}
+                  onChange={(e) => setOccurrenceTime(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
+                />
+              </div>
 
               {(
                 [

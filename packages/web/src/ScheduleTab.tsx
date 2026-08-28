@@ -1,16 +1,22 @@
 import { useState } from 'react';
+import { AdminTargetStaffSelector } from './AdminTargetStaffContext';
 
 /**
  * 「予定」タブ。GAS版index.htmlのtabSchedule(今日/明日トグル・ルート取得ボタン)と同じ見た目に
  * している(移行時の混乱を減らすため)。ただし今日/明日の予定はGoogleカレンダー連携(Phase 5、
  * 実際のGCPプロジェクト・OAuth設定が必要)がまだ無いため、ここでは見た目だけを再現し、
  * 実データが無いことを正直に表示する(存在しない予定をでっち上げない)。
+ *
+ * 管理者向け「対象スタッフ」セレクタはGAS版と同様、勤怠タブと共有(AdminTargetStaffContext)
+ * で表示する。ただしカレンダー連携が無いため、選択しても表示内容は変わらない(下の空状態表示のまま)。
  */
 export function ScheduleTab() {
   const [offset, setOffset] = useState<0 | 1>(0);
 
   return (
     <div>
+      <AdminTargetStaffSelector />
+
       <div className="flex gap-2 mb-4">
         <button
           type="button"

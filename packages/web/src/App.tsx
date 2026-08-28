@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { AdminTargetStaffProvider } from './AdminTargetStaffContext';
 import { AttendanceTab } from './AttendanceTab';
 import type { StaffView } from './api';
 import { fetchMe, logout } from './api';
@@ -81,9 +82,11 @@ function AppShell({ staff, onLogout }: { staff: StaffView; onLogout: () => void 
       </header>
 
       <main className="flex-grow p-4 overflow-y-auto pb-24">
-        {activeTab === 'schedule' && <ScheduleTab />}
-        {activeTab === 'visitors' && <CustomerSearch />}
-        {activeTab === 'attendance' && <AttendanceTab staff={staff} />}
+        <AdminTargetStaffProvider staff={staff}>
+          {activeTab === 'schedule' && <ScheduleTab />}
+          {activeTab === 'visitors' && <CustomerSearch />}
+          {activeTab === 'attendance' && <AttendanceTab />}
+        </AdminTargetStaffProvider>
       </main>
 
       <nav

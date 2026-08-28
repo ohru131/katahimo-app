@@ -1,16 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import type { StaffView } from './api';
-import { fetchActiveStaffForAdmin, fetchAttendanceMonth } from './api';
+import { AdminTargetStaffSelector, useAdminTargetStaff } from './AdminTargetStaffContext';
+import { fetchAttendanceMonth } from './api';
 import { AttendanceCalendar } from './attendance/AttendanceCalendar';
 
 function currentYearMonth(): string {
   return new Date().toLocaleDateString('sv-SE').slice(0, 7); // 'YYYY-MM'
-}
-
-/** login直後(StaffView.id)/セッション復元(StaffView.staffId)でキー名が異なるため、両方見る。 */
-function ownStaffId(staff: StaffView): string {
-  return staff.staffId ?? staff.id ?? '';
 }
 
 function formatMinutes(min: number | ''): string {
@@ -95,45 +90,15 @@ function MonthlyModal({ staffId, onClose }: { staffId?: string; onClose: () => v
  * 管理者は「対象スタッフ」セレクタで他スタッフの勤怠を閲覧/編集できる
  * (packages/api/src/session.ts resolveAttendanceTargetStaffIdが、管理者以外の指定は
  * 常に無視して本人のstaffIdに強制する。GAS版PastSchedule.jsの対象スタッフセレクタと同じ役割)。
+ * 選択はAdminTargetStaffContext経由で予定タブと共有される(GAS版のsharedAdminTargetStaffNameと同じ)。
  */
-export function AttendanceTab({ staff }: { staff: StaffView }) {
+export function AttendanceTab() {
   const [showMonthly, setShowMonthly] = useState(false);
-  const [targetStaffId, setTargetStaffId] = useState(() => ownStaffId(staff));
-
-  const staffListQuery = useQuery({
-    queryKey: ['active-staff-for-admin'],
-    queryFn: fetchActiveStaffForAdmin,
-    enabled: staff.isAdmin,
-  });
-
-  // 対象スタッフとして自分自身を選んでいる場合はstaffIdを省略する(非管理者と同じ挙動にできるため)。
-  const effectiveStaffId = staff.isAdmin && targetStaffId !== ownStaffId(staff) ? targetStaffId : undefined;
+  const { effectiveStaffId } = useAdminTargetStaff();
 
   return (
     <div>
-      {staff.isAdmin && (
-        <div className="mb-3">
-          <label className="block text-xs font-bold text-gray-600 mb-1" htmlFor="attendanceTargetStaff">
-            対象スタッフ(管理者用)
-          </label>
-          <select
-            id="attendanceTargetStaff"
-            value={targetStaffId}
-            onChange={(e) => setTargetStaffId(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-          >
-            {!staffListQuery.data?.some((s) => s.id === targetStaffId) && (
-              <option value={targetStaffId}>{staff.name}(自分)</option>
-            )}
-            {staffListQuery.data?.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-                {s.id === ownStaffId(staff) ? '(自分)' : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      <AdminTargetStaffSelector />
 
       <div className="flex gap-2 mb-4">
         <button
