@@ -136,11 +136,11 @@ GAS版と同じボトムシート形式のモーダルでRESERVA CSVの全項目
   作り直した**(音声入力はWeb Speech API、`ja-JP`・`continuous`、GAS版`startVoiceInput`と同じ挙動)。
   **顧客詳細画面のメール/電話/住所にはmailto:/tel:/GoogleMap検索リンクのワンタップボタンを追加した**
   (GAS版`showCustomerDetail`と同じ配色・挙動、住所2は対象外というGAS版の除外ルールも踏襲)。
+  **「📅 予定」タブは今日/明日トグル・予定カード一覧・「🚗 ルート・移動時間を取得」ボタンをGAS版と
+  同じ見た目で実装し、予定タップで訪問先一覧タブへ切り替え検索欄に反映する(`jumpToCustomerFromSchedule`)
+  動作も再現した**(Google Calendar/Maps連携は下記の通りGAS版Web Appへのブリッジ経由。ブリッジ未設定の
+  環境ではNoopSchedulePort/NoopMapsPortにより「この日の予定はありません」の空状態を正直に表示する)。
 - **意図的に再現していない部分**(対応するバックエンド機能がまだ無いため、見た目だけ真似ると誤解を招く):
-  週間予定に表示される内容は実際のGoogleカレンダーからの取得ではなく保存済みの出勤簿の記録そのもの
-  (GAS版の「📅 カレンダーから取得」ボタンに相当する、Googleカレンダー実連携はPhase 5未実装のため無い)。
-  「📅 予定」タブはGoogleカレンダー連携(Phase 5)が無いため空の状態を正直に表示するのみで、対象スタッフ
-  セレクタを切り替えても表示内容自体は変わらない。
   AI生成(日報/事故報告の下書き・領収書OCR)は`GEMINI_API_KEY`未設定かつ管理者設定でもキー未保存の環境では
   常にフォールバック応答(GAS版が同じ状況で返すのと同じ値)になる。
 
@@ -206,9 +206,21 @@ pnpm exec tsx src/scripts/importLegacyStaff.ts demo "氏名" メールアドレ�
 - [x] **Phase 1 — スキーマとテナント分離(RLS)**: tenants/staff/sessions/customers/outbox_jobsをDrizzleで定義し、tenant_idを持つ全テーブルにRLSポリシーを適用(katahimo=所有者/DDL用、katahimo_app=RLS対象のアプリ用ロールに分離。実際にRLSがブロックすることを確認済み)。
 - [x] **Phase 2 — 認証(メール)**: argon2idパスワードハッシュ、httpOnly Cookieセッション(tenantId埋め込みでRLSのチキン&エッグ問題を回避)、`POST /api/auth/login`・`GET /api/auth/me`・`POST /api/auth/logout`。**GAS版のSHA-256+saltパスワードハッシュ(Auth.jsのcomputeHash)を、パスワード変更なしで引き継げるようにした**(`computeLegacyHash`。GAS版を実行した結果と一致することを検証済み)。ログイン成功時にargon2idへサイレント再ハッシュされ、実際にAPI経由で移行→ログイン→再ハッシュ確認→2回目ログインまで動作確認済み。Google認証(OAuth)は未着手(実GCPクライアントIDが必要なため)。
 - [x] **Phase 3 — 取込・アップサート基盤(RESERVA CSV)**: `parseFamilyInfo`/`normalizeDateStr`(GAS版`CsvImport.js`から完全移植、実サンプル398行でGAS実行結果と1件残らず一致することを検証済み)・Excelシリアル日時変換を追加し、RESERVA顧客CSV(UTF-16LE・タブ区切り・30列、パスワード列を除く全項目)のデコード/パース/外部ID突合による差分計算(作成/更新/ソフトデリート)/適用を実装。世帯構成員(子ども等)は`family_members`テーブルに全件保存し、詳細取得で復号して確認できる。消失率(取込データから消えた顧客の割合)が閾値を超えると適用を拒否する安全装置つき。実データ(`01_GAS/Kokyaku_202601191958_1_dummy.csv`、398件)を実際にPostgreSQLへ取り込み、冪等性(再取込で重複しないこと)も確認済み。**地区(city)はGAS版`Main.js`の住所パーサーを移植した`extractCityFromAddress`で住所文字列から自動抽出する**(当初は「信頼できるパーサーが無い」として未設定にしていたが、GAS版自身がこのパーサーを実務で使っていたと判明したため2026-08-28に追加)。
-- [x] **Phase 4 — 顧客詳細画面(読み取り系の一部)+ UIをGAS版に合わせて再構築**: `GET /api/customers/:id`(セッションのtenantIdのみを使用)を追加。RESERVA CSV由来の全項目・世帯構成員一覧を復号して表示する。当初はreact-router-domでページ遷移させていたが、移行時の混乱を減らすためGAS版(`gas-childcare-visit-app/index.html`)と同じ「ヘッダー+3タブ(📅 予定/🏠 訪問先一覧/🕒 勤怠)のURLなし単一ページアプリ」構造・Tailwind配色に作り直した(react-router-domは廃止)。顧客詳細はGAS版と同じボトムシートモーダルに変更。「予定」タブはCalendar連携(Phase 5)が無いため空状態を正直に表示する枠のみ。
+- [x] **Phase 4 — 顧客詳細画面(読み取り系の一部)+ UIをGAS版に合わせて再構築**: `GET /api/customers/:id`(セッションのtenantIdのみを使用)を追加。RESERVA CSV由来の全項目・世帯構成員一覧を復号して表示する。当初はreact-router-domでページ遷移させていたが、移行時の混乱を減らすためGAS版(`gas-childcare-visit-app/index.html`)と同じ「ヘッダー+3タブ(📅 予定/🏠 訪問先一覧/🕒 勤怠)のURLなし単一ページアプリ」構造・Tailwind配色に作り直した(react-router-domは廃止)。顧客詳細はGAS版と同じボトムシートモーダルに変更。「予定」タブは当時Calendar連携(Phase 5)が無かったため空状態を表示する枠のみだったが、後述のPhase 5進捗で実装した。
 - [x] **日報/事故報告/活動記録/領収書登録**: `daily_reports`/`accident_reports`/`receipts`テーブル(自由記述はattendance_daysと同じくJSON1本にまとめて暗号化)、`POST /api/reports/daily`・`/accident`・`/daily/generate`・`/accident/generate`・`GET /api/reports/history`・`POST /api/receipts`・`/ocr`を実装。GAS版`GeminiReport.js`の`callGemini`(思考パートのスキップ・コードフェンス除去・改行アンエスケープ・HTTPステータス別エラーメッセージ)と`Main.js`の`getCustomerReports`/`saveReport`/`saveAccidentReport`/`uploadReceiptsOnly`をNode実行結果と突き合わせて移植。`GEMINI_API_KEY`未設定時はGAS版と同じフォールバック応答を返す(`NoopReportAiPort`)。領収書画像は`StoragePort`(ローカル開発は`LocalFileStoragePort`、本番はGCS想定)に保存し、Google Chat通知は`WebhookNotifierPort`(Webhook URL未設定時はスキップ)で送る。Web UIは訪問先一覧のカードタップで報告作成モーダル、「顧客情報」「活動記録」ボタンでそれぞれ専用モーダルを開く3導線構成にした(GAS版の`openModal`/`showCustomerDetail`/`showCustomerHistory`と同じ使い分け)。ローカルPostgreSQL+APIで一気通貫の動作確認済み(Gemini実API呼び出し自体はAPIキー未設定のため未検証)。
-- [ ] Phase 5 — 外部連携(Sheets/Drive/Calendar/Maps、ミラーはoutbox。Chat/Geminiは上記で先行実装済み)
+- [ ] **Phase 5 — 外部連携(Sheets/Drive/Calendar/Maps、ミラーはoutbox。Chat/Geminiは上記で先行実装済み)**: 着手中。
+  Google Maps Platform(新規契約・課金設定が必要)を避けるため、**稼働中のgas-childcare-visit-app Web App
+  (`Bridge.js`)を軽量なJSON APIプロキシとして再利用する方式にした**。GASのMapsサービス
+  (`Maps.newGeocoder`/`newDirectionFinder`、無料)と、既に本番で動いているカレンダー解析・ルート計算
+  ロジック(`RouteSearch.js`の`getScheduleForStaffOnDate`/`getScheduleWithRouteForStaffOnDate`)を
+  そのまま呼び出すだけなので、複雑な分類ロジック(RESERVA予約タイトルの判定・スタッフ突合等)を
+  TypeScript側で再実装せずに済み、本番との挙動ずれリスクを避けられる。`SchedulePort`/`MapsPort`
+  (`GasBridgeSchedulePort`/`GasBridgeMapsPort`、`GAS_BRIDGE_URL`/`GAS_BRIDGE_SECRET`未設定時は
+  `NoopSchedulePort`/`NoopMapsPort`にフォールバック)・`GET /api/schedule`・`GET /api/schedule/route`・
+  「📅 予定」タブの実データ表示までコード上は実装済み。**ただしBridge.jsの本番デプロイ
+  (`clasp push`/新デプロイ作成)とScript PropertiesへのBRIDGE_API_SECRET設定はユーザー承認待ちのため
+  未実施**で、実際にAPIを叩いての動作検証(このリポジトリのLogic verification規約が求める検証)は
+  まだ行っていない。Sheets/Drive連携(ミラー書き込み)は未着手。
 - [x] **Phase 6 — 勤怠計算エンジン+Googleカレンダー風週間予定UI(給与直結。合成データでGAS版との数値一致を検証済み)**: `AttendanceCalc.js`(GAS版)をNode上でそのまま実行した結果を正解として、TypeScript移植版(`packages/core/src/domain/attendance/`)を合成データ19ケース+月次集計で1件残らず突き合わせ、完全一致を確認。`attendance_days`テーブル(入力列のみをJSON化して1本の暗号文として保存、派生値は保存せず都度計算)・`GET/PUT /api/attendance/day`・`GET /api/attendance/month`を実装。**Web UIはGAS版と同じGoogleカレンダー風の週間予定表示(`GET /api/attendance/week`)に作り直した**(`buildScheduleEventsFromRowData`もGAS版と一致検証済み。表示内容は実際のGoogleカレンダーからではなく保存済みの出勤簿の記録をそのまま色分け表示しているだけなので、Phase 5のCalendar連携が無くても動く)。予定(訪問その1〜3・事務作業その1〜2)をタップして個別編集、「移動・距離・その他」パネルで日単位の項目をまとめて編集、という操作フローもGAS版と同じにした。管理者以外は自分の勤怠にしか読み書きできない(PastSchedule.jsと同じアクセス制御パターン)。**実際の出勤簿データでの数値照合はPhase 7で行う(このフェーズでは計算式の正しさのみを保証)**。
 - [ ] Phase 7 — 並行運用と照合
 - [ ] Phase 8 — 切替と旧システム停止
