@@ -26,6 +26,16 @@ const envSchema = z.object({
   GOOGLE_OAUTH_REDIRECT_URI: z.string().optional(),
 
   GOOGLE_MAPS_API_KEY: z.string().optional(),
+
+  // katahimo-app単体ではAPIキー不要のMapsサービス(Maps.newGeocoder/newDirectionFinder)を
+  // 直接呼べない(Apps Script実行環境の外からは使えないため)。稼働中のgas-childcare-visit-app
+  // のWeb Appデプロイを軽量なプロキシとして使うことで、Google Maps Platformの新規契約
+  // (APIキー・課金設定)を避けられる。GAS_BRIDGE_URLはそのWeb Appの/execエンドポイント、
+  // GAS_BRIDGE_SECRETはGAS側Bridge.jsのBRIDGE_API_SECRET(Script Properties)と同じ値。
+  // 未設定の場合はNoopMapsPort(常にnullを返す)にフォールバックする。
+  GAS_BRIDGE_URL: z.string().optional(),
+  GAS_BRIDGE_SECRET: z.string().optional(),
+
   GEMINI_API_KEY: z.string().optional(),
   // 日報/事故報告生成・領収書OCRに使うモデル名(未設定時はGAS版と同じデフォルトを使う)。
   GEMINI_MODEL_REPORT: z.string().optional(),

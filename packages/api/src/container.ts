@@ -1,4 +1,10 @@
-import type { NotifierPort, ReportAiPort, ReportAiPortFactory, StoragePort } from '@katahimo/core/ports';
+import type {
+  MapsPort,
+  NotifierPort,
+  ReportAiPort,
+  ReportAiPortFactory,
+  StoragePort,
+} from '@katahimo/core/ports';
 import type { Database } from '@katahimo/db';
 import {
   DrizzleAccidentReportRepository,
@@ -13,11 +19,13 @@ import {
   DrizzleTenantRepository,
 } from '@katahimo/db/repositories';
 import {
+  GasBridgeMapsPort,
   GeminiAiPort,
   LocalBlindIndexPort,
   LocalCryptoPort,
   LocalFileStoragePort,
   listAvailableGeminiModels,
+  NoopMapsPort,
   NoopReportAiPort,
   WebhookNotifierPort,
 } from '@katahimo/integrations';
@@ -47,6 +55,12 @@ export interface Container {
   reportAiFactory: ReportAiPortFactory;
   /** 管理者設定画面の「最新モデル一覧を取得」用。保存前の入力中キーでも確認できるよう独立させている。 */
   listGeminiModels: typeof listAvailableGeminiModels;
+  /**
+   * ジオコーディング/ルート計算。GAS_BRIDGE_URL/GAS_BRIDGE_SECRETが設定されていれば
+   * gas-childcare-visit-appのWeb App(Bridge.js)をプロキシとして使い、未設定ならNoopMapsPort
+   * (常にnull)にフォールバックする。
+   */
+  maps: MapsPort;
   /** GAS版 Script Properties AUTH_SALT と同じ値。移行済みスタッフのログインにのみ使う。 */
   legacyAuthSalt?: string;
 }
@@ -88,6 +102,10 @@ export function createContainer(env: Env, db: Database): Container {
       : new NoopReportAiPort(),
     reportAiFactory: { create: (opts) => new GeminiAiPort(opts) },
     listGeminiModels: listAvailableGeminiModels,
+    maps:
+      env.GAS_BRIDGE_URL && env.GAS_BRIDGE_SECRET
+        ? new GasBridgeMapsPort({ baseUrl: env.GAS_BRIDGE_URL, secret: env.GAS_BRIDGE_SECRET })
+        : new NoopMapsPort(),
     legacyAuthSalt: env.LEGACY_AUTH_SALT,
   };
 }
