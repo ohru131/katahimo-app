@@ -1,10 +1,13 @@
 import { createHash, createHmac } from 'node:crypto';
 import type { BlindIndexPort, CryptoPort, EncryptedValue } from '../ports/crypto';
 import type {
+  AttendanceDayRecord,
+  AttendanceDayRepositoryPort,
   CustomerPatchInput,
   CustomerProfileFields,
   CustomerRecord,
   CustomerRepositoryPort,
+  EncryptedField,
   FamilyMemberRecord,
   FamilyMemberRepositoryPort,
   NewCustomerInput,
@@ -262,5 +265,56 @@ export class FakeFamilyMemberRepository implements FamilyMemberRepositoryPort {
     this.rows.length = 0;
     this.rows.push(...keep);
     return this.createMany(inputs);
+  }
+}
+
+export class FakeAttendanceDayRepository implements AttendanceDayRepositoryPort {
+  private readonly rows: AttendanceDayRecord[] = [];
+  private seq = 0;
+
+  async findByStaffAndDate(
+    tenantId: string,
+    staffId: string,
+    businessDate: string,
+  ): Promise<AttendanceDayRecord | null> {
+    return (
+      this.rows.find(
+        (r) => r.tenantId === tenantId && r.staffId === staffId && r.businessDate === businessDate,
+      ) ?? null
+    );
+  }
+
+  async upsert(
+    tenantId: string,
+    staffId: string,
+    businessDate: string,
+    rowData: EncryptedField,
+  ): Promise<AttendanceDayRecord> {
+    const existing = this.rows.find(
+      (r) => r.tenantId === tenantId && r.staffId === staffId && r.businessDate === businessDate,
+    );
+    if (existing) {
+      existing.rowData = rowData;
+      return existing;
+    }
+    const record: AttendanceDayRecord = {
+      id: `attendance-day-${++this.seq}`,
+      tenantId,
+      staffId,
+      businessDate,
+      rowData,
+    };
+    this.rows.push(record);
+    return record;
+  }
+
+  async listByStaffAndMonth(
+    tenantId: string,
+    staffId: string,
+    yearMonth: string,
+  ): Promise<AttendanceDayRecord[]> {
+    return this.rows.filter(
+      (r) => r.tenantId === tenantId && r.staffId === staffId && r.businessDate.startsWith(yearMonth),
+    );
   }
 }

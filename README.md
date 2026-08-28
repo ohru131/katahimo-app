@@ -114,7 +114,16 @@ pnpm exec tsx src/scripts/importReservaCsv.ts demo ../../Kokyaku_202601191958_1_
 # 消失率が既存件数の20%を超える場合は最後に --force を付けない限り拒否される(安全装置)。
 ```
 
-取り込んだ顧客の世帯構成員(子ども等)は`family_members`テーブルに保存され、`getCustomerDetail`(現時点ではAPI未公開、usecase単体)で復号して確認できる。
+取り込んだ顧客の世帯構成員(子ども等)は`family_members`テーブルに保存され、顧客詳細画面(`/customers/:id`)で復号して確認できる。
+
+## 動作デモ(勤怠・出勤簿)
+
+`/attendance` を開くと、対象日を選んで出勤簿の入力列(訪問その1〜3・事務作業・移動距離等)を入力・保存でき、
+保存直後にGAS版と数値一致を検証済みの計算式(労働時間・残業・移動時間・基準距離超過回数等)がその場で表示される。
+下部の月次集計では対象月を選ぶと、入力済みの日をまとめて集計した値を確認できる。
+
+管理者以外は自分自身の勤怠にしか読み書きできない(`?staffId=`クエリは管理者のみ有効。
+GAS版`PastSchedule.js`の`resolvePastScheduleTargetStaffName_`と同じアクセス制御パターン)。
 
 ## 検証コマンド
 
@@ -143,7 +152,7 @@ pnpm exec tsx src/scripts/importReservaCsv.ts demo ../../Kokyaku_202601191958_1_
 - [x] **Phase 3 — 取込・アップサート基盤(RESERVA CSV)**: `parseFamilyInfo`/`normalizeDateStr`(GAS版`CsvImport.js`から完全移植、実サンプル398行でGAS実行結果と1件残らず一致することを検証済み)・Excelシリアル日時変換を追加し、RESERVA顧客CSV(UTF-16LE・タブ区切り・30列、パスワード列を除く全項目)のデコード/パース/外部ID突合による差分計算(作成/更新/ソフトデリート)/適用を実装。世帯構成員(子ども等)は`family_members`テーブルに全件保存し、詳細取得で復号して確認できる。消失率(取込データから消えた顧客の割合)が閾値を超えると適用を拒否する安全装置つき。実データ(`01_GAS/Kokyaku_202601191958_1_dummy.csv`、398件)を実際にPostgreSQLへ取り込み、冪等性(再取込で重複しないこと)も確認済み。
 - [x] **Phase 4 — 顧客詳細画面(読み取り系の一部)**: `GET /api/customers/:id`(セッションのtenantIdのみを使用)と、react-router-domによる`/customers/:id`詳細画面を追加。RESERVA CSV由来の全項目・世帯構成員一覧を復号して表示する。今後の詳細画面は「予定/訪問先一覧/勤怠」の3タブ(Phase 5のCalendar/Maps連携が前提)の実装で続きを進める。
 - [ ] Phase 5 — 外部連携(Sheets/Drive/Calendar/Maps/Chat/Gemini、ミラーはoutbox)
-- [ ] Phase 6 — 勤怠(給与直結。GAS版との数値一致が必須ゲート)
+- [x] **Phase 6 — 勤怠計算エンジン(給与直結。合成データでGAS版との数値一致を検証済み)**: `AttendanceCalc.js`(GAS版)をNode上でそのまま実行した結果を正解として、TypeScript移植版(`packages/core/src/domain/attendance/`)を合成データ19ケース+月次集計で1件残らず突き合わせ、完全一致を確認。`attendance_days`テーブル(入力列のみをJSON化して1本の暗号文として保存、派生値は保存せず都度計算)・`GET/PUT /api/attendance/day`・`GET /api/attendance/month`・Web側の入力フォーム+月次集計画面を実装した。管理者以外は自分の勤怠にしか読み書きできない(PastSchedule.jsと同じアクセス制御パターン)。**実際の出勤簿データでの数値照合はPhase 7で行う(このフェーズでは計算式の正しさのみを保証)**。
 - [ ] Phase 7 — 並行運用と照合
 - [ ] Phase 8 — 切替と旧システム停止
 

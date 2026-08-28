@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { createContainer } from './container';
 import type { Env } from './env';
+import { createAttendanceRoutes } from './routes/attendance';
 import { createAuthRoutes } from './routes/auth';
 import { createCustomerRoutes } from './routes/customers';
 
@@ -30,6 +31,7 @@ export function createApp(deps: AppDeps) {
 
   app.route('/api/auth', createAuthRoutes(container, deps.env.NODE_ENV === 'production'));
   app.route('/api/customers', createCustomerRoutes(container));
+  app.route('/api/attendance', createAttendanceRoutes(container));
 
   app.notFound((c) => c.json({ code: 'not_found', message: '該当するAPIがありません' }, 404));
 

@@ -1,5 +1,6 @@
 import type { Database } from '@katahimo/db';
 import {
+  DrizzleAttendanceDayRepository,
   DrizzleCustomerRepository,
   DrizzleFamilyMemberRepository,
   DrizzleSessionRepository,
@@ -17,6 +18,7 @@ export interface Container {
   sessions: DrizzleSessionRepository;
   customers: DrizzleCustomerRepository;
   familyMembers: DrizzleFamilyMemberRepository;
+  attendanceDays: DrizzleAttendanceDayRepository;
   crypto: LocalCryptoPort;
   blindIndex: LocalBlindIndexPort;
   passwordHasher: typeof argon2PasswordHasher;
@@ -29,6 +31,7 @@ export function createContainer(env: Env, db: Database): Container {
     sessions: new DrizzleSessionRepository(db),
     customers: new DrizzleCustomerRepository(db),
     familyMembers: new DrizzleFamilyMemberRepository(db),
+    attendanceDays: new DrizzleAttendanceDayRepository(db),
     crypto: new LocalCryptoPort(env.LOCAL_DEV_MASTER_KEY),
     blindIndex: new LocalBlindIndexPort(env.LOCAL_DEV_MASTER_KEY),
     passwordHasher: argon2PasswordHasher,

@@ -99,3 +99,103 @@ export async function fetchCustomerDetail(customerId: string): Promise<CustomerD
   const body = await parseJsonOrThrow<{ customer: CustomerDetailView }>(res);
   return body.customer;
 }
+
+/** 出勤簿テンプレートの入力列(PastSchedule.jsのPAST_SCHEDULE_INPUT_COLUMNSと同じ列記号)。 */
+export interface AttendanceRowData {
+  C?: string;
+  D?: string;
+  E?: string;
+  H?: string;
+  I?: string;
+  L?: string;
+  M?: string;
+  N?: string;
+  Q?: string;
+  R?: string;
+  U?: string;
+  V?: string;
+  W?: string;
+  X?: string;
+  Y?: string;
+  Z?: string;
+  AA?: string;
+  AB?: string;
+  AC?: string;
+  AG?: string;
+  AH?: string;
+  AI?: string;
+  AJ?: string;
+  AN?: string;
+  AO?: string;
+}
+
+export interface AttendanceDayDerived {
+  leg1MoveStart: string;
+  leg1MoveEnd: string;
+  leg1WeatherAdjustedMoveMin: number | '';
+  leg1WaitMin: number | '';
+  leg2MoveStart: string;
+  leg2MoveEnd: string;
+  leg2WeatherAdjustedMoveMin: number | '';
+  leg2WaitMin: number | '';
+  laborMinutes: number;
+  overtimeMinutes: number;
+  totalMoveMin: number;
+  totalDistanceKm: number;
+  overThresholdCount: number;
+  visitCount: number;
+}
+
+export interface AttendanceDayView {
+  businessDate: string;
+  rowData: AttendanceRowData;
+  derived: AttendanceDayDerived;
+}
+
+export interface AttendanceMonthlyTotals {
+  laborMinutes: number;
+  overtimeMinutes: number;
+  totalMoveMin: number;
+  leg1DistanceKmTotal: number;
+  leg2DistanceKmTotal: number;
+  attendanceDistanceKmTotal: number;
+  leavingDistanceKmTotal: number;
+  totalDistanceKm: number;
+  overThresholdCount: number;
+  visitCountTotal: number;
+  shoppingErrandTotal: number;
+}
+
+export interface AttendanceMonthView {
+  yearMonth: string;
+  days: AttendanceDayView[];
+  totals: AttendanceMonthlyTotals;
+}
+
+export async function fetchAttendanceDay(date: string): Promise<AttendanceDayView> {
+  const res = await fetch(`/api/attendance/day?date=${encodeURIComponent(date)}`, { credentials: 'include' });
+  const body = await parseJsonOrThrow<{ attendance: AttendanceDayView }>(res);
+  return body.attendance;
+}
+
+export async function saveAttendanceDay(
+  date: string,
+  rowData: AttendanceRowData,
+): Promise<AttendanceDayView> {
+  const res = await fetch('/api/attendance/day', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ date, rowData }),
+  });
+  const body = await parseJsonOrThrow<{ attendance: AttendanceDayView }>(res);
+  return body.attendance;
+}
+
+export async function fetchAttendanceMonth(yearMonth: string): Promise<AttendanceMonthView> {
+  const res = await fetch(`/api/attendance/month?month=${encodeURIComponent(yearMonth)}`, {
+    credentials: 'include',
+  });
+  const body = await parseJsonOrThrow<{ month: AttendanceMonthView }>(res);
+  return body.month;
+}

@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Link, Route, Routes } from 'react-router-dom';
+import { AttendancePage } from './AttendancePage';
 import type { StaffView } from './api';
 import { fetchMe, logout } from './api';
 import { CustomerDetail } from './CustomerDetail';
@@ -13,6 +14,9 @@ function SearchPage({ staff, onLogout }: { staff: StaffView; onLogout: () => voi
       <h1>katahimo 訪問管理</h1>
       <p>
         ログイン中: {staff.name}({staff.email}){staff.isAdmin && ' [管理者]'}
+      </p>
+      <p>
+        <Link to="/attendance">勤怠(出勤簿)を開く</Link>
       </p>
       <button type="button" onClick={onLogout}>
         ログアウト
@@ -68,6 +72,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<SearchPage staff={staff} onLogout={handleLogout} />} />
       <Route path="/customers/:id" element={<CustomerDetail />} />
+      <Route path="/attendance" element={<AttendancePage />} />
     </Routes>
   );
 }

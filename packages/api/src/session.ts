@@ -1,4 +1,5 @@
 import { resolveSession } from '@katahimo/core';
+import type { ResolvedSession } from '@katahimo/core/usecases';
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Container } from './container';
@@ -16,4 +17,21 @@ export async function getAuthenticatedSession(c: Context, container: Container) 
   const cookieValue = getCookie(c, SESSION_COOKIE_NAME);
   if (!cookieValue) return null;
   return resolveSession(container, cookieValue);
+}
+
+/**
+ * 管理者以外は自分自身のstaffIdに強制し、管理者だけが明示的なstaffIdクエリで
+ * 他スタッフを指定できるようにする。
+ *
+ * 移植元: gas-childcare-visit-app/PastSchedule.js の resolvePastScheduleTargetStaffName_
+ * (getPastScheduleAccessContext_とセットで使われるパターン)と同じ考え方。この関数は
+ * 「管理者が他スタッフの勤怠を閲覧/編集する」機能を追加するたびに複製せず、ここに集約する。
+ */
+export function resolveAttendanceTargetStaffId(
+  session: ResolvedSession,
+  requestedStaffId: string | undefined,
+): string {
+  if (!session.isAdmin) return session.staffId;
+  const requested = (requestedStaffId ?? '').trim();
+  return requested || session.staffId;
 }

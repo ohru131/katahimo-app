@@ -175,3 +175,34 @@ export interface FamilyMemberRepositoryPort {
     inputs: NewFamilyMemberInput[],
   ): Promise<FamilyMemberRecord[]>;
 }
+
+/**
+ * 勤怠(出勤簿)1日分。rowDataは packages/core/src/domain/attendance/types.ts の
+ * AttendanceRowData(入力列のみ)をJSON化して暗号化したもの。労働時間・残業・距離集計等の
+ * 派生値は保存しない(常にrowDataから都度計算する。packages/db/src/schema/attendanceDays.ts参照)。
+ */
+export interface AttendanceDayRecord {
+  id: string;
+  tenantId: string;
+  staffId: string;
+  /** 'YYYY-MM-DD' */
+  businessDate: string;
+  rowData: EncryptedField;
+}
+
+export interface AttendanceDayRepositoryPort {
+  findByStaffAndDate(
+    tenantId: string,
+    staffId: string,
+    businessDate: string,
+  ): Promise<AttendanceDayRecord | null>;
+  /** 指定日のrowDataを丸ごと置き換える(無ければ作成)。入力列だけを持つ設計のため部分更新の概念が無い。 */
+  upsert(
+    tenantId: string,
+    staffId: string,
+    businessDate: string,
+    rowData: EncryptedField,
+  ): Promise<AttendanceDayRecord>;
+  /** yearMonthは 'YYYY-MM'。月次集計(computeMonthlyTotals)の入力に使う。 */
+  listByStaffAndMonth(tenantId: string, staffId: string, yearMonth: string): Promise<AttendanceDayRecord[]>;
+}
