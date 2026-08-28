@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import type { AttendanceRowData } from './api';
 import { fetchAttendanceDay, fetchAttendanceMonth, saveAttendanceDay } from './api';
 
@@ -29,25 +29,35 @@ interface FieldProps {
 
 function Field({ label, fieldKey, type = 'text', value, onChange }: FieldProps) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.85rem', gap: '0.2rem' }}>
+    <label className="flex flex-col text-xs font-medium text-gray-600 gap-1">
       {label}
       <input
         type={type}
         value={value[fieldKey] ?? ''}
         onChange={(e) => onChange(fieldKey, e.target.value)}
-        style={{ padding: '0.25rem' }}
+        className="p-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-800"
       />
     </label>
   );
 }
 
+function Card({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-3">
+      <h3 className="font-bold text-gray-700 text-sm mb-3">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
 /**
- * 勤怠(出勤簿)の1日入力・月次集計画面。出勤簿テンプレートの入力列のみを扱い、
- * 労働時間・残業・移動距離・基準距離超過回数などの派生値は
- * packages/core/src/domain/attendance/attendanceCalc.ts(GAS版と数値一致を検証済み)で
- * 都度計算した結果を表示する。カレンダー連携(Phase 5)が無いため、現時点では手入力のみ。
+ * 「勤怠」タブ。GAS版のtabPastSchedule(月次集計モーダル等)と同じカード基調の見た目にしている
+ * (移行時の混乱を減らすため)。出勤簿テンプレートの入力列のみを扱い、労働時間・残業・移動距離・
+ * 基準距離超過回数などの派生値は packages/core/src/domain/attendance/attendanceCalc.ts
+ * (GAS版と数値一致を検証済み)で都度計算した結果を表示する。カレンダー連携(Phase 5)がまだ無いため、
+ * 現時点では手入力のみ。
  */
-export function AttendancePage() {
+export function AttendanceTab() {
   const queryClient = useQueryClient();
   const [date, setDate] = useState(todayStr());
   const [yearMonth, setYearMonth] = useState(currentYearMonth());
@@ -82,19 +92,25 @@ export function AttendancePage() {
   const derived = dayQuery.data?.derived;
 
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem', maxWidth: 640 }}>
-      <p>
-        <Link to="/">← 検索に戻る</Link>
-      </p>
-      <h1>勤怠(出勤簿)</h1>
-
-      <section style={{ marginBottom: '1.5rem' }}>
-        <label>
-          対象日: <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+    <div>
+      <div className="mb-3">
+        <label className="block text-xs font-bold text-gray-600 mb-1" htmlFor="attendanceDate">
+          対象日
         </label>
-      </section>
+        <input
+          id="attendanceDate"
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="w-full p-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+        />
+      </div>
 
-      {dayQuery.isPending && <p>読み込み中…</p>}
+      {dayQuery.isPending && (
+        <div className="flex justify-center py-8">
+          <div className="w-8 h-8 rounded-full border-4 border-gray-200 loading-spinner" />
+        </div>
+      )}
 
       {dayQuery.data && (
         <form
@@ -103,9 +119,8 @@ export function AttendancePage() {
             saveMutation.mutate();
           }}
         >
-          <fieldset style={{ marginBottom: '1rem' }}>
-            <legend>訪問その1</legend>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+          <Card title="訪問その1">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="訪問先等" fieldKey="C" value={rowData} onChange={handleChange} />
               <Field label="始業" fieldKey="D" type="time" value={rowData} onChange={handleChange} />
               <Field label="終業" fieldKey="E" type="time" value={rowData} onChange={handleChange} />
@@ -116,7 +131,7 @@ export function AttendancePage() {
                 value={rowData}
                 onChange={handleChange}
               />
-              <Field label="天候(雪 で移動時間1.3倍)" fieldKey="I" value={rowData} onChange={handleChange} />
+              <Field label="天候(雪で移動時間1.3倍)" fieldKey="I" value={rowData} onChange={handleChange} />
               <Field
                 label="→#2移動距離(km)"
                 fieldKey="AG"
@@ -132,11 +147,10 @@ export function AttendancePage() {
                 onChange={handleChange}
               />
             </div>
-          </fieldset>
+          </Card>
 
-          <fieldset style={{ marginBottom: '1rem' }}>
-            <legend>訪問その2</legend>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+          <Card title="訪問その2">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="訪問先等" fieldKey="L" value={rowData} onChange={handleChange} />
               <Field label="始業" fieldKey="M" type="time" value={rowData} onChange={handleChange} />
               <Field label="終業" fieldKey="N" type="time" value={rowData} onChange={handleChange} />
@@ -163,20 +177,18 @@ export function AttendancePage() {
                 onChange={handleChange}
               />
             </div>
-          </fieldset>
+          </Card>
 
-          <fieldset style={{ marginBottom: '1rem' }}>
-            <legend>訪問その3</legend>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+          <Card title="訪問その3">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="訪問先等" fieldKey="U" value={rowData} onChange={handleChange} />
               <Field label="始業" fieldKey="V" type="time" value={rowData} onChange={handleChange} />
               <Field label="終業" fieldKey="W" type="time" value={rowData} onChange={handleChange} />
             </div>
-          </fieldset>
+          </Card>
 
-          <fieldset style={{ marginBottom: '1rem' }}>
-            <legend>事務作業</legend>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+          <Card title="事務作業">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="作業1" fieldKey="X" value={rowData} onChange={handleChange} />
               <Field label="開始" fieldKey="Y" type="time" value={rowData} onChange={handleChange} />
               <Field label="終了" fieldKey="Z" type="time" value={rowData} onChange={handleChange} />
@@ -184,14 +196,13 @@ export function AttendancePage() {
               <Field label="開始" fieldKey="AB" type="time" value={rowData} onChange={handleChange} />
               <Field label="終了" fieldKey="AC" type="time" value={rowData} onChange={handleChange} />
             </div>
-            <p style={{ fontSize: '0.8rem', color: '#666' }}>
+            <p className="text-xs text-gray-400 mt-2">
               作業名に「mtg」を含めると、その時間帯は所定内(残業扱いにしない)特例になります。
             </p>
-          </fieldset>
+          </Card>
 
-          <fieldset style={{ marginBottom: '1rem' }}>
-            <legend>その他</legend>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem' }}>
+          <Card title="その他">
+            <div className="grid grid-cols-2 gap-3">
               <Field
                 label="買物代行(回数)"
                 fieldKey="AN"
@@ -201,19 +212,24 @@ export function AttendancePage() {
               />
               <Field label="備考" fieldKey="AO" value={rowData} onChange={handleChange} />
             </div>
-          </fieldset>
+          </Card>
 
-          <button type="submit" disabled={saveMutation.isPending}>
+          <button
+            type="submit"
+            disabled={saveMutation.isPending}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl transition-colors mb-4"
+          >
             {saveMutation.isPending ? '保存中…' : '保存する'}
           </button>
-          {saveMutation.isError && <p style={{ color: '#b91c1c' }}>{saveMutation.error.message}</p>}
+          {saveMutation.isError && (
+            <p className="text-red-500 text-sm text-center mb-3">{saveMutation.error.message}</p>
+          )}
         </form>
       )}
 
       {derived && (
-        <section style={{ marginTop: '1.5rem' }}>
-          <h2>この日の計算結果</h2>
-          <ul>
+        <Card title="この日の計算結果">
+          <ul className="text-sm text-gray-800 space-y-1">
             <li>労働時間: {formatMinutes(derived.laborMinutes)}</li>
             <li>残業時間: {formatMinutes(derived.overtimeMinutes)}</li>
             <li>移動時間合計: {formatMinutes(derived.totalMoveMin)}</li>
@@ -221,27 +237,36 @@ export function AttendancePage() {
             <li>基準距離超過回数: {derived.overThresholdCount}</li>
             <li>訪問等回数: {derived.visitCount}</li>
           </ul>
-        </section>
+        </Card>
       )}
 
-      <section style={{ marginTop: '2rem', borderTop: '1px solid #ccc', paddingTop: '1rem' }}>
-        <h2>月次集計</h2>
-        <label>
-          対象月: <input type="month" value={yearMonth} onChange={(e) => setYearMonth(e.target.value)} />
-        </label>
+      <div className="mt-6 pt-4 border-t border-gray-200">
+        <h2 className="font-bold text-gray-700 text-sm mb-2">📊 月次集計</h2>
+        <input
+          type="month"
+          value={yearMonth}
+          onChange={(e) => setYearMonth(e.target.value)}
+          className="w-full mb-3 p-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+        />
 
-        {monthQuery.isPending && <p>読み込み中…</p>}
-        {monthQuery.data && (
-          <ul>
-            <li>入力済み日数: {monthQuery.data.days.length}</li>
-            <li>労働時間合計: {formatMinutes(monthQuery.data.totals.laborMinutes)}</li>
-            <li>残業時間合計: {formatMinutes(monthQuery.data.totals.overtimeMinutes)}</li>
-            <li>移動距離合計: {monthQuery.data.totals.totalDistanceKm}km</li>
-            <li>基準距離超過回数合計: {monthQuery.data.totals.overThresholdCount}</li>
-            <li>買物代行合計: {monthQuery.data.totals.shoppingErrandTotal}</li>
-          </ul>
+        {monthQuery.isPending && (
+          <div className="flex justify-center py-4">
+            <div className="w-6 h-6 rounded-full border-4 border-gray-200 loading-spinner" />
+          </div>
         )}
-      </section>
-    </main>
+        {monthQuery.data && (
+          <Card title={`${monthQuery.data.yearMonth} の集計`}>
+            <ul className="text-sm text-gray-800 space-y-1">
+              <li>入力済み日数: {monthQuery.data.days.length}</li>
+              <li>労働時間合計: {formatMinutes(monthQuery.data.totals.laborMinutes)}</li>
+              <li>残業時間合計: {formatMinutes(monthQuery.data.totals.overtimeMinutes)}</li>
+              <li>移動距離合計: {monthQuery.data.totals.totalDistanceKm}km</li>
+              <li>基準距離超過回数合計: {monthQuery.data.totals.overThresholdCount}</li>
+              <li>買物代行合計: {monthQuery.data.totals.shoppingErrandTotal}</li>
+            </ul>
+          </Card>
+        )}
+      </div>
+    </div>
   );
 }

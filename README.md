@@ -95,12 +95,24 @@ pnpm --filter @katahimo/api start   # http://localhost:8080
 pnpm --filter @katahimo/web dev     # http://localhost:5173
 ```
 
-`http://localhost:5173` を開き、法人ID `demo` / `admin@example.com` / `admin1234` でログイン後、「佐藤」で検索すると
-ブラインドインデックス経由で該当顧客(氏名・電話・市区町村は復号済み)が一覧表示される。検索結果の氏名をクリックすると
-`/customers/:id`(顧客詳細画面、react-router)に遷移し、RESERVA CSVの全項目(カナ・メール・住所・緊急連絡先・
-会員情報等)と世帯構成員(子ども等)一覧を復号した状態で確認できる(Phase 4・読み取り系)。DBの生カラムを直接見ると
-(`psql -U katahimo -d katahimo_dev -c "SELECT name_ciphertext FROM customers LIMIT 1"`)、暗号文であって
-平文が保存されていないことを確認できる。
+`http://localhost:5173` を開き、法人ID `demo` / `admin@example.com` / `admin1234` でログインすると、GAS版
+(`gas-childcare-visit-app/index.html`)と同じ見た目・タブ構成のアプリが表示される(移行時の混乱を減らすため、
+Tailwind CDN・Outfitフォント・配色・ヘッダー/3タブのレイアウトをそのまま踏襲している。詳細は下記「UIをGAS版に
+合わせた範囲」参照)。「🏠 訪問先一覧」タブで「佐藤」を検索するとブラインドインデックス経由で該当顧客(氏名・電話・
+市区町村は復号済み)がカード一覧表示され、タップするとGAS版と同じボトムシート形式のモーダルでRESERVA CSVの全項目
+(カナ・メール・住所・緊急連絡先・会員情報等)と世帯構成員(子ども等)一覧を復号した状態で確認できる(Phase 4・
+読み取り系)。DBの生カラムを直接見ると(`psql -U katahimo -d katahimo_dev -c "SELECT name_ciphertext FROM customers LIMIT 1"`)、
+暗号文であって平文が保存されていないことを確認できる。
+
+### UIをGAS版に合わせた範囲
+
+- 再現した部分: アプリシェル(ヘッダー・配色・フォント)、ホームナビゲーションの3タブ(📅 予定 / 🏠 訪問先一覧 /
+  🕒 勤怠、アイコン・ラベル・アクティブ状態のスタイルまで同一)、ログイン画面、顧客一覧のカードデザイン、
+  顧客詳細のボトムシートモーダル、勤怠入力フォームのカード基調デザイン。URLルーティングは使わず、GAS版と同じ
+  「タブの表示/非表示切り替えのみで画面遷移する単一ページアプリ」という構造に合わせた(react-router-domは廃止)。
+- **意図的に再現していない部分**(対応するバックエンド機能がまだ無いため、見た目だけ真似ると誤解を招く):
+  「📅 予定」タブはGoogleカレンダー連携(Phase 5)が無いため空の状態を正直に表示するのみ、顧客詳細モーダルに
+  GAS版にあった日報/事故報告作成タブ(Gemini連携)は無い、管理者設定モーダル・領収書登録機能は未実装。
 
 ## 動作デモ(RESERVA CSV取込)
 
@@ -164,7 +176,7 @@ pnpm exec tsx src/scripts/importLegacyStaff.ts demo "氏名" メールアドレ�
 - [x] **Phase 1 — スキーマとテナント分離(RLS)**: tenants/staff/sessions/customers/outbox_jobsをDrizzleで定義し、tenant_idを持つ全テーブルにRLSポリシーを適用(katahimo=所有者/DDL用、katahimo_app=RLS対象のアプリ用ロールに分離。実際にRLSがブロックすることを確認済み)。
 - [x] **Phase 2 — 認証(メール)**: argon2idパスワードハッシュ、httpOnly Cookieセッション(tenantId埋め込みでRLSのチキン&エッグ問題を回避)、`POST /api/auth/login`・`GET /api/auth/me`・`POST /api/auth/logout`。**GAS版のSHA-256+saltパスワードハッシュ(Auth.jsのcomputeHash)を、パスワード変更なしで引き継げるようにした**(`computeLegacyHash`。GAS版を実行した結果と一致することを検証済み)。ログイン成功時にargon2idへサイレント再ハッシュされ、実際にAPI経由で移行→ログイン→再ハッシュ確認→2回目ログインまで動作確認済み。Google認証(OAuth)は未着手(実GCPクライアントIDが必要なため)。
 - [x] **Phase 3 — 取込・アップサート基盤(RESERVA CSV)**: `parseFamilyInfo`/`normalizeDateStr`(GAS版`CsvImport.js`から完全移植、実サンプル398行でGAS実行結果と1件残らず一致することを検証済み)・Excelシリアル日時変換を追加し、RESERVA顧客CSV(UTF-16LE・タブ区切り・30列、パスワード列を除く全項目)のデコード/パース/外部ID突合による差分計算(作成/更新/ソフトデリート)/適用を実装。世帯構成員(子ども等)は`family_members`テーブルに全件保存し、詳細取得で復号して確認できる。消失率(取込データから消えた顧客の割合)が閾値を超えると適用を拒否する安全装置つき。実データ(`01_GAS/Kokyaku_202601191958_1_dummy.csv`、398件)を実際にPostgreSQLへ取り込み、冪等性(再取込で重複しないこと)も確認済み。
-- [x] **Phase 4 — 顧客詳細画面(読み取り系の一部)**: `GET /api/customers/:id`(セッションのtenantIdのみを使用)と、react-router-domによる`/customers/:id`詳細画面を追加。RESERVA CSV由来の全項目・世帯構成員一覧を復号して表示する。今後の詳細画面は「予定/訪問先一覧/勤怠」の3タブ(Phase 5のCalendar/Maps連携が前提)の実装で続きを進める。
+- [x] **Phase 4 — 顧客詳細画面(読み取り系の一部)+ UIをGAS版に合わせて再構築**: `GET /api/customers/:id`(セッションのtenantIdのみを使用)を追加。RESERVA CSV由来の全項目・世帯構成員一覧を復号して表示する。当初はreact-router-domでページ遷移させていたが、移行時の混乱を減らすためGAS版(`gas-childcare-visit-app/index.html`)と同じ「ヘッダー+3タブ(📅 予定/🏠 訪問先一覧/🕒 勤怠)のURLなし単一ページアプリ」構造・Tailwind配色に作り直した(react-router-domは廃止)。顧客詳細はGAS版と同じボトムシートモーダルに変更。「予定」タブはCalendar連携(Phase 5)が無いため空状態を正直に表示する枠のみ。
 - [ ] Phase 5 — 外部連携(Sheets/Drive/Calendar/Maps/Chat/Gemini、ミラーはoutbox)
 - [x] **Phase 6 — 勤怠計算エンジン(給与直結。合成データでGAS版との数値一致を検証済み)**: `AttendanceCalc.js`(GAS版)をNode上でそのまま実行した結果を正解として、TypeScript移植版(`packages/core/src/domain/attendance/`)を合成データ19ケース+月次集計で1件残らず突き合わせ、完全一致を確認。`attendance_days`テーブル(入力列のみをJSON化して1本の暗号文として保存、派生値は保存せず都度計算)・`GET/PUT /api/attendance/day`・`GET /api/attendance/month`・Web側の入力フォーム+月次集計画面を実装した。管理者以外は自分の勤怠にしか読み書きできない(PastSchedule.jsと同じアクセス制御パターン)。**実際の出勤簿データでの数値照合はPhase 7で行う(このフェーズでは計算式の正しさのみを保証)**。
 - [ ] Phase 7 — 並行運用と照合
