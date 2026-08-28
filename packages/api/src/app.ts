@@ -8,6 +8,7 @@ import { createAuthRoutes } from './routes/auth';
 import { createCustomerRoutes } from './routes/customers';
 import { createReceiptRoutes } from './routes/receipts';
 import { createReportRoutes } from './routes/reports';
+import { createScheduleRoutes } from './routes/schedule';
 import { createSettingsRoutes } from './routes/settings';
 import { createStaffRoutes } from './routes/staff';
 
@@ -38,6 +39,7 @@ export function createApp(deps: AppDeps) {
   app.route('/api/attendance', createAttendanceRoutes(container));
   app.route('/api/reports', createReportRoutes(container));
   app.route('/api/receipts', createReceiptRoutes(container));
+  app.route('/api/schedule', createScheduleRoutes(container));
   app.route('/api/settings', createSettingsRoutes(container));
   app.route('/api/staff', createStaffRoutes(container));
 

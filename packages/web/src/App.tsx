@@ -32,6 +32,9 @@ const TABS: { key: HomeTab; icon: string; label: string }[] = [
 function AppShell({ staff, onLogout }: { staff: StaffView; onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<HomeTab>('schedule');
   const [showSettings, setShowSettings] = useState(false);
+  // 予定タブの予定カードタップで訪問先一覧タブへ切り替え、検索欄にその顧客名を入れる
+  // (GAS版jumpToCustomerFromScheduleと同じ動作)。
+  const [jumpSearchText, setJumpSearchText] = useState<string | null>(null);
 
   return (
     <div className="min-h-screen flex flex-col relative bg-white shadow-xl overflow-hidden">
@@ -83,8 +86,20 @@ function AppShell({ staff, onLogout }: { staff: StaffView; onLogout: () => void 
 
       <main className="flex-grow p-4 overflow-y-auto pb-24">
         <AdminTargetStaffProvider staff={staff}>
-          {activeTab === 'schedule' && <ScheduleTab />}
-          {activeTab === 'visitors' && <CustomerSearch />}
+          {activeTab === 'schedule' && (
+            <ScheduleTab
+              onJumpToCustomer={(name) => {
+                setJumpSearchText(name);
+                setActiveTab('visitors');
+              }}
+            />
+          )}
+          {activeTab === 'visitors' && (
+            <CustomerSearch
+              initialSearchText={jumpSearchText ?? undefined}
+              onInitialSearchConsumed={() => setJumpSearchText(null)}
+            />
+          )}
           {activeTab === 'attendance' && <AttendanceTab />}
         </AdminTargetStaffProvider>
       </main>

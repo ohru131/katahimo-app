@@ -53,3 +53,20 @@ export function resolveReportTargetStaffId(
   const requested = (requestedStaffId ?? '').trim();
   return requested || session.staffId;
 }
+
+/**
+ * 「予定」タブ用。管理者以外は自分自身のstaffIdに強制し、管理者だけが明示的なstaffId指定で
+ * 他スタッフの予定を閲覧できるようにする。
+ *
+ * 移植元: gas-childcare-visit-app/Schedule.js の resolveScheduleTargetStaffName_と同じ考え方
+ * (判定ロジックはresolveAttendanceTargetStaffIdと同一だが、CLAUDE.mdの方針
+ * (アクセスコンテキストごとに独立実装する)に沿って予定系専用の関数として分けている)。
+ */
+export function resolveScheduleTargetStaffId(
+  session: ResolvedSession,
+  requestedStaffId: string | undefined,
+): string {
+  if (!session.isAdmin) return session.staffId;
+  const requested = (requestedStaffId ?? '').trim();
+  return requested || session.staffId;
+}

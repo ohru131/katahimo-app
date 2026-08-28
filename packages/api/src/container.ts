@@ -3,6 +3,7 @@ import type {
   NotifierPort,
   ReportAiPort,
   ReportAiPortFactory,
+  SchedulePort,
   StoragePort,
 } from '@katahimo/core/ports';
 import type { Database } from '@katahimo/db';
@@ -20,6 +21,7 @@ import {
 } from '@katahimo/db/repositories';
 import {
   GasBridgeMapsPort,
+  GasBridgeSchedulePort,
   GeminiAiPort,
   LocalBlindIndexPort,
   LocalCryptoPort,
@@ -27,6 +29,7 @@ import {
   listAvailableGeminiModels,
   NoopMapsPort,
   NoopReportAiPort,
+  NoopSchedulePort,
   WebhookNotifierPort,
 } from '@katahimo/integrations';
 import { argon2PasswordHasher } from './authAdapters';
@@ -61,6 +64,13 @@ export interface Container {
    * (常にnull)にフォールバックする。
    */
   maps: MapsPort;
+  /**
+   * 「今日/明日の予定」閲覧。GAS_BRIDGE_URL/GAS_BRIDGE_SECRETが設定されていれば
+   * gas-childcare-visit-appのWeb App(Bridge.js、既存のカレンダー解析・ルート計算ロジックを
+   * そのまま使う)をプロキシとして使い、未設定ならNoopSchedulePort(常に予定なし)に
+   * フォールバックする。
+   */
+  schedule: SchedulePort;
   /** GAS版 Script Properties AUTH_SALT と同じ値。移行済みスタッフのログインにのみ使う。 */
   legacyAuthSalt?: string;
 }
@@ -68,6 +78,10 @@ export interface Container {
 export function createContainer(env: Env, db: Database): Container {
   const crypto = new LocalCryptoPort(env.LOCAL_DEV_MASTER_KEY);
   const appSettings = new DrizzleAppSettingsRepository(db);
+  const gasBridgeOptions =
+    env.GAS_BRIDGE_URL && env.GAS_BRIDGE_SECRET
+      ? { baseUrl: env.GAS_BRIDGE_URL, secret: env.GAS_BRIDGE_SECRET }
+      : null;
 
   return {
     tenants: new DrizzleTenantRepository(db),
@@ -102,10 +116,8 @@ export function createContainer(env: Env, db: Database): Container {
       : new NoopReportAiPort(),
     reportAiFactory: { create: (opts) => new GeminiAiPort(opts) },
     listGeminiModels: listAvailableGeminiModels,
-    maps:
-      env.GAS_BRIDGE_URL && env.GAS_BRIDGE_SECRET
-        ? new GasBridgeMapsPort({ baseUrl: env.GAS_BRIDGE_URL, secret: env.GAS_BRIDGE_SECRET })
-        : new NoopMapsPort(),
+    maps: gasBridgeOptions ? new GasBridgeMapsPort(gasBridgeOptions) : new NoopMapsPort(),
+    schedule: gasBridgeOptions ? new GasBridgeSchedulePort(gasBridgeOptions) : new NoopSchedulePort(),
     legacyAuthSalt: env.LEGACY_AUTH_SALT,
   };
 }

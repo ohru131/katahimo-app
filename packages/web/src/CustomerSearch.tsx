@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { fetchAllCustomers } from './api';
 import { CustomerDetail } from './CustomerDetail';
 import { getRecentCustomerIds } from './recentCustomers';
@@ -18,10 +18,28 @@ import { ReportModal } from './reports/ReportModal';
  * カードタップ時の挙動もGAS版のopenModal(customer)と同じにしている: カード本体のタップは
  * 日報/事故報告作成モーダル(ReportModal)を開き、「顧客情報」「活動記録」は別ボタンから
  * それぞれ別モーダル(CustomerDetail/HistoryModal)を開く(この3つを混同しないこと)。
+ *
+ * initialSearchText/onInitialSearchConsumedは、予定タブの予定カードタップ
+ * (jumpToCustomerFromSchedule)からこのタブへ切り替わった際に検索欄へ顧客名を
+ * 反映するためのもの(App.tsxが管理する一度きりの値、消費したら親側でnullに戻す)。
  */
-export function CustomerSearch() {
+export function CustomerSearch({
+  initialSearchText,
+  onInitialSearchConsumed,
+}: {
+  initialSearchText?: string;
+  onInitialSearchConsumed?: () => void;
+}) {
   const [searchText, setSearchText] = useState('');
   const [cityFilter, setCityFilter] = useState('');
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: initialSearchTextが変わった時だけ反映する意図的な依存
+  useEffect(() => {
+    if (initialSearchText === undefined) return;
+    setSearchText(initialSearchText);
+    setCityFilter('');
+    onInitialSearchConsumed?.();
+  }, [initialSearchText]);
   const [reportCustomerId, setReportCustomerId] = useState<string | null>(null);
   const [detailCustomerId, setDetailCustomerId] = useState<string | null>(null);
   const [historyCustomer, setHistoryCustomer] = useState<{ id: string; name: string } | null>(null);

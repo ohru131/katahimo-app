@@ -1,11 +1,6 @@
 import type { LatLng, MapsPort, RouteLeg } from '@katahimo/core/ports';
-
-export interface GasBridgeMapsPortOptions {
-  /** GAS版(gas-childcare-visit-app)Web Appの/execエンドポイントURL。 */
-  baseUrl: string;
-  /** GAS側Bridge.jsのBRIDGE_API_SECRET(Script Properties)と同じ値。 */
-  secret: string;
-}
+import type { GasBridgeOptions } from './gasBridgeClient';
+import { GasBridgeClient } from './gasBridgeClient';
 
 /**
  * katahimo-appはApps Script実行環境の外からMapsサービス(Maps.newGeocoder/newDirectionFinder)を
@@ -17,37 +12,32 @@ export interface GasBridgeMapsPortOptions {
  * 出発時刻指定無し)と同じで、実際の計算はBridge.js側(GAS実行環境内)で行う。
  */
 export class GasBridgeMapsPort implements MapsPort {
-  constructor(private readonly options: GasBridgeMapsPortOptions) {}
+  private readonly client: GasBridgeClient;
 
-  private buildUrl(action: string, params: Record<string, string>): string {
-    const url = new URL(this.options.baseUrl);
-    url.searchParams.set('api', '1');
-    url.searchParams.set('secret', this.options.secret);
-    url.searchParams.set('action', action);
-    for (const [key, value] of Object.entries(params)) {
-      url.searchParams.set(key, value);
-    }
-    return url.toString();
+  constructor(options: GasBridgeOptions) {
+    this.client = new GasBridgeClient(options);
   }
 
   async geocode(address: string): Promise<LatLng | null> {
-    const res = await fetch(this.buildUrl('geocode', { address }));
-    const body = (await res.json()) as { success: boolean; location: LatLng | null; message?: string };
+    const body = await this.client.fetchJson<{ success: boolean; location: LatLng | null; message?: string }>(
+      'geocode',
+      { address },
+    );
     if (!body.success) throw new Error(body.message || 'ジオコーディングに失敗しました(GASブリッジ)');
     return body.location;
   }
 
   /** GAS版と同じく出発時刻の指定はできない(常に現在の交通状況無しのDRIVINGルート)。 */
   async route(origin: LatLng, destination: LatLng): Promise<RouteLeg | null> {
-    const res = await fetch(
-      this.buildUrl('route', {
+    const body = await this.client.fetchJson<{ success: boolean; route: RouteLeg | null; message?: string }>(
+      'route',
+      {
         originLat: String(origin.lat),
         originLng: String(origin.lng),
         destLat: String(destination.lat),
         destLng: String(destination.lng),
-      }),
+      },
     );
-    const body = (await res.json()) as { success: boolean; route: RouteLeg | null; message?: string };
     if (!body.success) throw new Error(body.message || 'ルート計算に失敗しました(GASブリッジ)');
     return body.route;
   }

@@ -555,3 +555,69 @@ export async function extractReceiptOcr(image: string): Promise<ReceiptOcrResult
   const body = await parseJsonOrThrow<{ result: ReceiptOcrResult }>(res);
   return body.result;
 }
+
+// ── 予定タブ(GAS版Schedule.js/RouteSearch.jsのブリッジ経由) ──
+
+export interface DailyScheduleAppointment {
+  title: string;
+  eventType: string;
+  start: string;
+  end: string;
+  address: string;
+}
+
+export interface DailyScheduleResult {
+  success: boolean;
+  date?: string;
+  staffName?: string;
+  appointments?: DailyScheduleAppointment[];
+  message?: string;
+}
+
+/** ルート・移動時間を含まない軽量版。GAS版Schedule.js getScheduleForDate相当。 */
+export async function fetchDailySchedule(date: string, staffId?: string): Promise<DailyScheduleResult> {
+  const params = new URLSearchParams({ date });
+  if (staffId) params.set('staffId', staffId);
+  const res = await fetch(`/api/schedule?${params.toString()}`, { credentials: 'include' });
+  return parseJsonOrThrow<DailyScheduleResult>(res);
+}
+
+export interface DailyScheduleAppointmentWithRoute {
+  eventType: string;
+  customerName: string;
+  startTime: string;
+  endTime: string;
+  reservaUrl: string;
+  moveUrl: string;
+  moveMin: number | string;
+  moveKm: number | string;
+  attendanceUrl: string;
+  attendanceMin: number | string;
+  attendanceKm: number | string;
+  leavingUrl: string;
+  leavingMin: number | string;
+  leavingKm: number | string;
+  customerId: string;
+  address: string;
+}
+
+export interface DailyScheduleWithRouteResult {
+  success: boolean;
+  date?: string;
+  staffName?: string;
+  appointments?: DailyScheduleAppointmentWithRoute[];
+  message?: string;
+}
+
+/** ルート・移動時間つき。GAS版Schedule.js getRouteForStaffOnDate相当(Maps連携を伴うため時間がかかる)。 */
+export async function fetchDailyScheduleWithRoute(
+  date: string,
+  staffId?: string,
+  forceRefresh?: boolean,
+): Promise<DailyScheduleWithRouteResult> {
+  const params = new URLSearchParams({ date });
+  if (staffId) params.set('staffId', staffId);
+  if (forceRefresh) params.set('forceRefresh', '1');
+  const res = await fetch(`/api/schedule/route?${params.toString()}`, { credentials: 'include' });
+  return parseJsonOrThrow<DailyScheduleWithRouteResult>(res);
+}

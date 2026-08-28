@@ -4,5 +4,6 @@ export * from './customers';
 export * from './receipts';
 export * from './reportAi';
 export * from './reports';
+export * from './schedule';
 export * from './settings';
 export * from './staff';
