@@ -12,6 +12,7 @@ import {
   uploadReceipts,
 } from '../api';
 import { markCustomerRecentlyUsed } from '../recentCustomers';
+import { ASSESSMENT_DEFINITIONS, type AssessmentType } from './assessmentDefinitions';
 import { useVoiceInput } from './useVoiceInput';
 
 type Mode = 'daily' | 'accident';
@@ -32,31 +33,116 @@ function formatDateKey(d: Date): string {
   return d.toLocaleDateString('sv-SE');
 }
 
+/**
+ * PSI/従業員満足度(ES)の★評価。GAS版のupdateStarDisplay/setRatingと同じ挙動にしている:
+ * - 選択中の★の色はtext-yellow-400、未選択はtext-gray-300。
+ * - 星の右にASSESSMENT_DEFINITIONSから引いた評価ラベル(例: 「要観察」)を表示する
+ *   (未評価時は空文字、GAS版のlabel-risk/label-esと同じ)。
+ * - 左端(1番目)の★が既に選択済みの状態でもう一度押すと、全て☆(未評価=0)に戻せる
+ *   (GAS版setRatingの`score === 1 && assessmentRatings[type] === 1`と同じ特別扱い。
+ *   他の★を再度押しても解除はされない)。
+ * - タイトル右の情報アイコンから、評価基準の一覧(AssessmentHintModal)を確認できる。
+ */
 function StarRating({
+  type,
   value,
   onChange,
-  label,
+  onShowHint,
 }: {
+  type: AssessmentType;
   value: number | null;
   onChange: (v: number | null) => void;
-  label: string;
+  onShowHint: () => void;
 }) {
+  const definition = ASSESSMENT_DEFINITIONS[type];
+  const currentLevel = definition.levels.find((l) => l.score === value);
+
+  const handleClick = (n: number) => {
+    if (n === 1 && value === 1) {
+      onChange(null);
+    } else {
+      onChange(n);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-gray-500 w-14 shrink-0">{label}</span>
-      <div className="flex gap-0.5 text-xl leading-none">
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button
-            key={n}
-            type="button"
-            onClick={() => onChange(value === n ? null : n)}
-            className={value !== null && n <= value ? 'text-yellow-500' : 'text-gray-300'}
-          >
-            ★
-          </button>
-        ))}
+    <div>
+      <div className="flex items-center gap-1 mb-1">
+        <span className="text-xs font-bold text-gray-600">{definition.title}</span>
+        <button
+          type="button"
+          onClick={onShowHint}
+          className="text-gray-400 hover:text-blue-500"
+          title={`${definition.title}の評価基準を見る`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+        </button>
       </div>
-      <span className="text-xs text-gray-400">{value === null ? '未評価' : `(${value})`}</span>
+      <div className="flex items-center gap-2">
+        <div className="flex gap-0.5">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => handleClick(n)}
+              className={`text-2xl transition-transform hover:scale-110 focus:outline-none ${
+                value !== null && n <= value ? 'text-yellow-400' : 'text-gray-300'
+              }`}
+            >
+              ★
+            </button>
+          ))}
+        </div>
+        <span className="text-xs font-bold text-gray-600">{currentLevel?.label ?? ''}</span>
+      </div>
+    </div>
+  );
+}
+
+/** GAS版showAssessmentHintと同じ、評価基準一覧のモーダル。 */
+function AssessmentHintModal({ type, onClose }: { type: AssessmentType; onClose: () => void }) {
+  const definition = ASSESSMENT_DEFINITIONS[type];
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-[130] flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-md rounded-xl shadow-xl flex flex-col max-h-[85vh]">
+        <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+          <h3 className="font-bold text-gray-800 text-sm">{definition.title} 指標</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 hover:bg-gray-200 rounded-full text-gray-500"
+          >
+            &times;
+          </button>
+        </div>
+        <div className="p-4 overflow-y-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b bg-gray-50">
+                <th className="p-2 text-xs w-10">評価</th>
+                <th className="p-2 text-xs w-20">定義</th>
+                <th className="p-2 text-xs">判断基準</th>
+              </tr>
+            </thead>
+            <tbody>
+              {definition.levels.map((l) => (
+                <tr key={l.score} className="border-b">
+                  <td className="p-2 text-lg font-bold text-center text-yellow-500">{l.score}</td>
+                  <td className="p-2 text-sm font-bold">{l.label}</td>
+                  <td className="p-2 text-xs text-gray-600 whitespace-pre-wrap">{l.desc}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -216,6 +302,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   // ── 保育日報 ──
   const [riskRating, setRiskRating] = useState<number | null>(null);
   const [esRating, setEsRating] = useState<number | null>(null);
+  const [hintType, setHintType] = useState<AssessmentType | null>(null);
   const [memoText, setMemoText] = useState('');
   const [internalText, setInternalText] = useState('');
   const [customerText, setCustomerText] = useState('');
@@ -787,8 +874,18 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
           {mode === 'daily' && (
             <div className="space-y-4">
               <div className="space-y-1">
-                <StarRating value={riskRating} onChange={setRiskRating} label="PSI" />
-                <StarRating value={esRating} onChange={setEsRating} label="満足度" />
+                <StarRating
+                  type="risk"
+                  value={riskRating}
+                  onChange={setRiskRating}
+                  onShowHint={() => setHintType('risk')}
+                />
+                <StarRating
+                  type="es"
+                  value={esRating}
+                  onChange={setEsRating}
+                  onShowHint={() => setHintType('es')}
+                />
               </div>
 
               <div>
@@ -1036,6 +1133,8 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
           )}
         </div>
       </div>
+
+      {hintType && <AssessmentHintModal type={hintType} onClose={() => setHintType(null)} />}
     </div>
   );
 }
