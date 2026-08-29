@@ -212,6 +212,24 @@ interface ReceiptImageState {
   storeName: string;
   receiptDate: string;
   ocrLoading: boolean;
+  /** OCR失敗時のエラーメッセージ(表示用)。成功時・未実行時はnull。 */
+  ocrError: string | null;
+}
+
+/**
+ * AI生成・OCRのエラーコード('API Error'/'API Key Missing'。GAS版GeminiReport.jsの
+ * generateReportWithWarnings/generateAccidentReport/extractAmountFromImageが返す値と同じ)を、
+ * スタッフ向けの分かりやすい文言に変換する。GAS版はこれらをそのまま(あるいは無言で)表示していて
+ * 不親切だったため、katahimo-app側で追加した変換。
+ */
+function friendlyAiErrorMessage(raw: string): string {
+  if (raw === 'API Key Missing') {
+    return 'AIによる自動生成が設定されていません。管理者にGemini APIキーの設定をご確認ください。';
+  }
+  if (raw === 'API Error') {
+    return 'AIによる生成でエラーが発生しました。しばらく待ってから再度お試しください。';
+  }
+  return raw;
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -353,6 +371,15 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [dailyMessage, setDailyMessage] = useState<string | null>(null);
   const [dailyError, setDailyError] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  /**
+   * 保存済み日報のID+保存時点の内容スナップショット(JSON文字列)。GAS版のsavedReportsState/
+   * rowIndexに相当し、「保存する」を複数回押しても同じ内容の行を重複作成しないための仕組み。
+   * - 未保存(null): 保存時はDBに新規作成し、IDとスナップショットを記録する。
+   * - 保存済みで内容が前回と同一: 保存をスキップする(重複行の原因だったため)。
+   * - 保存済みで内容が変わっている: 上書き確認のうえ、IDを指定してDB側で更新(アップサート)する。
+   */
+  const [dailySavedId, setDailySavedId] = useState<string | null>(null);
+  const [dailySavedSnapshot, setDailySavedSnapshot] = useState<string | null>(null);
 
   /** GAS版copyToClipboard('customerResult')と同じ役割。 */
   const handleCopyCustomerText = async () => {
@@ -385,6 +412,9 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [savingAccident, setSavingAccident] = useState(false);
   const [accidentMessage, setAccidentMessage] = useState<string | null>(null);
   const [accidentError, setAccidentError] = useState<string | null>(null);
+  /** 保存済み事故報告のID+保存時点の内容スナップショット。dailySavedId/dailySavedSnapshotと同じ役割。 */
+  const [accidentSavedId, setAccidentSavedId] = useState<string | null>(null);
+  const [accidentSavedSnapshot, setAccidentSavedSnapshot] = useState<string | null>(null);
 
   // ── 領収書登録(日報タブのみ。GAS版と同じ制約) ──
   const [images, setImages] = useState<ReceiptImageState[]>([]);
@@ -413,6 +443,15 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
         `${startHour}:${startMinute}`,
         `${endHour}:${endMinute}`,
       );
+      // GAS版onReportGeneratedのisApiErrorチェックと同じ。'API Error'/'API Key Missing'は
+      // 「不足項目」ではなく生成そのものの失敗なので、結果欄には反映せず分かりやすいエラーとして表示する
+      // (GAS版はresult.internalの生エラー文言をそのまま画面に出しており不親切だった)。
+      const failureCode = draft.warnings.find((w) => w === 'API Error' || w === 'API Key Missing');
+      if (failureCode) {
+        setWarnings([]);
+        setDailyError(friendlyAiErrorMessage(failureCode));
+        return;
+      }
       setWarnings(draft.warnings);
       setInternalText(draft.internal);
       setCustomerText(draft.customer);
@@ -425,21 +464,35 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
 
   const handleSaveDaily = async () => {
     if (!customerQuery.data) return;
+    const payload = {
+      customerId,
+      reportDate: formatDateKey(visitDate),
+      startTime: `${startHour}:${startMinute}`,
+      endTime: `${endHour}:${endMinute}`,
+      inputText: memoText,
+      internalText,
+      customerText,
+      riskRating,
+      esRating,
+    };
+    const snapshot = JSON.stringify(payload);
+    // GAS版savedReportsState/rowIndexと同じ考え方: 既に保存済みで内容が変わっていなければ
+    // 再度保存ボタンを押しても何もしない(これが「複数回押すと同じ内容が重複登録される」原因だった)。
+    if (dailySavedId && snapshot === dailySavedSnapshot) {
+      setDailyMessage('内容に変更がないため、保存をスキップしました');
+      return;
+    }
+    if (dailySavedId) {
+      const confirmed = window.confirm('この日報は保存済みです。内容を上書き保存しますか?');
+      if (!confirmed) return;
+    }
     setSavingDaily(true);
     setDailyMessage(null);
     setDailyError(null);
     try {
-      await saveDailyReport({
-        customerId,
-        reportDate: formatDateKey(visitDate),
-        startTime: `${startHour}:${startMinute}`,
-        endTime: `${endHour}:${endMinute}`,
-        inputText: memoText,
-        internalText,
-        customerText,
-        riskRating,
-        esRating,
-      });
+      const report = await saveDailyReport({ ...payload, reportId: dailySavedId ?? undefined });
+      setDailySavedId(report.id);
+      setDailySavedSnapshot(snapshot);
       setDailyMessage('日報を保存しました');
       markCustomerRecentlyUsed(customerId);
     } catch (e) {
@@ -456,7 +509,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     try {
       const draft = await generateAccidentReportDraft(accidentMemo, `${startHour}:${startMinute}`);
       if ('error' in draft) {
-        setAccidentError(draft.error);
+        setAccidentError(friendlyAiErrorMessage(draft.error));
         return;
       }
       setOccurrenceTime(draft.occurrenceTime);
@@ -475,25 +528,37 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   };
 
   const handleSaveAccident = async () => {
+    const payload = {
+      customerId,
+      reportType,
+      targetName: accTargetName,
+      targetDob: accTargetDob,
+      occurrenceTime,
+      location,
+      accidentContent,
+      situation,
+      immediateResponse,
+      parentCorrespondence,
+      diagnosisTreatment,
+      prevention,
+      inputText: accidentMemo,
+    };
+    const snapshot = JSON.stringify(payload);
+    if (accidentSavedId && snapshot === accidentSavedSnapshot) {
+      setAccidentMessage('内容に変更がないため、保存をスキップしました');
+      return;
+    }
+    if (accidentSavedId) {
+      const confirmed = window.confirm(`この${reportType}は保存済みです。内容を上書き保存しますか?`);
+      if (!confirmed) return;
+    }
     setSavingAccident(true);
     setAccidentMessage(null);
     setAccidentError(null);
     try {
-      await saveAccidentReport({
-        customerId,
-        reportType,
-        targetName: accTargetName,
-        targetDob: accTargetDob,
-        occurrenceTime,
-        location,
-        accidentContent,
-        situation,
-        immediateResponse,
-        parentCorrespondence,
-        diagnosisTreatment,
-        prevention,
-        inputText: accidentMemo,
-      });
+      const report = await saveAccidentReport({ ...payload, reportId: accidentSavedId ?? undefined });
+      setAccidentSavedId(report.id);
+      setAccidentSavedSnapshot(snapshot);
       setAccidentMessage(`${reportType}を保存しました`);
       markCustomerRecentlyUsed(customerId);
     } catch (e) {
@@ -523,11 +588,14 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     }
     setImages((prev) => [
       ...prev,
-      { id, dataUrl, amount: '', storeName: '', receiptDate: '', ocrLoading: true },
+      { id, dataUrl, amount: '', storeName: '', receiptDate: '', ocrLoading: true, ocrError: null },
     ]);
 
     try {
       const result = await extractReceiptOcr(dataUrl);
+      // GAS版extractAmountFromImageは失敗時も空値を返すのみで無言だったため、
+      // 金額等が空のまま何のエラーも表示されない不親切な挙動になっていた。ここでは
+      // result.errorを表示し、手入力が必要なことに気付けるようにする。
       setImages((prev) =>
         prev.map((img) =>
           img.id === id
@@ -537,15 +605,21 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                 storeName: result.storeName || img.storeName,
                 receiptDate: result.receiptDate || formatNowForReceipt(),
                 ocrLoading: false,
+                ocrError: result.error ? friendlyAiErrorMessage(result.error) : null,
               }
             : img,
         ),
       );
-    } catch {
+    } catch (e) {
       setImages((prev) =>
         prev.map((img) =>
           img.id === id
-            ? { ...img, receiptDate: img.receiptDate || formatNowForReceipt(), ocrLoading: false }
+            ? {
+                ...img,
+                receiptDate: img.receiptDate || formatNowForReceipt(),
+                ocrLoading: false,
+                ocrError: e instanceof Error ? e.message : String(e),
+              }
             : img,
         ),
       );
@@ -844,6 +918,11 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                       placeholder="店舗名"
                       className="w-full p-1 text-sm border border-gray-300 rounded text-center"
                     />
+                    {img.ocrError && (
+                      <p className="text-[10px] text-red-500 text-center leading-tight">
+                        自動読取に失敗しました。金額等を手入力してください。
+                      </p>
+                    )}
                   </div>
                 ))}
 

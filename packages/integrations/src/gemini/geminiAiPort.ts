@@ -241,7 +241,7 @@ export class GeminiAiPort implements ReportAiPort {
       this.options.ocrModel || DEFAULT_MODEL_OCR,
     );
 
-    if (!result.ok) return { amount: 0, storeName: '', receiptDate: '' };
+    if (!result.ok) return { amount: '', storeName: '', receiptDate: '', error: result.error };
     return result.value as ReceiptOcrResult;
   }
 }
@@ -257,6 +257,6 @@ export class NoopReportAiPort implements ReportAiPort {
   }
 
   async extractReceiptAmount(): Promise<ReceiptOcrResult> {
-    return { amount: '', storeName: '', receiptDate: '' };
+    return { amount: '', storeName: '', receiptDate: '', error: 'API Key Missing' };
   }
 }

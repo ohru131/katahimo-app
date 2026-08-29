@@ -543,6 +543,8 @@ export interface ReceiptOcrResult {
   amount: string | number;
   storeName: string;
   receiptDate: string;
+  /** OCR呼び出し自体が失敗した場合のエラーメッセージ(成功時はundefined)。 */
+  error?: string;
 }
 
 export async function extractReceiptOcr(image: string): Promise<ReceiptOcrResult> {
