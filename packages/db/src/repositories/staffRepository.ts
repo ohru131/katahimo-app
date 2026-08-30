@@ -13,9 +13,9 @@ function toRecord(row: typeof staff.$inferSelect): StaffRecord {
   return {
     id: row.id,
     tenantId: row.tenantId,
-    name: { ciphertext: row.nameCiphertext, keyVersion: row.nameKeyVersion },
-    email: { ciphertext: row.emailCiphertext, keyVersion: row.emailKeyVersion },
-    emailBlindIndex: row.emailBlindIndex,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
     passwordHash: row.passwordHash,
     legacyPasswordHash: row.legacyPasswordHash,
     isAdmin: row.isAdmin,
@@ -26,9 +26,9 @@ function toRecord(row: typeof staff.$inferSelect): StaffRecord {
 export class DrizzleStaffRepository implements StaffRepositoryPort {
   constructor(private readonly db: Database) {}
 
-  async findByEmailBlindIndex(tenantId: string, emailBlindIndex: string): Promise<StaffRecord | null> {
+  async findByEmail(tenantId: string, email: string): Promise<StaffRecord | null> {
     return withTenant(this.db, tenantId, async (tx) => {
-      const rows = await tx.select().from(staff).where(eq(staff.emailBlindIndex, emailBlindIndex)).limit(1);
+      const rows = await tx.select().from(staff).where(eq(staff.email, email)).limit(1);
       const row = rows[0];
       return row ? toRecord(row) : null;
     });
@@ -48,13 +48,9 @@ export class DrizzleStaffRepository implements StaffRepositoryPort {
         .insert(staff)
         .values({
           tenantId: input.tenantId,
-          nameCiphertext: input.name.ciphertext,
-          nameKeyVersion: input.name.keyVersion,
-          familyNameBlindIndex: input.familyNameBlindIndex,
-          givenNameBlindIndex: input.givenNameBlindIndex,
-          emailCiphertext: input.email.ciphertext,
-          emailKeyVersion: input.email.keyVersion,
-          emailBlindIndex: input.emailBlindIndex,
+          name: input.name,
+          email: input.email,
+          phone: input.phone ?? null,
           passwordHash: input.passwordHash ?? null,
           legacyPasswordHash: input.legacyPasswordHash ?? null,
           isAdmin: input.isAdmin,
@@ -78,7 +74,7 @@ export class DrizzleStaffRepository implements StaffRepositoryPort {
       const todayStr = new Date().toISOString().slice(0, 10);
       return rows
         .filter((r) => !r.retirementDate || r.retirementDate > todayStr)
-        .map((r) => ({ id: r.id, name: { ciphertext: r.nameCiphertext, keyVersion: r.nameKeyVersion } }));
+        .map((r) => ({ id: r.id, name: r.name }));
     });
   }
 }

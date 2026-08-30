@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { foreignKey, integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { staff } from './staff';
@@ -28,11 +28,9 @@ export const receipts = pgTable(
     tenantId: uuid()
       .notNull()
       .references(() => tenants.id),
-    staffId: uuid()
-      .notNull()
-      .references(() => staff.id),
+    staffId: uuid().notNull(),
     /** 顧客に紐付かない経費領収書(駐車場代等)もあり得るためnull許容。 */
-    customerId: uuid().references(() => customers.id),
+    customerId: uuid(),
 
     receiptTimestamp: timestamp({ withTimezone: true }).notNull(),
     dedupeBlindIndex: text(),
@@ -49,7 +47,19 @@ export const receipts = pgTable(
 
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  (_t) => [
+  (t) => [
     pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING }),
+    // dailyReports.tsと同じ理由。customerIdがnullの行はPostgreSQLのMATCH SIMPLE(既定)により
+    // FK制約の対象外になる(顧客に紐付かない経費領収書を許容する仕様と両立する)。
+    foreignKey({
+      name: 'receipts_tenant_staff_fk',
+      columns: [t.tenantId, t.staffId],
+      foreignColumns: [staff.tenantId, staff.id],
+    }),
+    foreignKey({
+      name: 'receipts_tenant_customer_fk',
+      columns: [t.tenantId, t.customerId],
+      foreignColumns: [customers.tenantId, customers.id],
+    }),
   ],
 ).enableRLS();

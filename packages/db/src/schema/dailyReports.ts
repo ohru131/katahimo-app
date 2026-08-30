@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { foreignKey, integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { staff } from './staff';
@@ -21,12 +21,8 @@ export const dailyReports = pgTable(
     tenantId: uuid()
       .notNull()
       .references(() => tenants.id),
-    staffId: uuid()
-      .notNull()
-      .references(() => staff.id),
-    customerId: uuid()
-      .notNull()
-      .references(() => customers.id),
+    staffId: uuid().notNull(),
+    customerId: uuid().notNull(),
 
     occurredAt: timestamp({ withTimezone: true }).notNull(),
     /** PSI評価(1〜5)。未評価はnull(2026-08-28のGAS版仕様変更で未評価に戻せるようにしたのを踏襲)。 */
@@ -40,7 +36,20 @@ export const dailyReports = pgTable(
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  (_t) => [
+  (t) => [
     pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING }),
+    // (tenant_id, staff_id)/(tenant_id, customer_id)の複合FK。RLSはSELECTしか絞り込まず、
+    // FK制約自体はRLSをバイパスするため、単一列FKのままだとテナントAのstaffId/customerIdに
+    // 別テナントの行が混入してもDBが検知できない(データベース構造レビューで発見)。
+    foreignKey({
+      name: 'daily_reports_tenant_staff_fk',
+      columns: [t.tenantId, t.staffId],
+      foreignColumns: [staff.tenantId, staff.id],
+    }),
+    foreignKey({
+      name: 'daily_reports_tenant_customer_fk',
+      columns: [t.tenantId, t.customerId],
+      foreignColumns: [customers.tenantId, customers.id],
+    }),
   ],
 ).enableRLS();

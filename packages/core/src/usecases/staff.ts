@@ -1,9 +1,7 @@
-import type { CryptoPort } from '../ports/crypto';
 import type { StaffRepositoryPort } from '../ports/repositories';
 
 export interface StaffDeps {
   staff: StaffRepositoryPort;
-  crypto: CryptoPort;
 }
 
 export interface ActiveStaffView {
@@ -20,8 +18,7 @@ export interface ActiveStaffView {
  */
 export async function listActiveStaffForAdmin(deps: StaffDeps, tenantId: string): Promise<ActiveStaffView[]> {
   const rows = await deps.staff.listActive(tenantId);
-  const views = await Promise.all(
-    rows.map(async (r) => ({ id: r.id, name: await deps.crypto.decrypt(tenantId, r.name) })),
-  );
-  return views.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return rows
+    .map((r) => ({ id: r.id, name: r.name }))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }

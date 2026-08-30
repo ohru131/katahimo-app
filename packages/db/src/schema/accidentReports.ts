@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { foreignKey, integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { staff } from './staff';
@@ -21,12 +21,8 @@ export const accidentReports = pgTable(
     tenantId: uuid()
       .notNull()
       .references(() => tenants.id),
-    staffId: uuid()
-      .notNull()
-      .references(() => staff.id),
-    customerId: uuid()
-      .notNull()
-      .references(() => customers.id),
+    staffId: uuid().notNull(),
+    customerId: uuid().notNull(),
 
     occurredAt: timestamp({ withTimezone: true }).notNull(),
     /** '事故報告' | 'ヒヤリハット'。GAS版のReportType列と同じ値をそのまま使う。 */
@@ -38,7 +34,18 @@ export const accidentReports = pgTable(
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  (_t) => [
+  (t) => [
     pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING }),
+    // dailyReports.tsと同じ理由(複合FKでテナント跨ぎの取り違えを構造的に防ぐ)。
+    foreignKey({
+      name: 'accident_reports_tenant_staff_fk',
+      columns: [t.tenantId, t.staffId],
+      foreignColumns: [staff.tenantId, staff.id],
+    }),
+    foreignKey({
+      name: 'accident_reports_tenant_customer_fk',
+      columns: [t.tenantId, t.customerId],
+      foreignColumns: [customers.tenantId, customers.id],
+    }),
   ],
 ).enableRLS();

@@ -1,5 +1,4 @@
 import {
-  FakeBlindIndexPort,
   FakeCryptoPort,
   FakeCustomerRepository,
   FakeFamilyMemberRepository,
@@ -55,7 +54,6 @@ describe('planReservaImport / applyReservaImportPlan', () => {
       customers: new FakeCustomerRepository(),
       familyMembers: new FakeFamilyMemberRepository(),
       crypto: new FakeCryptoPort(),
-      blindIndex: new FakeBlindIndexPort(),
     };
   });
 

@@ -17,15 +17,18 @@ import {
   DrizzleReceiptRepository,
   DrizzleSessionRepository,
   DrizzleStaffRepository,
+  DrizzleTenantKeyRepository,
   DrizzleTenantRepository,
 } from '@katahimo/db/repositories';
 import {
+  ConsoleAuditLogPort,
   GasBridgeMapsPort,
   GasBridgeSchedulePort,
   GeminiAiPort,
   LocalBlindIndexPort,
   LocalCryptoPort,
   LocalFileStoragePort,
+  LocalKmsPort,
   listAvailableGeminiModels,
   NoopMapsPort,
   NoopReportAiPort,
@@ -76,7 +79,9 @@ export interface Container {
 }
 
 export function createContainer(env: Env, db: Database): Container {
-  const crypto = new LocalCryptoPort(env.LOCAL_DEV_MASTER_KEY);
+  const kms = new LocalKmsPort(env.LOCAL_DEV_KEK);
+  const tenantKeys = new DrizzleTenantKeyRepository(db);
+  const crypto = new LocalCryptoPort(tenantKeys, kms, new ConsoleAuditLogPort());
   const appSettings = new DrizzleAppSettingsRepository(db);
   const gasBridgeOptions =
     env.GAS_BRIDGE_URL && env.GAS_BRIDGE_SECRET

@@ -22,15 +22,17 @@ function toRecord(row: CustomerRow): CustomerRecord {
     tenantId: row.tenantId,
     externalSource: row.externalSource,
     externalId: row.externalId,
-    name: { ciphertext: row.nameCiphertext, keyVersion: row.nameKeyVersion },
-    familyNameKana: encField(row.familyNameKanaCiphertext, row.familyNameKanaKeyVersion),
-    givenNameKana: encField(row.givenNameKanaCiphertext, row.givenNameKanaKeyVersion),
-    email: encField(row.emailCiphertext, row.emailKeyVersion),
-    phone: encField(row.phoneCiphertext, row.phoneKeyVersion),
-    addressDetail: encField(row.addressDetailCiphertext, row.addressDetailKeyVersion),
-    city: encField(row.cityCiphertext, row.cityKeyVersion),
-    parkingArea: encField(row.parkingAreaCiphertext, row.parkingAreaKeyVersion),
-    parkingDetail: encField(row.parkingDetailCiphertext, row.parkingDetailKeyVersion),
+    name: row.name,
+    familyName: row.familyName,
+    givenName: row.givenName,
+    familyNameKana: row.familyNameKana,
+    givenNameKana: row.givenNameKana,
+    email: row.email,
+    phone: row.phone,
+    addressDetail: row.addressDetail,
+    city: row.city,
+    parkingArea: row.parkingArea,
+    parkingDetail: row.parkingDetail,
     emergencyContact: encField(row.emergencyContactCiphertext, row.emergencyContactKeyVersion),
     emergencyContactRelation: encField(
       row.emergencyContactRelationCiphertext,
@@ -39,7 +41,7 @@ function toRecord(row: CustomerRow): CustomerRecord {
     evacuationSite: encField(row.evacuationSiteCiphertext, row.evacuationSiteKeyVersion),
     memo: encField(row.memoCiphertext, row.memoKeyVersion),
     benefitMemberId: encField(row.benefitMemberIdCiphertext, row.benefitMemberIdKeyVersion),
-    address2: encField(row.address2Ciphertext, row.address2KeyVersion),
+    address2: row.address2,
     address2StartDate: row.address2StartDate,
     address2EndDate: row.address2EndDate,
     latLng: encField(row.latLngCiphertext, row.latLngKeyVersion),
@@ -67,28 +69,14 @@ function toColumnValues(input: NewCustomerInput | CustomerPatchInput) {
   return {
     externalSource: input.externalSource,
     externalId: input.externalId,
-    ...(input.name && { nameCiphertext: input.name.ciphertext, nameKeyVersion: input.name.keyVersion }),
-    ...(input.familyNameBlindIndex !== undefined && { familyNameBlindIndex: input.familyNameBlindIndex }),
-    ...(input.givenNameBlindIndex !== undefined && { givenNameBlindIndex: input.givenNameBlindIndex }),
-    familyNameKanaCiphertext: input.familyNameKana?.ciphertext ?? null,
-    familyNameKanaKeyVersion: input.familyNameKana?.keyVersion ?? null,
-    givenNameKanaCiphertext: input.givenNameKana?.ciphertext ?? null,
-    givenNameKanaKeyVersion: input.givenNameKana?.keyVersion ?? null,
-    emailCiphertext: input.email?.ciphertext ?? null,
-    emailKeyVersion: input.email?.keyVersion ?? null,
-    emailBlindIndex: input.emailBlindIndex ?? null,
-    phoneCiphertext: input.phone?.ciphertext ?? null,
-    phoneKeyVersion: input.phone?.keyVersion ?? null,
-    phoneBlindIndex: input.phoneBlindIndex ?? null,
-    addressDetailCiphertext: input.addressDetail?.ciphertext ?? null,
-    addressDetailKeyVersion: input.addressDetail?.keyVersion ?? null,
-    cityCiphertext: input.city?.ciphertext ?? null,
-    cityKeyVersion: input.city?.keyVersion ?? null,
-    cityBlindIndex: input.cityBlindIndex ?? null,
-    parkingAreaCiphertext: input.parkingArea?.ciphertext ?? null,
-    parkingAreaKeyVersion: input.parkingArea?.keyVersion ?? null,
-    parkingDetailCiphertext: input.parkingDetail?.ciphertext ?? null,
-    parkingDetailKeyVersion: input.parkingDetail?.keyVersion ?? null,
+    familyNameKana: input.familyNameKana ?? null,
+    givenNameKana: input.givenNameKana ?? null,
+    email: input.email ?? null,
+    phone: input.phone ?? null,
+    addressDetail: input.addressDetail ?? null,
+    city: input.city ?? null,
+    parkingArea: input.parkingArea ?? null,
+    parkingDetail: input.parkingDetail ?? null,
     emergencyContactCiphertext: input.emergencyContact?.ciphertext ?? null,
     emergencyContactKeyVersion: input.emergencyContact?.keyVersion ?? null,
     emergencyContactRelationCiphertext: input.emergencyContactRelation?.ciphertext ?? null,
@@ -99,8 +87,7 @@ function toColumnValues(input: NewCustomerInput | CustomerPatchInput) {
     memoKeyVersion: input.memo?.keyVersion ?? null,
     benefitMemberIdCiphertext: input.benefitMemberId?.ciphertext ?? null,
     benefitMemberIdKeyVersion: input.benefitMemberId?.keyVersion ?? null,
-    address2Ciphertext: input.address2?.ciphertext ?? null,
-    address2KeyVersion: input.address2?.keyVersion ?? null,
+    address2: input.address2 ?? null,
     address2StartDate: input.address2StartDate ?? null,
     address2EndDate: input.address2EndDate ?? null,
     latLngCiphertext: input.latLng?.ciphertext ?? null,
@@ -125,10 +112,9 @@ export class DrizzleCustomerRepository implements CustomerRepositoryPort {
         .insert(customers)
         .values({
           tenantId: input.tenantId,
-          nameCiphertext: input.name.ciphertext,
-          nameKeyVersion: input.name.keyVersion,
-          familyNameBlindIndex: input.familyNameBlindIndex,
-          givenNameBlindIndex: input.givenNameBlindIndex,
+          name: input.name,
+          familyName: input.familyName,
+          givenName: input.givenName,
           ...toColumnValues(input),
         })
         .returning();
@@ -146,17 +132,12 @@ export class DrizzleCustomerRepository implements CustomerRepositoryPort {
     });
   }
 
-  async findByFamilyNameBlindIndex(
-    tenantId: string,
-    familyNameBlindIndex: string,
-  ): Promise<CustomerRecord[]> {
+  async findByFamilyName(tenantId: string, familyName: string): Promise<CustomerRecord[]> {
     return withTenant(this.db, tenantId, async (tx) => {
       const rows = await tx
         .select()
         .from(customers)
-        .where(
-          and(eq(customers.tenantId, tenantId), eq(customers.familyNameBlindIndex, familyNameBlindIndex)),
-        );
+        .where(and(eq(customers.tenantId, tenantId), eq(customers.familyName, familyName)));
       return rows.map(toRecord);
     });
   }
@@ -198,7 +179,12 @@ export class DrizzleCustomerRepository implements CustomerRepositoryPort {
     return withTenant(this.db, tenantId, async (tx) => {
       const rows = await tx
         .update(customers)
-        .set(toColumnValues(patch))
+        .set({
+          ...toColumnValues(patch),
+          ...(patch.name !== undefined && { name: patch.name }),
+          ...(patch.familyName !== undefined && { familyName: patch.familyName }),
+          ...(patch.givenName !== undefined && { givenName: patch.givenName }),
+        })
         .where(eq(customers.id, customerId))
         .returning();
       const row = rows[0];

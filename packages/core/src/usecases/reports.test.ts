@@ -6,7 +6,6 @@ import { createCustomer } from './customers';
 import type { ReportDeps } from './reports';
 import { sendVisitCompleteNotification } from './reports';
 import {
-  FakeBlindIndexPort,
   FakeCryptoPort,
   FakeCustomerRepository,
   FakeFamilyMemberRepository,
@@ -34,8 +33,6 @@ describe('sendVisitCompleteNotification', () => {
       tenants: new FakeTenantRepository(),
       staff,
       sessions: new FakeSessionRepository(),
-      crypto,
-      blindIndex: new FakeBlindIndexPort(),
       passwordHasher: new FakePasswordHasherPort(),
     };
     const createdStaff = await registerStaff(authDeps, {
@@ -51,7 +48,6 @@ describe('sendVisitCompleteNotification', () => {
       customers,
       familyMembers: new FakeFamilyMemberRepository(),
       crypto,
-      blindIndex: new FakeBlindIndexPort(),
     };
     const createdCustomer = await createCustomer(customerDeps, { tenantId, name: '田中 一郎' });
     customerId = createdCustomer.id;

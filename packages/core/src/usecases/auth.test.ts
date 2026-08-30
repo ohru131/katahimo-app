@@ -10,8 +10,6 @@ import {
   resolveSession,
 } from './auth';
 import {
-  FakeBlindIndexPort,
-  FakeCryptoPort,
   FakePasswordHasherPort,
   FakeSessionRepository,
   FakeStaffRepository,
@@ -27,8 +25,6 @@ describe('login / registerStaff / resolveSession', () => {
       tenants: new FakeTenantRepository(),
       staff: new FakeStaffRepository(),
       sessions: new FakeSessionRepository(),
-      crypto: new FakeCryptoPort(),
-      blindIndex: new FakeBlindIndexPort(),
       passwordHasher: new FakePasswordHasherPort(),
     };
     const tenant = await deps.tenants.create({ name: 'テスト法人', slug: 'test-tenant' });
@@ -113,8 +109,6 @@ describe('GAS版レガシーパスワードハッシュからの移行ログイ�
       tenants: new FakeTenantRepository(),
       staff: new FakeStaffRepository(),
       sessions: new FakeSessionRepository(),
-      crypto: new FakeCryptoPort(),
-      blindIndex: new FakeBlindIndexPort(),
       passwordHasher: new FakePasswordHasherPort(),
       legacyAuthSalt: legacySalt,
     };
@@ -143,8 +137,7 @@ describe('GAS版レガシーパスワードハッシュからの移行ログイ�
   it('ログイン成功後、argon2idへサイレント再ハッシュされ、レガシーハッシュは消える', async () => {
     await login(deps, { tenantSlug: 'test-tenant', email: 'jiro@example.com', password: 'legacy-password' });
 
-    const emailBlindIndex = await deps.blindIndex.compute(tenantId, 'jiro@example.com');
-    const staffRecord = await deps.staff.findByEmailBlindIndex(tenantId, emailBlindIndex);
+    const staffRecord = await deps.staff.findByEmail(tenantId, 'jiro@example.com');
     expect(staffRecord?.passwordHash).toBe('HASH:legacy-password');
     expect(staffRecord?.legacyPasswordHash).toBeNull();
   });
@@ -180,10 +173,7 @@ describe('GAS版レガシーパスワードハッシュからの移行ログイ�
   });
 
   it('changePasswordは、GAS版のレガシーハッシュのままでも現在のパスワードを検証して変更でき、以後argon2idだけでログインできる', async () => {
-    const staffRecord = await deps.staff.findByEmailBlindIndex(
-      tenantId,
-      await deps.blindIndex.compute(tenantId, 'jiro@example.com'),
-    );
+    const staffRecord = await deps.staff.findByEmail(tenantId, 'jiro@example.com');
     if (!staffRecord) throw new Error('unreachable');
 
     const result = await changePassword(deps, tenantId, staffRecord.id, 'legacy-password', 'new-password');
@@ -215,8 +205,6 @@ describe('changePassword', () => {
       tenants: new FakeTenantRepository(),
       staff: new FakeStaffRepository(),
       sessions: new FakeSessionRepository(),
-      crypto: new FakeCryptoPort(),
-      blindIndex: new FakeBlindIndexPort(),
       passwordHasher: new FakePasswordHasherPort(),
     };
     const tenant = await deps.tenants.create({ name: 'テスト法人', slug: 'test-tenant' });

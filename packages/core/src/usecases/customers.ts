@@ -1,11 +1,5 @@
-import {
-  normalizeAddressComponentForIndex,
-  normalizeEmailForIndex,
-  normalizePhoneForIndex,
-  normalizeStaffName,
-  splitJapaneseFullName,
-} from '../domain';
-import type { BlindIndexPort, CryptoPort } from '../ports/crypto';
+import { normalizeStaffName, splitJapaneseFullName } from '../domain';
+import type { CryptoPort } from '../ports/crypto';
 import type {
   CustomerPatchInput,
   CustomerRecord,
@@ -21,7 +15,6 @@ export interface CustomerDeps {
   customers: CustomerRepositoryPort;
   familyMembers: FamilyMemberRepositoryPort;
   crypto: CryptoPort;
-  blindIndex: BlindIndexPort;
 }
 
 async function encryptIfPresent(
@@ -100,48 +93,18 @@ async function buildCustomerRecordFields(
   const givenName = input.givenName ?? splitJapaneseFullName(input.name).givenName;
 
   const [
-    nameEnc,
-    familyNameBlindIndex,
-    givenNameBlindIndex,
-    familyNameKanaEnc,
-    givenNameKanaEnc,
-    emailEnc,
-    emailBlindIndex,
-    phoneEnc,
-    phoneBlindIndex,
-    addressDetailEnc,
-    cityEnc,
-    cityBlindIndex,
-    parkingAreaEnc,
-    parkingDetailEnc,
     emergencyContactEnc,
     emergencyContactRelationEnc,
     evacuationSiteEnc,
     memoEnc,
     benefitMemberIdEnc,
-    address2Enc,
     latLngEnc,
   ] = await Promise.all([
-    deps.crypto.encrypt(tenantId, input.name),
-    deps.blindIndex.compute(tenantId, familyName),
-    deps.blindIndex.compute(tenantId, givenName),
-    encryptIfPresent(deps.crypto, tenantId, input.familyNameKana),
-    encryptIfPresent(deps.crypto, tenantId, input.givenNameKana),
-    encryptIfPresent(deps.crypto, tenantId, input.email),
-    input.email ? deps.blindIndex.compute(tenantId, normalizeEmailForIndex(input.email)) : null,
-    encryptIfPresent(deps.crypto, tenantId, input.phone),
-    input.phone ? deps.blindIndex.compute(tenantId, normalizePhoneForIndex(input.phone)) : null,
-    encryptIfPresent(deps.crypto, tenantId, input.addressDetail),
-    encryptIfPresent(deps.crypto, tenantId, input.city),
-    input.city ? deps.blindIndex.compute(tenantId, normalizeAddressComponentForIndex(input.city)) : null,
-    encryptIfPresent(deps.crypto, tenantId, input.parkingArea),
-    encryptIfPresent(deps.crypto, tenantId, input.parkingDetail),
     encryptIfPresent(deps.crypto, tenantId, input.emergencyContact),
     encryptIfPresent(deps.crypto, tenantId, input.emergencyContactRelation),
     encryptIfPresent(deps.crypto, tenantId, input.evacuationSite),
     encryptIfPresent(deps.crypto, tenantId, input.memo),
     encryptIfPresent(deps.crypto, tenantId, input.benefitMemberId),
-    encryptIfPresent(deps.crypto, tenantId, input.address2),
     encryptIfPresent(deps.crypto, tenantId, input.latLng),
   ]);
 
@@ -149,26 +112,24 @@ async function buildCustomerRecordFields(
     tenantId,
     externalSource: input.externalSource ?? null,
     externalId: input.externalId ?? null,
-    name: nameEnc,
-    familyNameBlindIndex,
-    givenNameBlindIndex,
-    familyNameKana: familyNameKanaEnc,
-    givenNameKana: givenNameKanaEnc,
-    email: emailEnc,
-    emailBlindIndex,
-    phone: phoneEnc,
-    phoneBlindIndex,
-    addressDetail: addressDetailEnc,
-    city: cityEnc,
-    cityBlindIndex,
-    parkingArea: parkingAreaEnc,
-    parkingDetail: parkingDetailEnc,
+    name: input.name,
+    // normalizeStaffNameで正規化してから保存する(空白の表記ゆれがあっても検索が一致するように)。
+    familyName: normalizeStaffName(familyName),
+    givenName: normalizeStaffName(givenName),
+    familyNameKana: input.familyNameKana ?? null,
+    givenNameKana: input.givenNameKana ?? null,
+    email: input.email ?? null,
+    phone: input.phone ?? null,
+    addressDetail: input.addressDetail ?? null,
+    city: input.city ?? null,
+    parkingArea: input.parkingArea ?? null,
+    parkingDetail: input.parkingDetail ?? null,
     emergencyContact: emergencyContactEnc,
     emergencyContactRelation: emergencyContactRelationEnc,
     evacuationSite: evacuationSiteEnc,
     memo: memoEnc,
     benefitMemberId: benefitMemberIdEnc,
-    address2: address2Enc,
+    address2: input.address2 ?? null,
     address2StartDate: input.address2StartDate ?? null,
     address2EndDate: input.address2EndDate ?? null,
     latLng: latLngEnc,
@@ -201,7 +162,7 @@ async function buildFamilyMemberInputs(
 }
 
 /**
- * 顧客を登録する。氏名は姓・名それぞれブラインドインデックス化し、「苗字だけで検索」に対応する。
+ * 顧客を登録する。氏名は姓・名に分割して平文で別カラムに保存し、「苗字だけで検索」に対応する。
  * 世帯構成員(子ども等)を渡した場合はfamily_membersにも保存する
  * (packages/core/src/domain/legacyImport/parseFamilyInfo.tsの出力をそのまま渡せる形)。
  */
@@ -250,9 +211,9 @@ export interface CustomerView {
 }
 
 /**
- * 苗字(姓)の完全一致で顧客を検索する。
- * 部分一致/前方一致はブラインドインデックス方式では実現できないため非対応
- * (現場の「苗字だけで検索することがある」要件はトークン単位の完全一致で満たせると確認済み)。
+ * 苗字(姓)の完全一致で顧客を検索する。GAS版・旧ブラインドインデックス方式と同じ「トークン単位の
+ * 完全一致」の挙動を踏襲している。familyNameは平文カラムになったため技術的には前方一致(ILIKE)も
+ * 実現可能だが、現時点でその要件は無いため変更していない。
  */
 export async function searchCustomersByFamilyName(
   deps: CustomerDeps,
@@ -260,19 +221,11 @@ export async function searchCustomersByFamilyName(
   familyName: string,
 ): Promise<CustomerView[]> {
   // splitJapaneseFullName内の姓トークンと同じ正規化(NFKC + 空白除去)を検索入力にも適用する。
-  // ここがずれると、登録時と検索時でブラインドインデックスが一致しなくなる。
+  // ここがずれると、登録時と検索時で一致しなくなる。
   const normalizedFamilyName = normalizeStaffName(familyName.normalize('NFKC'));
-  const blindIndex = await deps.blindIndex.compute(tenantId, normalizedFamilyName);
-  const rows = await deps.customers.findByFamilyNameBlindIndex(tenantId, blindIndex);
+  const rows = await deps.customers.findByFamilyName(tenantId, normalizedFamilyName);
 
-  return Promise.all(
-    rows.map(async (row) => ({
-      id: row.id,
-      name: await deps.crypto.decrypt(tenantId, row.name),
-      phone: row.phone ? await deps.crypto.decrypt(tenantId, row.phone) : null,
-      city: row.city ? await deps.crypto.decrypt(tenantId, row.city) : null,
-    })),
-  );
+  return rows.map((row) => ({ id: row.id, name: row.name, phone: row.phone, city: row.city }));
 }
 
 export interface CustomerListResult {
@@ -285,20 +238,13 @@ export interface CustomerListResult {
  * 有効な顧客を全件、復号した状態で返す。GAS版Main.js fetchDataFromSheetが顧客DB全件を
  * 一度にクライアントへ返し、以後の名前の部分一致検索・地区絞り込み・並び替えは全てブラウザ側の
  * 処理(index.htmlのfilterCustomers())だったのと同じ設計にするための一覧取得。
- * (searchCustomersByFamilyNameのブラインドインデックス完全一致検索とは別の用途で、
+ * (searchCustomersByFamilyNameの苗字完全一致検索とは別の用途で、
  * 「訪問先一覧」タブの既定表示・絞り込みにはこちらを使う。)
  */
 export async function listCustomers(deps: CustomerDeps, tenantId: string): Promise<CustomerListResult> {
   const rows = await deps.customers.listActive(tenantId);
 
-  const customerViews = await Promise.all(
-    rows.map(async (row) => ({
-      id: row.id,
-      name: await deps.crypto.decrypt(tenantId, row.name),
-      phone: row.phone ? await deps.crypto.decrypt(tenantId, row.phone) : null,
-      city: row.city ? await deps.crypto.decrypt(tenantId, row.city) : null,
-    })),
-  );
+  const customerViews = rows.map((row) => ({ id: row.id, name: row.name, phone: row.phone, city: row.city }));
 
   const cities = Array.from(
     new Set(customerViews.map((c) => c.city).filter((c): c is string => Boolean(c))),
@@ -374,39 +320,19 @@ export async function getCustomerDetail(
   const familyRows = await deps.familyMembers.listByCustomerId(tenantId, customerId);
 
   const [
-    name,
-    familyNameKana,
-    givenNameKana,
-    email,
-    phone,
-    addressDetail,
-    city,
-    parkingArea,
-    parkingDetail,
     emergencyContact,
     emergencyContactRelation,
     evacuationSite,
     memo,
     benefitMemberId,
-    address2,
     latLng,
     familyMembers,
   ] = await Promise.all([
-    deps.crypto.decrypt(tenantId, row.name),
-    decryptIfPresent(deps.crypto, tenantId, row.familyNameKana),
-    decryptIfPresent(deps.crypto, tenantId, row.givenNameKana),
-    decryptIfPresent(deps.crypto, tenantId, row.email),
-    decryptIfPresent(deps.crypto, tenantId, row.phone),
-    decryptIfPresent(deps.crypto, tenantId, row.addressDetail),
-    decryptIfPresent(deps.crypto, tenantId, row.city),
-    decryptIfPresent(deps.crypto, tenantId, row.parkingArea),
-    decryptIfPresent(deps.crypto, tenantId, row.parkingDetail),
     decryptIfPresent(deps.crypto, tenantId, row.emergencyContact),
     decryptIfPresent(deps.crypto, tenantId, row.emergencyContactRelation),
     decryptIfPresent(deps.crypto, tenantId, row.evacuationSite),
     decryptIfPresent(deps.crypto, tenantId, row.memo),
     decryptIfPresent(deps.crypto, tenantId, row.benefitMemberId),
-    decryptIfPresent(deps.crypto, tenantId, row.address2),
     decryptIfPresent(deps.crypto, tenantId, row.latLng),
     Promise.all(familyRows.map((f) => decryptFamilyMember(deps.crypto, tenantId, f))),
   ]);
@@ -415,21 +341,21 @@ export async function getCustomerDetail(
     id: row.id,
     externalSource: row.externalSource,
     externalId: row.externalId,
-    name,
-    familyNameKana,
-    givenNameKana,
-    email,
-    phone,
-    addressDetail,
-    city,
-    parkingArea,
-    parkingDetail,
+    name: row.name,
+    familyNameKana: row.familyNameKana,
+    givenNameKana: row.givenNameKana,
+    email: row.email,
+    phone: row.phone,
+    addressDetail: row.addressDetail,
+    city: row.city,
+    parkingArea: row.parkingArea,
+    parkingDetail: row.parkingDetail,
     emergencyContact,
     emergencyContactRelation,
     evacuationSite,
     memo,
     benefitMemberId,
-    address2,
+    address2: row.address2,
     address2StartDate: row.address2StartDate,
     address2EndDate: row.address2EndDate,
     latLng,

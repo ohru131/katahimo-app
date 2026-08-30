@@ -35,11 +35,7 @@ async function main() {
     console.log(`[seed] テナントは既に存在します: ${tenant.name} (id=${tenant.id})`);
   }
 
-  const adminEmailBlindIndex = await container.blindIndex.compute(
-    tenant.id,
-    normalizeEmailForIndex(ADMIN_EMAIL),
-  );
-  const existingAdmin = await container.staff.findByEmailBlindIndex(tenant.id, adminEmailBlindIndex);
+  const existingAdmin = await container.staff.findByEmail(tenant.id, normalizeEmailForIndex(ADMIN_EMAIL));
   if (!existingAdmin) {
     await registerStaff(container, {
       tenantId: tenant.id,

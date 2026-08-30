@@ -8,12 +8,7 @@ import {
   searchCustomersByFamilyName,
   updateCustomer,
 } from './customers';
-import {
-  FakeBlindIndexPort,
-  FakeCryptoPort,
-  FakeCustomerRepository,
-  FakeFamilyMemberRepository,
-} from './testDoubles';
+import { FakeCryptoPort, FakeCustomerRepository, FakeFamilyMemberRepository } from './testDoubles';
 
 describe('createCustomer / searchCustomersByFamilyName', () => {
   let deps: CustomerDeps;
@@ -24,11 +19,10 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
       customers: new FakeCustomerRepository(),
       familyMembers: new FakeFamilyMemberRepository(),
       crypto: new FakeCryptoPort(),
-      blindIndex: new FakeBlindIndexPort(),
     };
   });
 
-  it('登録した顧客を苗字の完全一致で検索できる(登録時と検索時のブラインドインデックスが一致する)', async () => {
+  it('登録した顧客を苗字の完全一致で検索できる(登録時と検索時の正規化が一致する)', async () => {
     await createCustomer(deps, { tenantId, name: '佐藤 花子', phone: '090-1111-2222', city: '渋谷区' });
     await createCustomer(deps, { tenantId, name: '佐藤 次郎', phone: '090-3333-4444', city: '新宿区' });
     await createCustomer(deps, { tenantId, name: '鈴木 三郎' });

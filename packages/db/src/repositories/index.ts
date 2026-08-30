@@ -7,4 +7,5 @@ export * from './familyMemberRepository';
 export * from './receiptRepository';
 export * from './sessionRepository';
 export * from './staffRepository';
+export * from './tenantKeyRepository';
 export * from './tenantRepository';

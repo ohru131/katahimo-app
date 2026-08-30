@@ -173,11 +173,11 @@ export async function uploadReceipts(
 
   if (uploadedCount > 0) {
     const staffRecord = await deps.staff.findById(tenantId, input.staffId);
-    const staffName = staffRecord ? await deps.crypto.decrypt(tenantId, staffRecord.name) : '不明';
+    const staffName = staffRecord ? staffRecord.name : '不明';
     const customerRecord = input.customerId
       ? await deps.customers.findById(tenantId, input.customerId)
       : null;
-    const customerName = customerRecord ? await deps.crypto.decrypt(tenantId, customerRecord.name) : null;
+    const customerName = customerRecord ? customerRecord.name : null;
 
     const notificationText = buildReceiptNotificationText({
       staffName,

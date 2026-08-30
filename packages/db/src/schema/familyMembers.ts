@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { foreignKey, integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { tenants } from './tenants';
@@ -19,9 +19,7 @@ export const familyMembers = pgTable(
     tenantId: uuid()
       .notNull()
       .references(() => tenants.id),
-    customerId: uuid()
-      .notNull()
-      .references(() => customers.id),
+    customerId: uuid().notNull(),
 
     nameCiphertext: text().notNull(),
     nameKeyVersion: integer().notNull(),
@@ -37,5 +35,13 @@ export const familyMembers = pgTable(
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  () => [pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING })],
+  (t) => [
+    pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING }),
+    // dailyReports.tsと同じ理由。
+    foreignKey({
+      name: 'family_members_tenant_customer_fk',
+      columns: [t.tenantId, t.customerId],
+      foreignColumns: [customers.tenantId, customers.id],
+    }),
+  ],
 ).enableRLS();

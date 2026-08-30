@@ -11,9 +11,16 @@ export interface EncryptedField {
 export interface StaffRecord {
   id: string;
   tenantId: string;
-  name: EncryptedField;
-  email: EncryptedField;
-  emailBlindIndex: string;
+  /**
+   * 氏名・メール・電話は平文で保持する(2026-08のデータベース構造レビューを踏まえ、要配慮性の
+   * 低い通常の個人情報はフィールド暗号化の対象から外し、DB/バックアップの透過的暗号化(TDE)+
+   * Row Level Security+アクセス制御に委ねる方針へ変更。doc/09参照)。emailは大文字小文字・
+   * 前後空白を無視できるよう、書き込み時に`normalizeEmailForIndex`で正規化した値を保存する
+   * (ログイン時の検索キーとして使うため、表記ゆれで一致しないと困る)。
+   */
+  name: string;
+  email: string;
+  phone: string | null;
   /** argon2id。GAS版から移行し未ログインのスタッフはnull(legacyPasswordHashのみ持つ)。 */
   passwordHash: string | null;
   /** GAS版のsha256(password+AUTH_SALT)。argon2idへの再ハッシュが完了したらnullに戻す。 */
@@ -24,11 +31,9 @@ export interface StaffRecord {
 
 export interface NewStaffInput {
   tenantId: string;
-  name: EncryptedField;
-  familyNameBlindIndex: string;
-  givenNameBlindIndex: string;
-  email: EncryptedField;
-  emailBlindIndex: string;
+  name: string;
+  email: string;
+  phone?: string | null;
   /** 新規登録は必ずargon2idを渡す。GAS版からの移行はlegacyPasswordHashを渡し、こちらはnullにする。 */
   passwordHash?: string | null;
   legacyPasswordHash?: string | null;
@@ -38,11 +43,12 @@ export interface NewStaffInput {
 /** 管理者向け「対象スタッフ」セレクタ用の最小情報。 */
 export interface ActiveStaffRecord {
   id: string;
-  name: EncryptedField;
+  name: string;
 }
 
 export interface StaffRepositoryPort {
-  findByEmailBlindIndex(tenantId: string, emailBlindIndex: string): Promise<StaffRecord | null>;
+  /** emailは呼び出し側が`normalizeEmailForIndex`で正規化済みの値を渡す前提(ログイン時の検索キー)。 */
+  findByEmail(tenantId: string, email: string): Promise<StaffRecord | null>;
   findById(tenantId: string, staffId: string): Promise<StaffRecord | null>;
   create(input: NewStaffInput): Promise<StaffRecord>;
   /** ログイン成功時、レガシーハッシュをargon2idへサイレント再ハッシュするために使う。changePasswordでも同じ形の更新に使う。 */
@@ -98,26 +104,36 @@ export interface TenantRepositoryPort {
 
 /**
  * 顧客プロファイル。RESERVA CSVの全列(パスワード列を除く)に対応するフィールドを持つ
- * (packages/db/src/schema/customers.ts参照)。個人特定につながる値は全てEncryptedField、
- * 会員種別・支払状況等の分類情報はプレーンな文字列/日付として保持する。
+ * (packages/db/src/schema/customers.ts参照)。
+ *
+ * 2026-08のデータベース構造レビュー(「DB個別暗号化は過剰、バックアップ暗号化で十分」という
+ * 有識者指摘)を踏まえ、暗号化対象を要配慮性の高い項目(第三者情報・位置情報・自由記述・
+ * 識別子)に絞った。氏名・連絡先・住所等の通常の個人情報はプレーンな文字列として保持し、
+ * DB/バックアップの透過的暗号化(TDE)+Row Level Security+アクセス制御で保護する
+ * (doc/09_データベース構造解説.md参照)。
+ *
+ * 平文: familyNameKana/givenNameKana/email/phone/addressDetail/city/parkingArea/parkingDetail/address2
+ * 暗号化(EncryptedField)を維持: emergencyContact(第三者の連絡先)/emergencyContactRelation/
+ * evacuationSite(最寄り校を特定しうる)/memo(自由記述で内容予測不可)/benefitMemberId(識別子)/
+ * latLng(自宅の正確な位置情報)
  */
 export interface CustomerProfileFields {
   externalSource: string | null;
   externalId: string | null;
-  familyNameKana: EncryptedField | null;
-  givenNameKana: EncryptedField | null;
-  email: EncryptedField | null;
-  phone: EncryptedField | null;
-  addressDetail: EncryptedField | null;
-  city: EncryptedField | null;
-  parkingArea: EncryptedField | null;
-  parkingDetail: EncryptedField | null;
+  familyNameKana: string | null;
+  givenNameKana: string | null;
+  email: string | null;
+  phone: string | null;
+  addressDetail: string | null;
+  city: string | null;
+  parkingArea: string | null;
+  parkingDetail: string | null;
   emergencyContact: EncryptedField | null;
   emergencyContactRelation: EncryptedField | null;
   evacuationSite: EncryptedField | null;
   memo: EncryptedField | null;
   benefitMemberId: EncryptedField | null;
-  address2: EncryptedField | null;
+  address2: string | null;
   address2StartDate: string | null;
   address2EndDate: string | null;
   latLng: EncryptedField | null;
@@ -134,18 +150,18 @@ export interface CustomerProfileFields {
 export interface CustomerRecord extends CustomerProfileFields {
   id: string;
   tenantId: string;
-  name: EncryptedField;
+  name: string;
+  /** 苗字だけの完全一致検索用(`normalizeStaffName`で正規化済み)。表示にはnameを使う。 */
+  familyName: string;
+  givenName: string;
   deactivatedAt: Date | null;
 }
 
 export interface NewCustomerInput extends Partial<CustomerProfileFields> {
   tenantId: string;
-  name: EncryptedField;
-  familyNameBlindIndex: string;
-  givenNameBlindIndex: string;
-  phoneBlindIndex?: string | null;
-  cityBlindIndex?: string | null;
-  emailBlindIndex?: string | null;
+  name: string;
+  familyName: string;
+  givenName: string;
 }
 
 /** 顧客の更新は「渡されたフィールドだけ上書きする」部分更新(PATCH)方式。 */
@@ -154,7 +170,8 @@ export type CustomerPatchInput = Partial<NewCustomerInput>;
 export interface CustomerRepositoryPort {
   create(input: NewCustomerInput): Promise<CustomerRecord>;
   findById(tenantId: string, customerId: string): Promise<CustomerRecord | null>;
-  findByFamilyNameBlindIndex(tenantId: string, familyNameBlindIndex: string): Promise<CustomerRecord[]>;
+  /** 苗字(正規化済み)の完全一致検索。呼び出し側は`normalizeStaffName`で正規化済みの値を渡す前提。 */
+  findByFamilyName(tenantId: string, familyName: string): Promise<CustomerRecord[]>;
   findByExternalId(
     tenantId: string,
     externalSource: string,
@@ -375,4 +392,30 @@ export type AppSettingsPatchInput = Partial<Omit<AppSettingsRecord, 'tenantId'>>
 export interface AppSettingsRepositoryPort {
   find(tenantId: string): Promise<AppSettingsRecord | null>;
   upsert(tenantId: string, patch: AppSettingsPatchInput): Promise<AppSettingsRecord>;
+}
+
+/**
+ * テナントごとのDEK(データ暗号化鍵)。KeyManagementPort(./kms.ts)でラップされた状態でのみ
+ * 保持し、平文DEKは常にCryptoPort実装のプロセス内メモリにしか存在しない
+ * (packages/db/src/schema/tenantKeys.ts参照)。
+ */
+export interface TenantKeyRecord {
+  tenantId: string;
+  dekVersion: number;
+  wrappedDek: string;
+  kekVersion: number;
+  revokedAt: Date | null;
+}
+
+export interface TenantKeyRepositoryPort {
+  find(tenantId: string): Promise<TenantKeyRecord | null>;
+  /** 初回暗号化時、まだDEKが無いテナントのために新規作成する。 */
+  create(tenantId: string, wrappedDek: string, kekVersion: number): Promise<TenantKeyRecord>;
+  /** KEKローテーション時、DEK自体は変えずラップだけ新KEKバージョンで更新する(軽量操作)。 */
+  updateWrappedDek(tenantId: string, wrappedDek: string, kekVersion: number): Promise<void>;
+  /**
+   * テナント解約時の暗号学的削除。DEKのレコードそのものを破棄し、以後
+   * (バックアップに残った暗号文も含め)復号を永久に不可能にする。
+   */
+  revoke(tenantId: string): Promise<void>;
 }

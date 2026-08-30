@@ -8,4 +8,5 @@ export * from './outbox';
 export * from './receipts';
 export * from './sessions';
 export * from './staff';
+export * from './tenantKeys';
 export * from './tenants';

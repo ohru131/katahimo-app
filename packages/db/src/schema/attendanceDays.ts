@@ -1,5 +1,15 @@
 import { sql } from 'drizzle-orm';
-import { date, integer, pgPolicy, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  date,
+  foreignKey,
+  integer,
+  pgPolicy,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { staff } from './staff';
 import { tenants } from './tenants';
@@ -24,9 +34,7 @@ export const attendanceDays = pgTable(
     tenantId: uuid()
       .notNull()
       .references(() => tenants.id),
-    staffId: uuid()
-      .notNull()
-      .references(() => staff.id),
+    staffId: uuid().notNull(),
     businessDate: date().notNull(),
 
     rowDataCiphertext: text().notNull(),
@@ -38,5 +46,11 @@ export const attendanceDays = pgTable(
   (t) => [
     pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING }),
     uniqueIndex('attendance_days_tenant_staff_date_idx').on(t.tenantId, t.staffId, t.businessDate),
+    // dailyReports.tsと同じ理由。給与直結のテーブルのため特に取り違えを防ぐ効果が大きい。
+    foreignKey({
+      name: 'attendance_days_tenant_staff_fk',
+      columns: [t.tenantId, t.staffId],
+      foreignColumns: [staff.tenantId, staff.id],
+    }),
   ],
 ).enableRLS();

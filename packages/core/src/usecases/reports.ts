@@ -36,11 +36,7 @@ async function resolveNames(
   ]);
   if (!staffRecord) throw new Error('スタッフが見つかりません');
   if (!customerRecord) throw new Error('顧客が見つかりません');
-  const [staffName, customerName] = await Promise.all([
-    deps.crypto.decrypt(tenantId, staffRecord.name),
-    deps.crypto.decrypt(tenantId, customerRecord.name),
-  ]);
-  return { staffName, customerName };
+  return { staffName: staffRecord.name, customerName: customerRecord.name };
 }
 
 export interface SaveDailyReportInput {
@@ -280,7 +276,7 @@ export async function getCustomerHistory(
     staffIds.map(async (staffId) => {
       const staffRecord = await deps.staff.findById(tenantId, staffId);
       if (!staffRecord) return;
-      staffNameById.set(staffId, await deps.crypto.decrypt(tenantId, staffRecord.name));
+      staffNameById.set(staffId, staffRecord.name);
     }),
   );
 

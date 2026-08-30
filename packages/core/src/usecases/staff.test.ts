@@ -4,8 +4,6 @@ import { registerStaff } from './auth';
 import type { StaffDeps } from './staff';
 import { listActiveStaffForAdmin } from './staff';
 import {
-  FakeBlindIndexPort,
-  FakeCryptoPort,
   FakePasswordHasherPort,
   FakeSessionRepository,
   FakeStaffRepository,
@@ -20,14 +18,11 @@ describe('listActiveStaffForAdmin', () => {
 
   beforeEach(() => {
     staffRepo = new FakeStaffRepository();
-    const crypto = new FakeCryptoPort();
-    deps = { staff: staffRepo, crypto };
+    deps = { staff: staffRepo };
     authDeps = {
       tenants: new FakeTenantRepository(),
       staff: staffRepo,
       sessions: new FakeSessionRepository(),
-      crypto,
-      blindIndex: new FakeBlindIndexPort(),
       passwordHasher: new FakePasswordHasherPort(),
     };
   });

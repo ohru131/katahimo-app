@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgPolicy, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { foreignKey, pgPolicy, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { staff } from './staff';
 import { tenants } from './tenants';
@@ -16,9 +16,7 @@ export const sessions = pgTable(
     tenantId: uuid()
       .notNull()
       .references(() => tenants.id),
-    staffId: uuid()
-      .notNull()
-      .references(() => staff.id),
+    staffId: uuid().notNull(),
     /** 生トークンのSHA-256(hex)。生トークン自体はクライアントのCookieにのみ存在する。 */
     tokenHash: text().notNull(),
     expiresAt: timestamp({ withTimezone: true }).notNull(),
@@ -27,5 +25,11 @@ export const sessions = pgTable(
   (t) => [
     pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING }),
     uniqueIndex('sessions_token_hash_idx').on(t.tokenHash),
+    // dailyReports.tsと同じ理由。他テナントのstaffId宛にセッションが誤発行される事態を防ぐ。
+    foreignKey({
+      name: 'sessions_tenant_staff_fk',
+      columns: [t.tenantId, t.staffId],
+      foreignColumns: [staff.tenantId, staff.id],
+    }),
   ],
 ).enableRLS();

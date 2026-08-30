@@ -89,8 +89,8 @@ export class FakeStaffRepository implements StaffRepositoryPort {
   private readonly rows: StaffRecord[] = [];
   private seq = 0;
 
-  async findByEmailBlindIndex(tenantId: string, emailBlindIndex: string): Promise<StaffRecord | null> {
-    return this.rows.find((s) => s.tenantId === tenantId && s.emailBlindIndex === emailBlindIndex) ?? null;
+  async findByEmail(tenantId: string, email: string): Promise<StaffRecord | null> {
+    return this.rows.find((s) => s.tenantId === tenantId && s.email === email) ?? null;
   }
   async findById(tenantId: string, staffId: string): Promise<StaffRecord | null> {
     return this.rows.find((s) => s.tenantId === tenantId && s.id === staffId) ?? null;
@@ -101,7 +101,7 @@ export class FakeStaffRepository implements StaffRepositoryPort {
       tenantId: input.tenantId,
       name: input.name,
       email: input.email,
-      emailBlindIndex: input.emailBlindIndex,
+      phone: input.phone ?? null,
       passwordHash: input.passwordHash ?? null,
       legacyPasswordHash: input.legacyPasswordHash ?? null,
       isAdmin: input.isAdmin,
@@ -185,7 +185,6 @@ const EMPTY_PROFILE_FIELDS: CustomerProfileFields = {
 
 interface StoredCustomer {
   record: CustomerRecord;
-  familyNameBlindIndex: string;
 }
 
 export class FakeCustomerRepository implements CustomerRepositoryPort {
@@ -199,7 +198,7 @@ export class FakeCustomerRepository implements CustomerRepositoryPort {
       id: `customer-${++this.seq}`,
       deactivatedAt: null,
     };
-    this.rows.push({ record, familyNameBlindIndex: input.familyNameBlindIndex });
+    this.rows.push({ record });
     return record;
   }
 
@@ -209,12 +208,9 @@ export class FakeCustomerRepository implements CustomerRepositoryPort {
     );
   }
 
-  async findByFamilyNameBlindIndex(
-    tenantId: string,
-    familyNameBlindIndex: string,
-  ): Promise<CustomerRecord[]> {
+  async findByFamilyName(tenantId: string, familyName: string): Promise<CustomerRecord[]> {
     return this.rows
-      .filter((r) => r.record.tenantId === tenantId && r.familyNameBlindIndex === familyNameBlindIndex)
+      .filter((r) => r.record.tenantId === tenantId && r.record.familyName === familyName)
       .map((r) => r.record);
   }
 
@@ -255,7 +251,6 @@ export class FakeCustomerRepository implements CustomerRepositoryPort {
     const stored = this.rows.find((r) => r.record.tenantId === tenantId && r.record.id === customerId);
     if (!stored) throw new Error(`customer not found: ${customerId}`);
     stored.record = { ...stored.record, ...patch };
-    if (patch.familyNameBlindIndex) stored.familyNameBlindIndex = patch.familyNameBlindIndex;
     return stored.record;
   }
 

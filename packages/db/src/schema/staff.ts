@@ -2,11 +2,11 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   date,
-  integer,
   pgPolicy,
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -16,9 +16,11 @@ import { tenants } from './tenants';
 /**
  * スタッフ(社員)。認証情報(パスワードハッシュ)を兼ねる。
  *
- * PII(氏名・メール・電話)は実値をランダム化暗号(ciphertext+keyVersion)で保存し、
- * 検索が必要な項目だけ別途blindIndex(HMAC)を持つ(packages/core/src/ports/crypto.ts参照)。
- * メールは「ログイン時にメールアドレスで引き当てる」ため必ずblindIndexを持つ。
+ * 氏名・メール・電話は平文で保持する(2026-08のデータベース構造レビューを踏まえ、要配慮性の
+ * 低い通常の個人情報はフィールド暗号化の対象から外し、DB/バックアップの透過的暗号化(TDE)+
+ * Row Level Security+アクセス制御に委ねる方針へ変更。doc/09参照)。emailはログイン時の検索キー
+ * になるため、書き込み時に`normalizeEmailForIndex`で正規化した値を保存する(表記ゆれで
+ * ログインできなくなることを防ぐため)。
  */
 export const staff = pgTable(
   'staff',
@@ -28,18 +30,9 @@ export const staff = pgTable(
       .notNull()
       .references(() => tenants.id),
 
-    nameCiphertext: text().notNull(),
-    nameKeyVersion: integer().notNull(),
-    familyNameBlindIndex: text().notNull(),
-    givenNameBlindIndex: text().notNull(),
-
-    emailCiphertext: text().notNull(),
-    emailKeyVersion: integer().notNull(),
-    emailBlindIndex: text().notNull(),
-
-    phoneCiphertext: text(),
-    phoneKeyVersion: integer(),
-    phoneBlindIndex: text(),
+    name: text().notNull(),
+    email: text().notNull(),
+    phone: text(),
 
     /**
      * argon2id。GAS版から移行したスタッフは初回ログインまでnull(legacyPasswordHashのみ持つ)。
@@ -61,6 +54,9 @@ export const staff = pgTable(
   },
   (t) => [
     pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING }),
-    uniqueIndex('staff_tenant_email_blind_idx').on(t.tenantId, t.emailBlindIndex),
+    uniqueIndex('staff_tenant_email_idx').on(t.tenantId, t.email),
+    // attendance_days/daily_reports等からの複合外部キー(tenant_id, staff_id)の参照先。
+    // customers.ts の customers_tenant_id_uk と同じ理由(RLSはFK制約をバイパスするため)。
+    unique('staff_tenant_id_uk').on(t.tenantId, t.id),
   ],
 ).enableRLS();

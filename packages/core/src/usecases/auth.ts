@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { computeLegacyHash, normalizeEmailForIndex, splitJapaneseFullName } from '../domain';
-import type { BlindIndexPort, CryptoPort } from '../ports/crypto';
+import { computeLegacyHash, normalizeEmailForIndex } from '../domain';
 import type {
   NewSessionInput,
   NewStaffInput,
@@ -18,8 +17,6 @@ export interface AuthDeps {
   tenants: TenantRepositoryPort;
   staff: StaffRepositoryPort;
   sessions: SessionRepositoryPort;
-  crypto: CryptoPort;
-  blindIndex: BlindIndexPort;
   passwordHasher: PasswordHasherPort;
   /**
    * GAS版Script Properties AUTH_SALTと同じ値。既存スタッフがパスワード変更なしでログイン
@@ -77,15 +74,14 @@ export function decodeSessionCookie(cookieValue: string): { tenantId: string; ra
  * メール+パスワードでのログイン。
  *
  * テナントはURLではなくログインフォームで渡される`tenantSlug`から先に特定する(RLS対象外の
- * tenantsテーブルへの問い合わせ)。テナントが決まって初めて、そのテナント内で
- * emailのブラインドインデックスによる検索ができる(全テナント横断でメールを検索しない)。
+ * tenantsテーブルへの問い合わせ)。テナントが決まって初めて、そのテナント内でemailによる
+ * 検索ができる(RLSのため、テナントが未確定のまま全テナント横断でメールを検索することはできない)。
  */
 export async function login(deps: AuthDeps, input: LoginInput): Promise<LoginResult> {
   const tenant = await deps.tenants.findBySlug(input.tenantSlug);
   if (!tenant) return { ok: false, reason: 'tenant_not_found' };
 
-  const emailBlindIndex = await deps.blindIndex.compute(tenant.id, normalizeEmailForIndex(input.email));
-  const staff = await deps.staff.findByEmailBlindIndex(tenant.id, emailBlindIndex);
+  const staff = await deps.staff.findByEmail(tenant.id, normalizeEmailForIndex(input.email));
   if (!staff) return { ok: false, reason: 'invalid_credentials' };
 
   if (staff.retirementDate) {
@@ -123,14 +119,17 @@ export async function login(deps: AuthDeps, input: LoginInput): Promise<LoginRes
   };
   await deps.sessions.create(sessionInput);
 
-  const name = await deps.crypto.decrypt(tenant.id, staff.name);
-  const email = await deps.crypto.decrypt(tenant.id, staff.email);
-
   return {
     ok: true,
     sessionCookieValue: encodeSessionCookie(tenant.id, rawToken),
     expiresAt,
-    staff: { id: staff.id, tenantId: tenant.id, name, email, isAdmin: staff.isAdmin },
+    staff: {
+      id: staff.id,
+      tenantId: tenant.id,
+      name: staff.name,
+      email: staff.email,
+      isAdmin: staff.isAdmin,
+    },
   };
 }
 
@@ -158,16 +157,11 @@ export async function resolveSession(deps: AuthDeps, cookieValue: string): Promi
   const staffRecord = await deps.staff.findById(session.tenantId, session.staffId);
   if (!staffRecord) return null;
 
-  const [name, email] = await Promise.all([
-    deps.crypto.decrypt(session.tenantId, staffRecord.name),
-    deps.crypto.decrypt(session.tenantId, staffRecord.email),
-  ]);
-
   return {
     tenantId: session.tenantId,
     staffId: staffRecord.id,
-    name,
-    email,
+    name: staffRecord.name,
+    email: staffRecord.email,
     isAdmin: staffRecord.isAdmin,
   };
 }
@@ -218,27 +212,16 @@ export interface RegisterStaffInput {
 
 /**
  * スタッフを新規登録する(現状はシード/管理者による追加を想定。セルフサインアップの
- * 導線はまだない)。氏名は姓・名に分割してそれぞれブラインドインデックスを持たせる。
+ * 導線はまだない)。氏名・メールは平文で保存する(doc/09参照。emailはログイン時の検索キーに
+ * なるため、表記ゆれで一致しなくならないよう正規化して保存する)。
  */
 export async function registerStaff(deps: AuthDeps, input: RegisterStaffInput) {
-  const { familyName, givenName } = splitJapaneseFullName(input.name);
-  const [nameEnc, emailEnc, passwordHash, familyNameBlindIndex, givenNameBlindIndex, emailBlindIndex] =
-    await Promise.all([
-      deps.crypto.encrypt(input.tenantId, input.name),
-      deps.crypto.encrypt(input.tenantId, input.email),
-      deps.passwordHasher.hash(input.password),
-      deps.blindIndex.compute(input.tenantId, familyName),
-      deps.blindIndex.compute(input.tenantId, givenName),
-      deps.blindIndex.compute(input.tenantId, normalizeEmailForIndex(input.email)),
-    ]);
+  const passwordHash = await deps.passwordHasher.hash(input.password);
 
   const record: NewStaffInput = {
     tenantId: input.tenantId,
-    name: nameEnc,
-    familyNameBlindIndex,
-    givenNameBlindIndex,
-    email: emailEnc,
-    emailBlindIndex,
+    name: input.name,
+    email: normalizeEmailForIndex(input.email),
     passwordHash,
     isAdmin: input.isAdmin,
   };
@@ -260,22 +243,10 @@ export interface ImportLegacyStaffInput {
  * ここではargon2idハッシュを発行せず、初回ログイン成功時に login() がサイレント再ハッシュする。
  */
 export async function importLegacyStaff(deps: AuthDeps, input: ImportLegacyStaffInput) {
-  const { familyName, givenName } = splitJapaneseFullName(input.name);
-  const [nameEnc, emailEnc, familyNameBlindIndex, givenNameBlindIndex, emailBlindIndex] = await Promise.all([
-    deps.crypto.encrypt(input.tenantId, input.name),
-    deps.crypto.encrypt(input.tenantId, input.email),
-    deps.blindIndex.compute(input.tenantId, familyName),
-    deps.blindIndex.compute(input.tenantId, givenName),
-    deps.blindIndex.compute(input.tenantId, normalizeEmailForIndex(input.email)),
-  ]);
-
   const record: NewStaffInput = {
     tenantId: input.tenantId,
-    name: nameEnc,
-    familyNameBlindIndex,
-    givenNameBlindIndex,
-    email: emailEnc,
-    emailBlindIndex,
+    name: input.name,
+    email: normalizeEmailForIndex(input.email),
     passwordHash: null,
     legacyPasswordHash: input.legacyPasswordHash,
     isAdmin: input.isAdmin,
