@@ -4,7 +4,7 @@ import type {
   ReceiptRecord,
   ReceiptRepositoryPort,
 } from '@katahimo/core/ports';
-import { and, inArray, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { Database } from '../client';
 import { withTenant } from '../client';
 import { receipts } from '../schema';
@@ -56,6 +56,14 @@ export class DrizzleReceiptRepository implements ReceiptRepositoryPort {
       const row = rows[0];
       if (!row) throw new Error('領収書の保存に失敗しました');
       return toRecord(row);
+    });
+  }
+
+  async findById(tenantId: string, id: string): Promise<ReceiptRecord | null> {
+    return withTenant(this.db, tenantId, async (tx) => {
+      const rows = await tx.select().from(receipts).where(eq(receipts.id, id)).limit(1);
+      const row = rows[0];
+      return row ? toRecord(row) : null;
     });
   }
 

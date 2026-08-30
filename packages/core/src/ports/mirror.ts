@@ -39,3 +39,28 @@ export interface MirrorPort {
    */
   enqueue(job: MirrorJob): Promise<void>;
 }
+
+/** ミラーワーカー(packages/worker)がoutbox_jobsから取り出す1件分。 */
+export interface OutboxJobRecord {
+  id: string;
+  tenantId: string;
+  kind: MirrorKind;
+  targetId: string;
+  /** 取得(claim)のたびに1増える。無限リトライを避ける将来の上限判定に使う想定(現時点では未使用)。 */
+  attempts: number;
+}
+
+/**
+ * outbox_jobsテーブルへのアクセス(積む側のMirrorPortに加え、ワーカーが処理するための取得・
+ * 完了/失敗マークまでを含む)。実装は@katahimo/dbに置く(DrizzleOutboxRepository)。
+ */
+export interface OutboxRepositoryPort extends MirrorPort {
+  /**
+   * pending状態のジョブを最大limit件、processingへ遷移させながら取得する。
+   * ワーカーはテナントごとにポーリングする(outbox_jobsはRLS対象のため、
+   * テナントを跨いで一度に取得することはできない。packages/worker/src/main.ts参照)。
+   */
+  claimPending(tenantId: string, limit: number): Promise<OutboxJobRecord[]>;
+  markDone(tenantId: string, id: string): Promise<void>;
+  markFailed(tenantId: string, id: string, error: string): Promise<void>;
+}

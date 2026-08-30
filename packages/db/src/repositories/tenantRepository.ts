@@ -20,4 +20,9 @@ export class DrizzleTenantRepository implements TenantRepositoryPort {
     if (!row) throw new Error('テナントの作成に失敗しました');
     return { id: row.id, name: row.name, slug: row.slug };
   }
+
+  async listAll(): Promise<TenantRecord[]> {
+    const rows = await this.db.select().from(tenants);
+    return rows.map((row) => ({ id: row.id, name: row.name, slug: row.slug }));
+  }
 }

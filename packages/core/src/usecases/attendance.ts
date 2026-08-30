@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type {
   AttendanceDayDerived,
   AttendanceMonthlyTotals,
@@ -10,11 +11,14 @@ import {
   computeMonthlyTotals,
 } from '../domain/attendance';
 import type { CryptoPort } from '../ports/crypto';
+import type { MirrorPort } from '../ports/mirror';
 import type { AttendanceDayRepositoryPort } from '../ports/repositories';
 
 export interface AttendanceDeps {
   attendanceDays: AttendanceDayRepositoryPort;
   crypto: CryptoPort;
+  /** 出勤簿スプレッドシートへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
+  mirror: MirrorPort;
 }
 
 export interface AttendanceDayView {
@@ -62,7 +66,13 @@ export async function saveAttendanceDay(
   rowData: AttendanceRowData,
 ): Promise<AttendanceDayView> {
   const encrypted = await deps.crypto.encrypt(tenantId, JSON.stringify(rowData));
-  await deps.attendanceDays.upsert(tenantId, staffId, businessDate, encrypted);
+  const record = await deps.attendanceDays.upsert(tenantId, staffId, businessDate, encrypted);
+  await deps.mirror.enqueue({
+    tenantId,
+    kind: 'attendance_day',
+    targetId: record.id,
+    idempotencyKey: randomUUID(),
+  });
   return { businessDate, rowData, derived: computeDayDerived(rowData) };
 }
 

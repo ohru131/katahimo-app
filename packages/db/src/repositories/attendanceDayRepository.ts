@@ -47,6 +47,14 @@ export class DrizzleAttendanceDayRepository implements AttendanceDayRepositoryPo
     });
   }
 
+  async findById(tenantId: string, id: string): Promise<AttendanceDayRecord | null> {
+    return withTenant(this.db, tenantId, async (tx) => {
+      const rows = await tx.select().from(attendanceDays).where(eq(attendanceDays.id, id)).limit(1);
+      const row = rows[0];
+      return row ? toRecord(row) : null;
+    });
+  }
+
   async upsert(
     tenantId: string,
     staffId: string,

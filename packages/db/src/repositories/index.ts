@@ -4,6 +4,7 @@ export * from './attendanceDayRepository';
 export * from './customerRepository';
 export * from './dailyReportRepository';
 export * from './familyMemberRepository';
+export * from './outboxRepository';
 export * from './receiptRepository';
 export * from './sessionRepository';
 export * from './staffRepository';

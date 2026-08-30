@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   buildAccidentHistoryInternalText,
   buildAccidentReportNotificationText,
@@ -7,6 +8,7 @@ import {
 } from '../domain';
 import type { AccidentReportContent, DailyReportContent } from '../domain/reports/types';
 import type { CryptoPort } from '../ports/crypto';
+import type { MirrorPort } from '../ports/mirror';
 import type { NotifierPort } from '../ports/notifier';
 import type {
   AccidentReportRepositoryPort,
@@ -22,6 +24,8 @@ export interface ReportDeps {
   staff: StaffRepositoryPort;
   crypto: CryptoPort;
   notifier: NotifierPort;
+  /** GAS版「日報」「事故報告」シートへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
+  mirror: MirrorPort;
 }
 
 async function resolveNames(
@@ -99,6 +103,13 @@ export async function saveDailyReport(
     ? ((await deps.dailyReports.update(tenantId, input.reportId, newInput)) ??
       (await deps.dailyReports.create(newInput)))
     : await deps.dailyReports.create(newInput);
+
+  await deps.mirror.enqueue({
+    tenantId,
+    kind: 'daily_report',
+    targetId: record.id,
+    idempotencyKey: randomUUID(),
+  });
 
   const { staffName, customerName } = await resolveNames(deps, tenantId, input.staffId, input.customerId);
   const notificationText = buildDailyReportNotificationText({
@@ -187,6 +198,13 @@ export async function saveAccidentReport(
     ? ((await deps.accidentReports.update(tenantId, input.reportId, newInput)) ??
       (await deps.accidentReports.create(newInput)))
     : await deps.accidentReports.create(newInput);
+
+  await deps.mirror.enqueue({
+    tenantId,
+    kind: 'accident_report',
+    targetId: record.id,
+    idempotencyKey: randomUUID(),
+  });
 
   const { staffName, customerName } = await resolveNames(deps, tenantId, input.staffId, input.customerId);
   const notificationText = buildAccidentReportNotificationText({

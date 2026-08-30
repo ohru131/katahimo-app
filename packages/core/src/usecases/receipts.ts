@@ -8,6 +8,7 @@ import {
   parseJstTimestampString,
 } from '../domain';
 import type { BlindIndexPort, CryptoPort } from '../ports/crypto';
+import type { MirrorPort } from '../ports/mirror';
 import type { NotifierPort } from '../ports/notifier';
 import type {
   CustomerRepositoryPort,
@@ -24,6 +25,8 @@ export interface ReceiptDeps {
   blindIndex: BlindIndexPort;
   storage: StoragePort;
   notifier: NotifierPort;
+  /** 領収書ログシート+Driveフォルダへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
+  mirror: MirrorPort;
 }
 
 export interface ReceiptImageInput {
@@ -148,7 +151,7 @@ export async function uploadReceipts(
         : Promise.resolve(null),
     ]);
 
-    await deps.receipts.create({
+    const receiptRecord = await deps.receipts.create({
       tenantId,
       staffId: input.staffId,
       customerId: input.customerId,
@@ -159,6 +162,12 @@ export async function uploadReceipts(
       handoffText: handoffEnc,
       fileKey,
       contentType: decoded.contentType,
+    });
+    await deps.mirror.enqueue({
+      tenantId,
+      kind: 'receipt',
+      targetId: receiptRecord.id,
+      idempotencyKey: randomUUID(),
     });
 
     registeredImages.push({

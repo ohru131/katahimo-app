@@ -5,6 +5,7 @@ export * from './crypto';
 export * from './kms';
 export * from './maps';
 export * from './mirror';
+export * from './mirrorSender';
 export * from './notifier';
 export * from './repositories';
 export * from './schedule';

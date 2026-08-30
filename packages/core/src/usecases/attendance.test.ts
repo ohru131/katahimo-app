@@ -6,7 +6,7 @@ import {
   getAttendanceScheduleEvents,
   saveAttendanceDay,
 } from './attendance';
-import { FakeAttendanceDayRepository, FakeCryptoPort } from './testDoubles';
+import { FakeAttendanceDayRepository, FakeCryptoPort, FakeOutboxRepository } from './testDoubles';
 
 describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
   let deps: AttendanceDeps;
@@ -14,7 +14,11 @@ describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
   const staffId = 'staff-1';
 
   beforeEach(() => {
-    deps = { attendanceDays: new FakeAttendanceDayRepository(), crypto: new FakeCryptoPort() };
+    deps = {
+      attendanceDays: new FakeAttendanceDayRepository(),
+      crypto: new FakeCryptoPort(),
+      mirror: new FakeOutboxRepository(),
+    };
   });
 
   it('データが無い日は空のrowDataとして扱い、派生値もすべて0/空になる', async () => {

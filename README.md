@@ -222,7 +222,30 @@ pnpm exec tsx src/scripts/importLegacyStaff.ts demo "氏名" メールアドレ�
   「📅 予定」タブの実データ表示までコード上は実装済み。**ただしBridge.jsの本番デプロイ
   (`clasp push`/新デプロイ作成)とScript PropertiesへのBRIDGE_API_SECRET設定はユーザー承認待ちのため
   未実施**で、実際にAPIを叩いての動作検証(このリポジトリのLogic verification規約が求める検証)は
-  まだ行っていない。Sheets/Drive連携(ミラー書き込み)は未着手。
+  まだ行っていない。
+  **Sheets/Driveへのミラー書き込み(outbox)のうち、日報/事故報告/領収書/勤怠(出勤簿)の4種類を実装した**
+  (`attendance_aggregate`・`calendar_event`は未着手)。設計はGAS版と同じくBridge.js経由(Maps
+  Platform同様、書き込みも稼働中のWeb Appデプロイのアクセス権をそのまま使うことで新規のGCP
+  サービスアカウント/Sheets APIの権限付与を避けた)。`saveDailyReport`/`saveAccidentReport`/
+  `uploadReceipts`/`saveAttendanceDay`の各usecaseがDB保存に成功した直後、`MirrorPort.enqueue`で
+  `outbox_jobs`に1件積む(`packages/core/src/usecases/mirrorWorker.ts`が種別ごとにDBの最新値を
+  読み直し・復号し、GAS側の列にそのまま書き込める形に整形する)。ワーカー(`packages/worker`)は
+  テナントごとに`outbox_jobs`を`FOR UPDATE SKIP LOCKED`でポーリングし(RLS対象のためテナントを
+  跨いで一度に取得できない)、`GasBridgeMirrorSenderPort`経由でBridge.jsの新規action
+  (`writeDailyReport`/`writeAccidentReport`/`writeReceipt`/`writeAttendanceDay`、`doPost`で追加)へ
+  POSTする。日報/事故報告シートは、katahimo-app側のreportIdを追跡する`KatahimoReportId`列を
+  最終列に追加し、同じreportIdの再送(編集保存)時は該当行を上書きする形にした(GAS版自身の
+  `rowIndex`方式は1ブラウザセッション内でしか使えず、outboxからの非同期再送では別途追跡が必要
+  だったため)。領収書はGAS版`processReceiptImages`をそのまま1枚分呼ぶだけで、重複判定も
+  GAS版の既存ロジックに委ねている。`MIRROR_TO_GOOGLE_SHEETS=false`(既定)の間はAPI側が
+  outboxへの積み込み自体を行わない(`NoopMirrorPort`)。ローカルAPI+ローカルワーカー+
+  ダミーのHTTPサーバー(Bridge.js write actionの代わり)で4種類とも実際にpending→doneまで
+  遷移すること、ペイロードの JSON構造がBridge.js側の期待する`payload.xxx`フィールド名と
+  一致すること、ブリッジが到達不能な場合はジョブが例外を投げずに`failed`(`lastError`記録)へ
+  遷移し次のポーリングに影響しないことを確認済み。**Bridge.js側の書き込みaction自体は
+  Sheets/Drive連携の中核であるため、読み取り側と同じくデプロイ承認待ち(未デプロイ)**。
+  `attendance_aggregate`(「勤怠集計」シート)・`calendar_event`(Googleカレンダー同期)は
+  次のフェーズで追加する。
 - [x] **Phase 6 — 勤怠計算エンジン+Googleカレンダー風週間予定UI(給与直結。合成データでGAS版との数値一致を検証済み)**: `AttendanceCalc.js`(GAS版)をNode上でそのまま実行した結果を正解として、TypeScript移植版(`packages/core/src/domain/attendance/`)を合成データ19ケース+月次集計で1件残らず突き合わせ、完全一致を確認。`attendance_days`テーブル(入力列のみをJSON化して1本の暗号文として保存、派生値は保存せず都度計算)・`GET/PUT /api/attendance/day`・`GET /api/attendance/month`を実装。**Web UIはGAS版と同じGoogleカレンダー風の週間予定表示(`GET /api/attendance/week`)に作り直した**(`buildScheduleEventsFromRowData`もGAS版と一致検証済み。表示内容は実際のGoogleカレンダーからではなく保存済みの出勤簿の記録をそのまま色分け表示しているだけなので、Phase 5のCalendar連携が無くても動く)。予定(訪問その1〜3・事務作業その1〜2)をタップして個別編集、「移動・距離・その他」パネルで日単位の項目をまとめて編集、という操作フローもGAS版と同じにした。管理者以外は自分の勤怠にしか読み書きできない(PastSchedule.jsと同じアクセス制御パターン)。**実際の出勤簿データでの数値照合はPhase 7で行う(このフェーズでは計算式の正しさのみを保証)**。
 - [ ] Phase 7 — 並行運用と照合
 - [ ] Phase 8 — 切替と旧システム停止

@@ -1,7 +1,17 @@
 import { createHash, createHmac } from 'node:crypto';
 import type { BlindIndexPort, CryptoPort, EncryptedValue } from '../ports/crypto';
+import type { MirrorJob, OutboxJobRecord, OutboxRepositoryPort } from '../ports/mirror';
+import type {
+  AccidentReportMirrorPayload,
+  AttendanceDayMirrorPayload,
+  DailyReportMirrorPayload,
+  MirrorSenderPort,
+  ReceiptMirrorPayload,
+} from '../ports/mirrorSender';
 import type { NotificationChannel, NotifierPort } from '../ports/notifier';
 import type {
+  AccidentReportRecord,
+  AccidentReportRepositoryPort,
   ActiveStaffRecord,
   AppSettingsPatchInput,
   AppSettingsRecord,
@@ -12,14 +22,21 @@ import type {
   CustomerProfileFields,
   CustomerRecord,
   CustomerRepositoryPort,
+  DailyReportRecord,
+  DailyReportRepositoryPort,
   EncryptedField,
   FamilyMemberRecord,
   FamilyMemberRepositoryPort,
+  NewAccidentReportInput,
   NewCustomerInput,
+  NewDailyReportInput,
   NewFamilyMemberInput,
+  NewReceiptInput,
   NewSessionInput,
   NewStaffInput,
   NewTenantInput,
+  ReceiptRecord,
+  ReceiptRepositoryPort,
   SessionRecord,
   SessionRepositoryPort,
   StaffRecord,
@@ -27,6 +44,7 @@ import type {
   TenantRecord,
   TenantRepositoryPort,
 } from '../ports/repositories';
+import type { StoragePort, StoredFile } from '../ports/storage';
 import type { PasswordHasherPort } from './auth';
 
 /**
@@ -82,6 +100,9 @@ export class FakeTenantRepository implements TenantRepositoryPort {
     const record: TenantRecord = { id: `tenant-${++this.seq}`, name: input.name, slug: input.slug };
     this.rows.set(record.id, record);
     return record;
+  }
+  async listAll(): Promise<TenantRecord[]> {
+    return [...this.rows.values()];
   }
 }
 
@@ -321,6 +342,10 @@ export class FakeAttendanceDayRepository implements AttendanceDayRepositoryPort 
     );
   }
 
+  async findById(tenantId: string, id: string): Promise<AttendanceDayRecord | null> {
+    return this.rows.find((r) => r.tenantId === tenantId && r.id === id) ?? null;
+  }
+
   async upsert(
     tenantId: string,
     staffId: string,
@@ -390,5 +415,214 @@ export class FakeAppSettingsRepository implements AppSettingsRepositoryPort {
     const updated: AppSettingsRecord = { ...existing, ...patch };
     this.rows.set(tenantId, updated);
     return updated;
+  }
+}
+
+/** ファイルシステムを使わないインメモリ実装。 */
+export class FakeStoragePort implements StoragePort {
+  private readonly files = new Map<string, { contentType: string; body: Uint8Array }>();
+
+  async put(key: string, contentType: string, body: Uint8Array): Promise<StoredFile> {
+    this.files.set(key, { contentType, body });
+    return { key, contentType, byteSize: body.byteLength };
+  }
+  async get(key: string): Promise<Uint8Array | null> {
+    return this.files.get(key)?.body ?? null;
+  }
+  async delete(key: string): Promise<void> {
+    this.files.delete(key);
+  }
+  async signedUrl(key: string): Promise<string> {
+    return `fake://${key}`;
+  }
+}
+
+export class FakeDailyReportRepository implements DailyReportRepositoryPort {
+  private readonly rows: DailyReportRecord[] = [];
+  private seq = 0;
+
+  async create(input: NewDailyReportInput): Promise<DailyReportRecord> {
+    const record: DailyReportRecord = { id: `daily-report-${++this.seq}`, ...input };
+    this.rows.push(record);
+    return record;
+  }
+  async update(tenantId: string, id: string, input: NewDailyReportInput): Promise<DailyReportRecord | null> {
+    const index = this.rows.findIndex((r) => r.tenantId === tenantId && r.id === id);
+    if (index === -1) return null;
+    const record: DailyReportRecord = { id, ...input };
+    this.rows[index] = record;
+    return record;
+  }
+  async findById(tenantId: string, id: string): Promise<DailyReportRecord | null> {
+    return this.rows.find((r) => r.tenantId === tenantId && r.id === id) ?? null;
+  }
+  async listByCustomer(
+    tenantId: string,
+    customerId: string,
+    before: Date | null,
+    limit: number,
+  ): Promise<DailyReportRecord[]> {
+    return this.rows
+      .filter(
+        (r) => r.tenantId === tenantId && r.customerId === customerId && (!before || r.occurredAt < before),
+      )
+      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
+      .slice(0, limit);
+  }
+}
+
+export class FakeAccidentReportRepository implements AccidentReportRepositoryPort {
+  private readonly rows: AccidentReportRecord[] = [];
+  private seq = 0;
+
+  async create(input: NewAccidentReportInput): Promise<AccidentReportRecord> {
+    const record: AccidentReportRecord = { id: `accident-report-${++this.seq}`, ...input };
+    this.rows.push(record);
+    return record;
+  }
+  async update(
+    tenantId: string,
+    id: string,
+    input: NewAccidentReportInput,
+  ): Promise<AccidentReportRecord | null> {
+    const index = this.rows.findIndex((r) => r.tenantId === tenantId && r.id === id);
+    if (index === -1) return null;
+    const record: AccidentReportRecord = { id, ...input };
+    this.rows[index] = record;
+    return record;
+  }
+  async findById(tenantId: string, id: string): Promise<AccidentReportRecord | null> {
+    return this.rows.find((r) => r.tenantId === tenantId && r.id === id) ?? null;
+  }
+  async listByCustomer(
+    tenantId: string,
+    customerId: string,
+    before: Date | null,
+    limit: number,
+  ): Promise<AccidentReportRecord[]> {
+    return this.rows
+      .filter(
+        (r) => r.tenantId === tenantId && r.customerId === customerId && (!before || r.occurredAt < before),
+      )
+      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
+      .slice(0, limit);
+  }
+}
+
+interface StoredReceipt {
+  record: ReceiptRecord;
+  dedupeBlindIndex: string | null;
+}
+
+export class FakeReceiptRepository implements ReceiptRepositoryPort {
+  private readonly rows: StoredReceipt[] = [];
+  private seq = 0;
+
+  async create(input: NewReceiptInput): Promise<ReceiptRecord> {
+    const record: ReceiptRecord = {
+      id: `receipt-${++this.seq}`,
+      tenantId: input.tenantId,
+      staffId: input.staffId,
+      customerId: input.customerId,
+      receiptTimestamp: input.receiptTimestamp,
+      amount: input.amount,
+      storeName: input.storeName,
+      handoffText: input.handoffText,
+      fileKey: input.fileKey,
+      contentType: input.contentType,
+    };
+    this.rows.push({ record, dedupeBlindIndex: input.dedupeBlindIndex });
+    return record;
+  }
+
+  async findById(tenantId: string, id: string): Promise<ReceiptRecord | null> {
+    return this.rows.find((r) => r.record.tenantId === tenantId && r.record.id === id)?.record ?? null;
+  }
+
+  async findExistingDedupeIndexes(tenantId: string, dedupeBlindIndexes: string[]): Promise<Set<string>> {
+    const keys = new Set(dedupeBlindIndexes);
+    return new Set(
+      this.rows
+        .filter((r) => r.record.tenantId === tenantId && r.dedupeBlindIndex && keys.has(r.dedupeBlindIndex))
+        .map((r) => r.dedupeBlindIndex as string),
+    );
+  }
+}
+
+/**
+ * outbox_jobsのインメモリ実装。テナントごとの配列で保持し、claimPendingはDrizzle実装と同様に
+ * pending→processingへ遷移させてから返す(実DBのFOR UPDATE SKIP LOCKEDに相当する排他制御は
+ * テストでは不要なため省略)。
+ */
+export class FakeOutboxRepository implements OutboxRepositoryPort {
+  private readonly rows: (OutboxJobRecord & { idempotencyKey: string; status: string })[] = [];
+  private seq = 0;
+
+  async enqueue(job: MirrorJob): Promise<void> {
+    if (this.rows.some((r) => r.tenantId === job.tenantId && r.idempotencyKey === job.idempotencyKey)) {
+      return;
+    }
+    this.rows.push({
+      id: `outbox-${++this.seq}`,
+      tenantId: job.tenantId,
+      kind: job.kind,
+      targetId: job.targetId,
+      idempotencyKey: job.idempotencyKey,
+      attempts: 0,
+      status: 'pending',
+    });
+  }
+
+  async claimPending(tenantId: string, limit: number): Promise<OutboxJobRecord[]> {
+    const claimed = this.rows
+      .filter((r) => r.tenantId === tenantId && r.status === 'pending')
+      .slice(0, limit);
+    for (const r of claimed) {
+      r.status = 'processing';
+      r.attempts += 1;
+    }
+    return claimed.map(({ id, tenantId: t, kind, targetId, attempts }) => ({
+      id,
+      tenantId: t,
+      kind,
+      targetId,
+      attempts,
+    }));
+  }
+
+  async markDone(tenantId: string, id: string): Promise<void> {
+    const row = this.rows.find((r) => r.tenantId === tenantId && r.id === id);
+    if (row) row.status = 'done';
+  }
+
+  async markFailed(tenantId: string, id: string): Promise<void> {
+    const row = this.rows.find((r) => r.tenantId === tenantId && r.id === id);
+    if (row) row.status = 'failed';
+  }
+
+  /** テスト専用: 現在保持しているジョブ一覧(statusを含む)を確認する。 */
+  listAllForTest(): readonly (OutboxJobRecord & { idempotencyKey: string; status: string })[] {
+    return this.rows;
+  }
+}
+
+/** send*()の呼び出し引数を記録するだけの、実際には何も送らないフェイク実装。 */
+export class FakeMirrorSenderPort implements MirrorSenderPort {
+  readonly dailyReports: DailyReportMirrorPayload[] = [];
+  readonly accidentReports: AccidentReportMirrorPayload[] = [];
+  readonly receipts: ReceiptMirrorPayload[] = [];
+  readonly attendanceDays: AttendanceDayMirrorPayload[] = [];
+
+  async sendDailyReport(payload: DailyReportMirrorPayload): Promise<void> {
+    this.dailyReports.push(payload);
+  }
+  async sendAccidentReport(payload: AccidentReportMirrorPayload): Promise<void> {
+    this.accidentReports.push(payload);
+  }
+  async sendReceipt(payload: ReceiptMirrorPayload): Promise<void> {
+    this.receipts.push(payload);
+  }
+  async sendAttendanceDay(payload: AttendanceDayMirrorPayload): Promise<void> {
+    this.attendanceDays.push(payload);
   }
 }

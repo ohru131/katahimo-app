@@ -10,6 +10,7 @@ import {
   FakeCustomerRepository,
   FakeFamilyMemberRepository,
   FakeNotifierPort,
+  FakeOutboxRepository,
   FakePasswordHasherPort,
   FakeSessionRepository,
   FakeStaffRepository,
@@ -60,6 +61,7 @@ describe('sendVisitCompleteNotification', () => {
       staff,
       crypto,
       notifier,
+      mirror: new FakeOutboxRepository(),
     };
   });
 

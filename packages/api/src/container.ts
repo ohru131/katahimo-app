@@ -1,5 +1,6 @@
 import type {
   MapsPort,
+  MirrorPort,
   NotifierPort,
   ReportAiPort,
   ReportAiPortFactory,
@@ -14,6 +15,7 @@ import {
   DrizzleCustomerRepository,
   DrizzleDailyReportRepository,
   DrizzleFamilyMemberRepository,
+  DrizzleOutboxRepository,
   DrizzleReceiptRepository,
   DrizzleSessionRepository,
   DrizzleStaffRepository,
@@ -31,6 +33,7 @@ import {
   LocalKmsPort,
   listAvailableGeminiModels,
   NoopMapsPort,
+  NoopMirrorPort,
   NoopReportAiPort,
   NoopSchedulePort,
   WebhookNotifierPort,
@@ -74,6 +77,11 @@ export interface Container {
    * フォールバックする。
    */
   schedule: SchedulePort;
+  /**
+   * 日報/事故報告/領収書/勤怠のミラー書き込み要求をoutboxに積む(Phase 5)。実際の送信
+   * (GAS版スプレッドシート/Driveへの反映)はAPIサーバーではなくワーカー(packages/worker)が行う。
+   */
+  mirror: MirrorPort;
   /** GAS版 Script Properties AUTH_SALT と同じ値。移行済みスタッフのログインにのみ使う。 */
   legacyAuthSalt?: string;
 }
@@ -123,6 +131,7 @@ export function createContainer(env: Env, db: Database): Container {
     listGeminiModels: listAvailableGeminiModels,
     maps: gasBridgeOptions ? new GasBridgeMapsPort(gasBridgeOptions) : new NoopMapsPort(),
     schedule: gasBridgeOptions ? new GasBridgeSchedulePort(gasBridgeOptions) : new NoopSchedulePort(),
+    mirror: env.MIRROR_TO_GOOGLE_SHEETS ? new DrizzleOutboxRepository(db) : new NoopMirrorPort(),
     legacyAuthSalt: env.LEGACY_AUTH_SALT,
   };
 }

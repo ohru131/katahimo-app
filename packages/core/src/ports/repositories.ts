@@ -100,6 +100,8 @@ export interface NewTenantInput {
 export interface TenantRepositoryPort {
   findBySlug(slug: string): Promise<TenantRecord | null>;
   create(input: NewTenantInput): Promise<TenantRecord>;
+  /** ミラーワーカー(packages/worker)がテナントごとにoutboxをポーリングするための全件取得。 */
+  listAll(): Promise<TenantRecord[]>;
 }
 
 /**
@@ -245,6 +247,8 @@ export interface AttendanceDayRepositoryPort {
     businessDate: string,
     rowData: EncryptedField,
   ): Promise<AttendanceDayRecord>;
+  /** ミラーワーカー(packages/worker)がoutbox_jobs.targetIdから対象レコードを読み直すために使う。 */
+  findById(tenantId: string, id: string): Promise<AttendanceDayRecord | null>;
   /** yearMonthは 'YYYY-MM'。月次集計(computeMonthlyTotals)の入力に使う。 */
   listByStaffAndMonth(tenantId: string, staffId: string, yearMonth: string): Promise<AttendanceDayRecord[]>;
   /** startDate〜endDateは両端とも 'YYYY-MM-DD' で含む。週間予定UI(Googleカレンダー風表示)の入力に使う。 */
@@ -364,6 +368,8 @@ export interface NewReceiptInput {
 
 export interface ReceiptRepositoryPort {
   create(input: NewReceiptInput): Promise<ReceiptRecord>;
+  /** ミラーワーカー(packages/worker)がoutbox_jobs.targetIdから対象レコードを読み直すために使う。 */
+  findById(tenantId: string, id: string): Promise<ReceiptRecord | null>;
   /**
    * dedupeBlindIndexの一致を確認する(GAS版processReceiptImagesの「シート上の既存データとの照合」
    * に相当)。バッチ内の重複は呼び出し側(usecase)がメモリ上で扱うため、ここはDBに既に永続化された
