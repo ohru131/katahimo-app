@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseFamilyInfo } from './parseFamilyInfo';
 
 /**
- * ここでのテストケースは全て、実際のRESERVA CSVサンプル(01_GAS/Kokyaku_202601191958_1_dummy.csv)
+ * ここでのテストケースは全て、実際のRESERVA CSVサンプル(fixtures/Kokyaku_202601191958_1_dummy.csv)
  * の「世帯全員の情報」欄から抜き出した実データ。
  *
  * 移植時、この関数の移植元(gas-childcare-visit-app/CsvImport.js)をそのままNode上で実行し、

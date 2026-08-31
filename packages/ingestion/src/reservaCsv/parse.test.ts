@@ -1,15 +1,16 @@
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseReservaCsv } from './parse';
 
 /**
- * 01_GAS/Kokyaku_202601191958_1_dummy.csv は実際のRESERVA(外部予約システム)エクスポート形式の
+ * fixtures/Kokyaku_202601191958_1_dummy.csv は実際のRESERVA(外部予約システム)エクスポート形式の
  * サンプル(UTF-16LE・タブ区切り・ダミー顧客398件)。このテストはハードコードした期待値ではなく、
  * 実ファイルを実際にデコード・パースして検証する(fixtureを別途用意せず、本物の形式的な癖
  * ―BOM・タブ区切り・複数行にまたがる引用符付きフィールド・Excelシリアル日時―を
  * そのまま検証対象にするため)。
  */
-const SAMPLE_CSV_PATH = 'C:/Work/pv/C001/C001-cutest-internal/01_GAS/Kokyaku_202601191958_1_dummy.csv';
+const SAMPLE_CSV_PATH = resolve(process.cwd(), 'fixtures/Kokyaku_202601191958_1_dummy.csv');
 
 describe('parseReservaCsv (実サンプルCSVでの検証)', () => {
   const buffer = readFileSync(SAMPLE_CSV_PATH);
