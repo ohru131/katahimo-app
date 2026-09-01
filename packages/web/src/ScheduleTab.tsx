@@ -225,6 +225,7 @@ export function ScheduleTab({ onJumpToCustomer }: { onJumpToCustomer: (customerN
 
     const cached = getCachedRoute(staffCacheId, dateStr);
     if (cached) {
+      setLoadingRoute(false);
       setRouteResult(cached.res);
       setRouteFetchedAt(cached.ts);
       setLoadingInitial(false);
@@ -234,7 +235,10 @@ export function ScheduleTab({ onJumpToCustomer }: { onJumpToCustomer: (customerN
     // タブを開いた時点でルート・移動時間も自動取得する(ブラウザに2時間キャッシュされ、
     // 同一ブラウザでの再取得は抑制される)。失敗時はルートなしの予定一覧だけでも表示する
     // (GAS版loadScheduleForOffset_/loadRouteInfoと同じ)。
-    void loadRoute(false).finally(() => setLoadingInitial(false));
+    const initialRequestId = requestIdRef.current;
+    void loadRoute(false).finally(() => {
+      if (requestIdRef.current === initialRequestId) setLoadingInitial(false);
+    });
   }, [dateStr, staffCacheId]);
 
   const routeAppointments = routeResult?.appointments;

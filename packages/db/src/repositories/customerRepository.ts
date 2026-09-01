@@ -230,10 +230,20 @@ export class DrizzleCustomerRepository implements CustomerRepositoryPort {
   }
 
   async update(tenantId: string, customerId: string, patch: CustomerPatchInput): Promise<CustomerRecord> {
+    const columnValues = toPatchColumnValues(patch);
     return withTenant(this.db, tenantId, async (tx) => {
+      // 空パッチ(更新対象フィールドが1つも無い)場合、Drizzleの.set({})は不正なSQL
+      // (空のSET句)を生成しうるため、更新をスキップして現在値をそのまま返す。
+      if (Object.keys(columnValues).length === 0) {
+        const rows = await tx.select().from(customers).where(eq(customers.id, customerId)).limit(1);
+        const row = rows[0];
+        if (!row) throw new Error(`顧客が見つかりません: ${customerId}`);
+        return toRecord(row);
+      }
+
       const rows = await tx
         .update(customers)
-        .set(toPatchColumnValues(patch))
+        .set(columnValues)
         .where(eq(customers.id, customerId))
         .returning();
       const row = rows[0];

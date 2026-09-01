@@ -1,5 +1,5 @@
 {
-  "id": "9e5358b8-57f7-4a72-b88d-6a39852260a8",
+  "id": "b532517d-d70a-4de1-8d4a-08c13d5646f9",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -1218,7 +1218,29 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "receipts_tenant_dedupe_blind_index_idx": {
+          "name": "receipts_tenant_dedupe_blind_index_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "dedupe_blind_index",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "receipts_tenant_id_tenants_id_fk": {
           "name": "receipts_tenant_id_tenants_id_fk",

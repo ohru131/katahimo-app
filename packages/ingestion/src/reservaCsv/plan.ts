@@ -130,7 +130,14 @@ export async function applyReservaImportPlan(
         RESERVA_EXTERNAL_SOURCE,
         row.customerId,
       );
-      if (!existing) continue;
+      if (!existing) {
+        failures.push({
+          stage: 'update',
+          customerId: row.customerId,
+          error: '計画時には存在した顧客が適用時には見つかりませんでした',
+        });
+        continue;
+      }
       await updateCustomer(deps, tenantId, existing.id, mapReservaRowToCustomerInput(tenantId, row));
       updated++;
     } catch (e) {

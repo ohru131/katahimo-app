@@ -132,6 +132,34 @@ describe('planReservaImport / applyReservaImportPlan', () => {
     expect(await deps.crypto.decrypt(tenantId, firstMember.name)).toBe('佐藤 太郎');
   });
 
+  it('計画時には存在した顧客が適用時に見つからない場合、黙って飛ばさずfailuresに記録する', async () => {
+    const plan = {
+      toCreate: [],
+      toUpdate: [row({ customerId: 'ghost' })],
+      toDeactivateExternalIds: [],
+      stats: {
+        existingActiveCount: 1,
+        incomingCount: 1,
+        createCount: 0,
+        updateCount: 1,
+        deactivateCount: 0,
+        changedRatio: 0,
+      },
+      requiresReview: false,
+    };
+
+    const result = await applyReservaImportPlan(deps, tenantId, plan);
+
+    expect(result.updated).toBe(0);
+    expect(result.failures).toEqual([
+      {
+        stage: 'update',
+        customerId: 'ghost',
+        error: expect.any(String),
+      },
+    ]);
+  });
+
   it('手動登録済みの顧客(externalSourceが無い)は取込の既存件数にカウントされない', async () => {
     await createCustomer(deps, { tenantId, name: '手動 太郎' });
 

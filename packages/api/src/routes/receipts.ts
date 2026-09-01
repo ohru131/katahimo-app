@@ -42,6 +42,10 @@ export function createReceiptRoutes(container: Container) {
       }))
       .filter((img: { data: string }) => img.data);
 
+    if (images.length === 0) {
+      return c.json({ success: false, message: '領収書画像がありません。' }, 400);
+    }
+
     const result = await uploadReceipts(container, session.tenantId, {
       staffId,
       customerId: typeof body.customerId === 'string' && body.customerId ? body.customerId : null,

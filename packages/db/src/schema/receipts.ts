@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { foreignKey, integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { foreignKey, index, integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { staff } from './staff';
@@ -61,5 +61,7 @@ export const receipts = pgTable(
       columns: [t.tenantId, t.customerId],
       foreignColumns: [customers.tenantId, customers.id],
     }),
+    // findExistingDedupeIndexes()の絞り込み(tenant_id + dedupe_blind_index)を支えるインデックス。
+    index('receipts_tenant_dedupe_blind_index_idx').on(t.tenantId, t.dedupeBlindIndex),
   ],
 ).enableRLS();
