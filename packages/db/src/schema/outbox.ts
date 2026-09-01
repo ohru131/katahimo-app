@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, pgPolicy, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { index, integer, pgPolicy, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { tenants } from './tenants';
 
@@ -31,5 +31,8 @@ export const outboxJobs = pgTable(
     // テナントを跨いでidempotencyKeyの一意性を要求する理由はない(生成ロジック次第では
     // 他テナントの値と衝突しうる)ため、tenant_idでスコープする(データベース構造レビューで指摘)。
     uniqueIndex('outbox_jobs_tenant_idempotency_key_idx').on(t.tenantId, t.idempotencyKey),
+    // ワーカーのポーリング(claimPending)がWHERE status='pending' ORDER BY created_atで
+    // 毎回実行するため、done/failedが積み上がるとインデックス無しではフルスキャンになる。
+    index('outbox_jobs_tenant_status_created_at_idx').on(t.tenantId, t.status, t.createdAt),
   ],
 ).enableRLS();

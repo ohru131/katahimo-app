@@ -270,6 +270,57 @@ describe('runOutboxBatch / processOutboxJob', () => {
     ]);
   });
 
+  it('領収書の画像がストレージから見つからない場合は失敗扱いにする(成功として握りつぶさない)', async () => {
+    const receipts = new FakeReceiptRepository();
+    const storage = new FakeStoragePort();
+    const receiptDeps: ReceiptDeps = {
+      receipts,
+      staff,
+      customers,
+      crypto,
+      blindIndex: {
+        async compute(_tenantId: string, normalizedValue: string) {
+          return `blind:${normalizedValue}`;
+        },
+      },
+      storage,
+      notifier: new FakeNotifierPort(),
+      mirror: outbox,
+    };
+
+    await uploadReceipts(receiptDeps, tenantId, {
+      staffId,
+      customerId,
+      images: [
+        {
+          data: 'data:image/jpeg;base64,AAAA',
+          amount: '1200',
+          storeName: 'コンビニ',
+        },
+      ],
+      fallbackTimestamp: '2026/08/30 10:00:00',
+    });
+    // 画像ファイルがストレージから消えている状況(ストレージ障害・削除等)を再現する。
+    storage.get = async () => null;
+
+    const workerDeps: MirrorWorkerDeps = {
+      outbox,
+      dailyReports: new FakeDailyReportRepository(),
+      accidentReports: new FakeAccidentReportRepository(),
+      receipts,
+      attendanceDays: new FakeAttendanceDayRepository(),
+      staff,
+      customers,
+      crypto,
+      storage,
+      sender,
+    };
+    const result = await runOutboxBatch(workerDeps, tenantId);
+
+    expect(result).toEqual({ processed: 0, failed: 1 });
+    expect(sender.receipts).toEqual([]);
+  });
+
   it('対象レコードが既に無い場合は何もせず成功扱いにする', async () => {
     await outbox.enqueue({
       tenantId,

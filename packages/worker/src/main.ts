@@ -1,5 +1,5 @@
 import { runOutboxBatch } from '@katahimo/core';
-import { getDatabase } from '@katahimo/db';
+import { closeDatabase, getDatabase } from '@katahimo/db';
 import { createWorkerContainer } from './container';
 import { loadWorkerEnv } from './env';
 import { loadDotenv } from './loadDotenv';
@@ -41,6 +41,8 @@ async function mainLoop(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, env.OUTBOX_POLL_INTERVAL_MS));
   }
   console.log('katahimo worker を停止しました');
+  await closeDatabase();
+  process.exit(0);
 }
 
 mainLoop();

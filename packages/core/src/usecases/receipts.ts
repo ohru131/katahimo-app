@@ -170,6 +170,9 @@ export async function uploadReceipts(
       idempotencyKey: randomUUID(),
     });
 
+    // バッチ内の後続画像が同じ内容なら重複として検出できるよう、今回登録した分もexistingに加える。
+    if (p.dedupeBlindIndex) existing.add(p.dedupeBlindIndex);
+
     registeredImages.push({
       amount: normalizeText(String(p.img.amount ?? '')),
       storeName: normalizeText(p.img.storeName),

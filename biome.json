@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/dist", "!**/node_modules", "!**/drizzle"]
+    "includes": ["**", "!**/dist", "!**/node_modules", "!**/drizzle", "!reference/**"]
   },
   "formatter": {
     "enabled": true,

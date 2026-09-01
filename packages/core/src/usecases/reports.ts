@@ -337,6 +337,6 @@ export async function getCustomerHistory(
   );
 
   return [...dailyItems, ...accidentItems]
-    .sort((a, b) => (a.occurredAtIso < b.occurredAtIso ? 1 : -1))
+    .sort((a, b) => (a.occurredAtIso < b.occurredAtIso ? 1 : a.occurredAtIso > b.occurredAtIso ? -1 : 0))
     .slice(0, limit);
 }

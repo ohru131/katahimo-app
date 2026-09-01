@@ -57,15 +57,8 @@ function toRecord(row: CustomerRow): CustomerRecord {
   };
 }
 
-/**
- * NewCustomerInput/CustomerPatchInputをDrizzleのinsert/update値に変換する。
- *
- * usecases側(buildCustomerRecordFields)は必ず全フィールドを明示的に値かnullで埋めてから
- * 渡してくるため(未着手フィールドがundefinedのまま残ることはない)、update()も含めて
- * 「渡された値で全項目を上書きする」という単純な変換で正しい。CSV再取込のように、
- * 取込元の最新状態をそのまま反映する用途ではこれが正しい挙動(部分パッチではなく全件上書き)。
- */
-function toColumnValues(input: NewCustomerInput | CustomerPatchInput) {
+/** NewCustomerInputをDrizzleのinsert値に変換する(未指定の任意項目はnullで埋める)。 */
+function toColumnValues(input: NewCustomerInput) {
   return {
     externalSource: input.externalSource,
     externalId: input.externalId,
@@ -100,6 +93,67 @@ function toColumnValues(input: NewCustomerInput | CustomerPatchInput) {
     ageBracket: input.ageBracket ?? null,
     registeredAt: input.registeredAt ?? null,
     externalLastUpdatedAt: input.externalLastUpdatedAt ?? null,
+  };
+}
+
+/**
+ * CustomerPatchInputを部分更新(PATCH)としてDrizzleのupdate値に変換する。
+ * `undefined`のフィールドは列自体を出力せず(=既存値を保持)、`null`が明示的に渡された場合のみ
+ * その列をクリアする。ポート定義(CustomerRepositoryPort.update)が約束する
+ * 「渡されたフィールドだけを上書きする」契約を満たすための変換。
+ */
+function toPatchColumnValues(patch: CustomerPatchInput) {
+  return {
+    ...(patch.externalSource !== undefined && { externalSource: patch.externalSource }),
+    ...(patch.externalId !== undefined && { externalId: patch.externalId }),
+    ...(patch.name !== undefined && { name: patch.name }),
+    ...(patch.familyName !== undefined && { familyName: patch.familyName }),
+    ...(patch.givenName !== undefined && { givenName: patch.givenName }),
+    ...(patch.familyNameKana !== undefined && { familyNameKana: patch.familyNameKana }),
+    ...(patch.givenNameKana !== undefined && { givenNameKana: patch.givenNameKana }),
+    ...(patch.email !== undefined && { email: patch.email }),
+    ...(patch.phone !== undefined && { phone: patch.phone }),
+    ...(patch.addressDetail !== undefined && { addressDetail: patch.addressDetail }),
+    ...(patch.city !== undefined && { city: patch.city }),
+    ...(patch.parkingArea !== undefined && { parkingArea: patch.parkingArea }),
+    ...(patch.parkingDetail !== undefined && { parkingDetail: patch.parkingDetail }),
+    ...(patch.emergencyContact !== undefined && {
+      emergencyContactCiphertext: patch.emergencyContact?.ciphertext ?? null,
+      emergencyContactKeyVersion: patch.emergencyContact?.keyVersion ?? null,
+    }),
+    ...(patch.emergencyContactRelation !== undefined && {
+      emergencyContactRelationCiphertext: patch.emergencyContactRelation?.ciphertext ?? null,
+      emergencyContactRelationKeyVersion: patch.emergencyContactRelation?.keyVersion ?? null,
+    }),
+    ...(patch.evacuationSite !== undefined && {
+      evacuationSiteCiphertext: patch.evacuationSite?.ciphertext ?? null,
+      evacuationSiteKeyVersion: patch.evacuationSite?.keyVersion ?? null,
+    }),
+    ...(patch.memo !== undefined && {
+      memoCiphertext: patch.memo?.ciphertext ?? null,
+      memoKeyVersion: patch.memo?.keyVersion ?? null,
+    }),
+    ...(patch.benefitMemberId !== undefined && {
+      benefitMemberIdCiphertext: patch.benefitMemberId?.ciphertext ?? null,
+      benefitMemberIdKeyVersion: patch.benefitMemberId?.keyVersion ?? null,
+    }),
+    ...(patch.address2 !== undefined && { address2: patch.address2 }),
+    ...(patch.address2StartDate !== undefined && { address2StartDate: patch.address2StartDate }),
+    ...(patch.address2EndDate !== undefined && { address2EndDate: patch.address2EndDate }),
+    ...(patch.latLng !== undefined && {
+      latLngCiphertext: patch.latLng?.ciphertext ?? null,
+      latLngKeyVersion: patch.latLng?.keyVersion ?? null,
+    }),
+    ...(patch.memberType !== undefined && { memberType: patch.memberType }),
+    ...(patch.memberStatus !== undefined && { memberStatus: patch.memberStatus }),
+    ...(patch.paymentMethod !== undefined && { paymentMethod: patch.paymentMethod }),
+    ...(patch.paymentStatus !== undefined && { paymentStatus: patch.paymentStatus }),
+    ...(patch.gender !== undefined && { gender: patch.gender }),
+    ...(patch.ageBracket !== undefined && { ageBracket: patch.ageBracket }),
+    ...(patch.registeredAt !== undefined && { registeredAt: patch.registeredAt }),
+    ...(patch.externalLastUpdatedAt !== undefined && {
+      externalLastUpdatedAt: patch.externalLastUpdatedAt,
+    }),
   };
 }
 
@@ -176,15 +230,20 @@ export class DrizzleCustomerRepository implements CustomerRepositoryPort {
   }
 
   async update(tenantId: string, customerId: string, patch: CustomerPatchInput): Promise<CustomerRecord> {
+    const columnValues = toPatchColumnValues(patch);
     return withTenant(this.db, tenantId, async (tx) => {
+      // 空パッチ(更新対象フィールドが1つも無い)場合、Drizzleの.set({})は不正なSQL
+      // (空のSET句)を生成しうるため、更新をスキップして現在値をそのまま返す。
+      if (Object.keys(columnValues).length === 0) {
+        const rows = await tx.select().from(customers).where(eq(customers.id, customerId)).limit(1);
+        const row = rows[0];
+        if (!row) throw new Error(`顧客が見つかりません: ${customerId}`);
+        return toRecord(row);
+      }
+
       const rows = await tx
         .update(customers)
-        .set({
-          ...toColumnValues(patch),
-          ...(patch.name !== undefined && { name: patch.name }),
-          ...(patch.familyName !== undefined && { familyName: patch.familyName }),
-          ...(patch.givenName !== undefined && { givenName: patch.givenName }),
-        })
+        .set(columnValues)
         .where(eq(customers.id, customerId))
         .returning();
       const row = rows[0];

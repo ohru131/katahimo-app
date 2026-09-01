@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AdminTargetStaffSelector, useAdminTargetStaff } from './AdminTargetStaffContext';
 import type {
   DailyScheduleAppointmentWithRoute,
@@ -173,21 +173,30 @@ export function ScheduleTab({ onJumpToCustomer }: { onJumpToCustomer: (customerN
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // 日付/対象スタッフ切り替え・手動再取得のたびに増やし、古いリクエストの応答が後から届いても
+  // (以前の値のまま)setStateして表示を上書きしないようにする(古い応答かどうかの判定に使う)。
+  const requestIdRef = useRef(0);
+
   const loadLightSchedule = async () => {
+    const requestId = requestIdRef.current;
     try {
       const res = await fetchDailySchedule(dateStr, effectiveStaffId);
+      if (requestIdRef.current !== requestId) return;
       setLightResult(res);
       if (!res.success) setErrorMessage(res.message || '予定を取得できませんでした');
     } catch (e) {
+      if (requestIdRef.current !== requestId) return;
       setErrorMessage(e instanceof Error ? e.message : String(e));
     }
   };
 
   const loadRoute = async (forceRefresh: boolean) => {
+    const requestId = requestIdRef.current;
     setLoadingRoute(true);
     setErrorMessage(null);
     try {
       const res = await fetchDailyScheduleWithRoute(dateStr, effectiveStaffId, forceRefresh);
+      if (requestIdRef.current !== requestId) return;
       if (!res.success) {
         setErrorMessage(res.message || 'ルート取得に失敗しました');
         await loadLightSchedule();
@@ -197,15 +206,17 @@ export function ScheduleTab({ onJumpToCustomer }: { onJumpToCustomer: (customerN
       setRouteResult(res);
       setRouteFetchedAt(Date.now());
     } catch (e) {
+      if (requestIdRef.current !== requestId) return;
       setErrorMessage(e instanceof Error ? e.message : String(e));
       await loadLightSchedule();
     } finally {
-      setLoadingRoute(false);
+      if (requestIdRef.current === requestId) setLoadingRoute(false);
     }
   };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: loadRoute/loadLightScheduleは日付・対象スタッフが変わるたびに作り直されるクロージャのため、依存に含めると無限ループになる
   useEffect(() => {
+    requestIdRef.current += 1;
     setLightResult(null);
     setRouteResult(null);
     setRouteFetchedAt(null);
@@ -214,6 +225,7 @@ export function ScheduleTab({ onJumpToCustomer }: { onJumpToCustomer: (customerN
 
     const cached = getCachedRoute(staffCacheId, dateStr);
     if (cached) {
+      setLoadingRoute(false);
       setRouteResult(cached.res);
       setRouteFetchedAt(cached.ts);
       setLoadingInitial(false);
@@ -223,7 +235,10 @@ export function ScheduleTab({ onJumpToCustomer }: { onJumpToCustomer: (customerN
     // タブを開いた時点でルート・移動時間も自動取得する(ブラウザに2時間キャッシュされ、
     // 同一ブラウザでの再取得は抑制される)。失敗時はルートなしの予定一覧だけでも表示する
     // (GAS版loadScheduleForOffset_/loadRouteInfoと同じ)。
-    void loadRoute(false).finally(() => setLoadingInitial(false));
+    const initialRequestId = requestIdRef.current;
+    void loadRoute(false).finally(() => {
+      if (requestIdRef.current === initialRequestId) setLoadingInitial(false);
+    });
   }, [dateStr, staffCacheId]);
 
   const routeAppointments = routeResult?.appointments;
@@ -231,8 +246,8 @@ export function ScheduleTab({ onJumpToCustomer }: { onJumpToCustomer: (customerN
   const hasRoute = !!routeAppointments;
   const appointments = routeAppointments ?? lightAppointments ?? null;
 
-  const handleJump = (customerName: string) => {
-    if (!isCustomerEventType) return;
+  const handleJump = (customerName: string, eventType: string) => {
+    if (!isCustomerEventType(eventType)) return;
     onJumpToCustomer(customerName);
   };
 
@@ -263,7 +278,10 @@ export function ScheduleTab({ onJumpToCustomer }: { onJumpToCustomer: (customerN
 
       <button
         type="button"
-        onClick={() => loadRoute(true)}
+        onClick={() => {
+          requestIdRef.current += 1;
+          loadRoute(true);
+        }}
         disabled={loadingRoute}
         className="w-full mb-1 py-3 rounded-xl text-sm font-bold border border-blue-200 bg-blue-50 text-blue-700 active:bg-blue-100 transition-colors flex items-center justify-center gap-1 disabled:opacity-60"
       >
@@ -328,7 +346,7 @@ export function ScheduleTab({ onJumpToCustomer }: { onJumpToCustomer: (customerN
                 <button
                   type="button"
                   disabled={!clickable}
-                  onClick={() => clickable && handleJump(title || '')}
+                  onClick={() => clickable && handleJump(title || '', app.eventType)}
                   className={`w-full text-left rounded-xl shadow-sm border border-gray-100 ${
                     EVENT_TYPE_BORDER[app.eventType] || ''
                   } p-3 flex items-center gap-3 transition-colors ${
