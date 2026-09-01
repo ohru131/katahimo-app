@@ -113,7 +113,9 @@ export async function processOutboxJob(
         record.handoffText ? deps.crypto.decrypt(tenantId, record.handoffText) : Promise.resolve(''),
         deps.storage.get(record.fileKey),
       ]);
-      if (!imageBytes) return;
+      if (!imageBytes) {
+        throw new Error(`領収書画像がストレージに見つかりません: ${record.fileKey}`);
+      }
       await deps.sender.sendReceipt({
         staffName: staffRecord?.name ?? '',
         customerId: record.customerId ?? '',

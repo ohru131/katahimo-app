@@ -53,6 +53,10 @@ async function main() {
 
   const result = await applyReservaImportPlan(container, tenant.id, plan, { force });
   console.log('[import] 適用結果:', JSON.stringify(result, null, 2));
+  if (result.failures.length > 0) {
+    console.error(`[import] ${result.failures.length}件の行でエラーが発生しました。内容を確認してください。`);
+    process.exit(1);
+  }
   process.exit(0);
 }
 

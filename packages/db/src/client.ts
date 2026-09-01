@@ -27,6 +27,16 @@ export function getDatabase(): Database {
 }
 
 /**
+ * getDatabase()が作った共有プールの接続を閉じる。ワーカー等、常駐プロセスが
+ * シグナル受信時にイベントループを解放してプロセスを終了できるようにするために使う。
+ */
+export async function closeDatabase(): Promise<void> {
+  if (!singleton) return;
+  await singleton.$client.end();
+  singleton = null;
+}
+
+/**
  * テナントスコープでクエリを実行する。
  *
  * 全テーブルに Row Level Security を張り、ポリシーは current_setting('app.tenant_id') と

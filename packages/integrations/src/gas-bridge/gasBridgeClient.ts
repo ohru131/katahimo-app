@@ -3,6 +3,21 @@ export interface GasBridgeOptions {
   baseUrl: string;
   /** GAS側Bridge.jsのBRIDGE_API_SECRET(Script Properties)と同じ値。 */
   secret: string;
+  /** リクエストのタイムアウト(ms)。GAS実行がハングした場合に呼び出し元を無期限にブロックしないため。 */
+  timeoutMs?: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 20_000;
+
+/** GAS Web Appからのレスポンスがエラー/非JSONだった場合に投げるエラー。 */
+export class GasBridgeError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'GasBridgeError';
+  }
 }
 
 /** Bridge.js(GAS版Web Appの?api=1エンドポイント)への共通クライアント。 */
@@ -12,6 +27,8 @@ export class GasBridgeClient {
   private buildUrl(action: string, params: Record<string, string>): string {
     const url = new URL(this.options.baseUrl);
     url.searchParams.set('api', '1');
+    // secret/actionはURLクエリに載せる(GAS Web AppのdoGet/doPost(e).parameterで読む仕様のため。
+    // e.headersのような形でカスタムヘッダーを読む手段がGAS側に無く、ヘッダー化はできない)。
     url.searchParams.set('secret', this.options.secret);
     url.searchParams.set('action', action);
     for (const [key, value] of Object.entries(params)) {
@@ -20,9 +37,29 @@ export class GasBridgeClient {
     return url.toString();
   }
 
+  private async parseJsonResponse<T>(res: Response, action: string): Promise<T> {
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => '');
+      throw new GasBridgeError(
+        `GASブリッジへの呼び出しに失敗しました(action=${action}, status=${res.status}): ${bodyText.slice(0, 200)}`,
+        res.status,
+      );
+    }
+    try {
+      return (await res.json()) as T;
+    } catch {
+      throw new GasBridgeError(
+        `GASブリッジからのレスポンスがJSONではありません(action=${action}, status=${res.status})`,
+        res.status,
+      );
+    }
+  }
+
   async fetchJson<T>(action: string, params: Record<string, string>): Promise<T> {
-    const res = await fetch(this.buildUrl(action, params));
-    return (await res.json()) as T;
+    const res = await fetch(this.buildUrl(action, params), {
+      signal: AbortSignal.timeout(this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+    });
+    return this.parseJsonResponse<T>(res, action);
   }
 
   /**
@@ -35,7 +72,8 @@ export class GasBridgeClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     });
-    return (await res.json()) as T;
+    return this.parseJsonResponse<T>(res, action);
   }
 }

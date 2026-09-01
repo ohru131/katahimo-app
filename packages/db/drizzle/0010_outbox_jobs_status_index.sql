@@ -1,0 +1,1 @@
+CREATE INDEX "outbox_jobs_tenant_status_created_at_idx" ON "outbox_jobs" USING btree ("tenant_id","status","created_at");

@@ -71,6 +71,13 @@
       "when": 1788013404938,
       "tag": "0009_phase_b_add_plain_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788225428561,
+      "tag": "0010_outbox_jobs_status_index",
+      "breakpoints": true
     }
   ]
 }

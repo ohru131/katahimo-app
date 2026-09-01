@@ -28,7 +28,7 @@ export function createReceiptRoutes(container: Container) {
 
     const body = await c.req.json().catch(() => null);
     if (!Array.isArray(body?.images) || body.images.length === 0) {
-      return c.json({ success: false, message: '領収書画像がありません。' });
+      return c.json({ success: false, message: '領収書画像がありません。' }, 400);
     }
 
     const staffId = resolveReportTargetStaffId(session, body.staffId);

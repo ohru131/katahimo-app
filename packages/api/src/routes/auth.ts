@@ -31,8 +31,9 @@ export function createAuthRoutes(container: Container, isProduction: boolean) {
     });
 
     if (!result.ok) {
-      const status = result.reason === 'tenant_not_found' ? 404 : 401;
-      return c.json({ code: 'unauthenticated', message: 'メールアドレスまたはパスワードが違います' }, status);
+      // テナント有無・認証情報の正誤いずれも同一のstatus/messageにし、
+      // ステータスコードの違いからテナントslugの存在を推測できないようにする。
+      return c.json({ code: 'unauthenticated', message: 'メールアドレスまたはパスワードが違います' }, 401);
     }
 
     setCookie(c, SESSION_COOKIE_NAME, result.sessionCookieValue, {

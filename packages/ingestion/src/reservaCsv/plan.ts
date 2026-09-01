@@ -68,10 +68,23 @@ export async function planReservaImport(
   };
 }
 
+export interface ApplyReservaImportFailure {
+  stage: 'create' | 'update' | 'deactivate';
+  /** RESERVA顧客ID(externalId)。 */
+  customerId: string;
+  error: string;
+}
+
 export interface ApplyReservaImportResult {
   created: number;
   updated: number;
   deactivated: number;
+  /**
+   * 行単位で発生した失敗。1件のDB制約違反等でバッチ全体を中断しないよう、
+   * 失敗した行は記録した上で残りの行の処理を継続する。空でない場合、
+   * 呼び出し側は内容を確認し、必要ならCSVを修正して該当行だけ再実行すべき。
+   */
+  failures: ApplyReservaImportFailure[];
 }
 
 /**
@@ -92,24 +105,58 @@ export async function applyReservaImportPlan(
     );
   }
 
+  const failures: ApplyReservaImportFailure[] = [];
+  let created = 0;
+  let updated = 0;
+  let deactivated = 0;
+
   for (const row of plan.toCreate) {
-    await createCustomer(deps, mapReservaRowToCustomerInput(tenantId, row));
+    try {
+      await createCustomer(deps, mapReservaRowToCustomerInput(tenantId, row));
+      created++;
+    } catch (e) {
+      failures.push({
+        stage: 'create',
+        customerId: row.customerId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
   }
 
   for (const row of plan.toUpdate) {
-    const existing = await deps.customers.findByExternalId(tenantId, RESERVA_EXTERNAL_SOURCE, row.customerId);
-    if (!existing) continue;
-    await updateCustomer(deps, tenantId, existing.id, mapReservaRowToCustomerInput(tenantId, row));
+    try {
+      const existing = await deps.customers.findByExternalId(
+        tenantId,
+        RESERVA_EXTERNAL_SOURCE,
+        row.customerId,
+      );
+      if (!existing) continue;
+      await updateCustomer(deps, tenantId, existing.id, mapReservaRowToCustomerInput(tenantId, row));
+      updated++;
+    } catch (e) {
+      failures.push({
+        stage: 'update',
+        customerId: row.customerId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
   }
 
   for (const externalId of plan.toDeactivateExternalIds) {
-    const existing = await deps.customers.findByExternalId(tenantId, RESERVA_EXTERNAL_SOURCE, externalId);
-    if (existing) await deactivateCustomer(deps, tenantId, existing.id);
+    try {
+      const existing = await deps.customers.findByExternalId(tenantId, RESERVA_EXTERNAL_SOURCE, externalId);
+      if (existing) {
+        await deactivateCustomer(deps, tenantId, existing.id);
+        deactivated++;
+      }
+    } catch (e) {
+      failures.push({
+        stage: 'deactivate',
+        customerId: externalId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
   }
 
-  return {
-    created: plan.toCreate.length,
-    updated: plan.toUpdate.length,
-    deactivated: plan.toDeactivateExternalIds.length,
-  };
+  return { created, updated, deactivated, failures };
 }

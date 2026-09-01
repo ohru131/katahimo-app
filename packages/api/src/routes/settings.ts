@@ -95,16 +95,19 @@ export function createSettingsRoutes(container: Container) {
     const body = await c.req.json().catch(() => null);
     const apiKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : '';
     if (!apiKey) {
-      return c.json({
-        success: false,
-        message: 'Gemini APIキーが設定されていません。先にAPIキーを入力してください。',
-      });
+      return c.json(
+        {
+          success: false,
+          message: 'Gemini APIキーが設定されていません。先にAPIキーを入力してください。',
+        },
+        400,
+      );
     }
     try {
       const models = await container.listGeminiModels(apiKey);
       return c.json({ success: true, models });
     } catch (e) {
-      return c.json({ success: false, message: e instanceof Error ? e.message : String(e) });
+      return c.json({ success: false, message: e instanceof Error ? e.message : String(e) }, 502);
     }
   });
 
