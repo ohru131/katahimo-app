@@ -1,4 +1,5 @@
 import type { StoragePort, StoredFile } from '@katahimo/core/ports';
+import { deleteIndexedDatabase } from '../deleteIndexedDatabase';
 
 const DB_NAME = 'katahimo-demo-storage';
 const STORE_NAME = 'files';
@@ -85,16 +86,5 @@ export class BrowserStoragePort implements StoragePort {
  * リロード後も残っている領収書画像を見てユーザーが混乱する)。
  */
 export function destroyBrowserStorage(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(DB_NAME);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error ?? new Error('領収書画像を削除できませんでした'));
-    request.onblocked = () =>
-      reject(
-        new Error(
-          'デモを開いている他のタブがあるため、領収書画像を削除できませんでした。' +
-            '他のタブを閉じてからもう一度お試しください。',
-        ),
-      );
-  });
+  return deleteIndexedDatabase(DB_NAME, '領収書画像');
 }
