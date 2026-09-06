@@ -49,6 +49,13 @@ function withCookieHeader(request: Request, cookieHeader: string): Request {
   });
 }
 
+export interface DemoPersistence {
+  /** コミット済みの内容をIndexedDBへ書き出す。 */
+  flush(): Promise<void>;
+  /** 書き出しに失敗したことを画面へ知らせる。 */
+  onFailure(error: unknown): void;
+}
+
 /**
  * 更新系リクエストの後にIndexedDBへの書き出しを完了させる。
  *
@@ -56,28 +63,27 @@ function withCookieHeader(request: Request, cookieHeader: string): Request {
  * これが無いと「ログインした直後にリロードするとログアウトしている」「保存した日報が
  * 消えている」といった状態が起きる。読み取りだけのリクエストでは何もしない。
  *
- * 書き出しに失敗した場合は成功レスポンスを握りつぶしてエラーを返す。DB上は書き込めていても
- * 端末に残らない以上、利用者にとっては保存できていないのと同じで、「保存しました」と
- * 表示するのは嘘になる(ストレージ容量不足などで実際に起こりうる)。
+ * 書き出しに失敗しても、レスポンスは成功のまま通す。トランザクションのコミット自体は
+ * 済んでいて、いま画面に見えている状態は正しい。失われるのは「リロードしても残る」
+ * という保証だけなので、リクエストを失敗させるのは事実と違ううえに実害がある。
+ *
+ * 日報の保存でいうと、ここで500に差し替えるとクライアントは採番済みの `reportId` を
+ * 受け取れない。`ReportModal` は保存失敗として `dailySavedId` を更新しないので、
+ * 次の保存が新規作成として飛び、同じ日報が二重に登録される(ミラー用のoutboxにも
+ * 2件積まれる)。コミット済みの書き込みをやり直させてはいけない。
+ *
+ * かといって握りつぶすと「保存しました」と出たのにリロードで消える。そこで
+ * レスポンスは通したうえで、やり直しを促さない警告として画面に出す。
  */
-function flushAfterWrites(flush: () => Promise<void>): MiddlewareHandler {
+export function flushAfterWrites(persistence: DemoPersistence): MiddlewareHandler {
   return async (c, next) => {
     await next();
     if (c.req.method === 'GET' || c.req.method === 'HEAD') return;
     try {
-      await flush();
+      await persistence.flush();
     } catch (error) {
       console.error('[demo] デモDBの書き出しに失敗しました', error);
-      return c.json(
-        {
-          success: false,
-          code: 'demo_persist_failed',
-          message:
-            'この操作を端末に保存できませんでした。ブラウザの空き容量やプライベートモードの設定をご確認ください。' +
-            'ページを再読み込みすると、この操作は失われます。',
-        },
-        500,
-      );
+      persistence.onFailure(error);
     }
   };
 }
@@ -86,10 +92,10 @@ function flushAfterWrites(flush: () => Promise<void>): MiddlewareHandler {
  * ブラウザ内で動かすAPIハンドラを組み立てる。中身は本番と同じ `createApp` で、
  * その外側にCookieの橋渡しと、デモ特有の書き出し制御だけを足している。
  */
-export function createDemoApiHandler(container: Container, jar: CookieJar, flush: () => Promise<void>) {
+export function createDemoApiHandler(container: Container, jar: CookieJar, persistence: DemoPersistence) {
   const app = new Hono();
   app.use('*', captureSetCookie(jar));
-  app.use('*', flushAfterWrites(flush));
+  app.use('*', flushAfterWrites(persistence));
   // デモにはHTTPSも外部DBも無いので、Secure属性付きCookieもDB疎通確認も無効。
   app.route('/', createApp(container, { secureCookies: false }));
 

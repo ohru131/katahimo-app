@@ -37,16 +37,24 @@ export function DemoBanner() {
   const [expanded, setExpanded] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [warning, setWarning] = useState<string | null>(null);
 
   useEffect(() => {
     const runtime = getDemoRuntime();
     if (!runtime) return;
     let nextId = 0;
-    return runtime.handle.onNotification((notification) => {
+    const unsubscribeNotification = runtime.handle.onNotification((notification) => {
       const toast: Toast = { id: nextId++, channel: notification.channel, text: notification.text };
       setToasts((current) => [...current, toast]);
       setTimeout(() => setToasts((current) => current.filter((t) => t.id !== toast.id)), 8000);
     });
+    // 書き出し失敗はトーストにしない。8秒で消えると気付かないまま
+    // リロードして「保存したはずのものが消えた」ことになる。
+    const unsubscribeWarning = runtime.handle.onWarning(setWarning);
+    return () => {
+      unsubscribeNotification();
+      unsubscribeWarning();
+    };
   }, []);
 
   const handleReset = async () => {
@@ -115,6 +123,15 @@ export function DemoBanner() {
           </div>
         )}
       </div>
+
+      {warning && (
+        <div className="bg-red-50 border-b border-red-300 text-red-800 text-xs px-3 py-2 flex items-start gap-2">
+          <span className="flex-1 leading-relaxed">{warning}</span>
+          <button type="button" onClick={() => setWarning(null)} className="shrink-0 underline">
+            閉じる
+          </button>
+        </div>
+      )}
 
       {toasts.length > 0 && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-40 w-full max-w-[440px] px-3 space-y-2">
