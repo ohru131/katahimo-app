@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { planVisitsForDate, recentBusinessDates, toJstDateIso, VISIT_SLOTS } from './visitPlan';
+import {
+  planVisitsForDate,
+  recentBusinessDates,
+  toJstDateIso,
+  upcomingWeekDates,
+  VISIT_SLOTS,
+} from './visitPlan';
 
 const FIGURE_COUNT = 20;
 const STAFF = '山田 花子';
@@ -69,6 +75,42 @@ describe('recentBusinessDates', () => {
     const today = new Date('2026-09-10T03:00:00Z');
     const dates = recentBusinessDates(today, 5);
     expect(dates).toEqual(['2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08', '2026-09-09']);
+  });
+});
+
+/**
+ * 勤怠タブの週間表示は日曜始まりで、保存済みの出勤簿しか出せない。過去の日付だけを
+ * シードすると今週が埋まらず、日曜にアクセスすると1件も出ない状態になっていた。
+ */
+describe('upcomingWeekDates', () => {
+  it('日曜なら翌日から土曜までの6日を返す', () => {
+    // 2026-09-06 03:00 UTC = 2026-09-06 12:00 JST(日曜)
+    expect(upcomingWeekDates(new Date('2026-09-06T03:00:00Z'))).toEqual([
+      '2026-09-07',
+      '2026-09-08',
+      '2026-09-09',
+      '2026-09-10',
+      '2026-09-11',
+      '2026-09-12',
+    ]);
+  });
+
+  it('水曜なら残りの3日を返す', () => {
+    expect(upcomingWeekDates(new Date('2026-09-09T03:00:00Z'))).toEqual([
+      '2026-09-10',
+      '2026-09-11',
+      '2026-09-12',
+    ]);
+  });
+
+  it('土曜なら空を返す', () => {
+    expect(upcomingWeekDates(new Date('2026-09-12T03:00:00Z'))).toEqual([]);
+  });
+
+  it('曜日はJSTで判定する', () => {
+    // 2026-09-12 16:00 UTC = 2026-09-13 01:00 JST(日曜)。UTCだと土曜で空になってしまう。
+    expect(upcomingWeekDates(new Date('2026-09-12T16:00:00Z'))).toHaveLength(6);
+    expect(upcomingWeekDates(new Date('2026-09-12T16:00:00Z'))[0]).toBe('2026-09-14');
   });
 });
 

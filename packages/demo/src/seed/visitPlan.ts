@@ -80,6 +80,23 @@ export function recentBusinessDates(today: Date, days: number): string[] {
   return dates;
 }
 
+/**
+ * 「今日」の翌日から今週の土曜までの日付。
+ *
+ * 勤怠タブの週間表示は日曜始まりで、保存済みの出勤簿しか出せない。過去の日付だけを
+ * 入れると今週が埋まらず、とくに日曜にアクセスすると1件も出ない(今週=今日〜土曜が
+ * すべて未来になる)。デモとして空の週を見せないために、今週ぶんは先まで入れておく。
+ */
+export function upcomingWeekDates(today: Date): string[] {
+  // JSTでの曜日。getUTCDay()を+9時間ずらした日付に対して使う。
+  const jstDayOfWeek = new Date(today.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
+  const dates: string[] = [];
+  for (let offset = 1; offset <= 6 - jstDayOfWeek; offset++) {
+    dates.push(toJstDateIso(new Date(today.getTime() + offset * 24 * 60 * 60 * 1000)));
+  }
+  return dates;
+}
+
 /** DateをJST基準の 'YYYY-MM-DD' にする。業務日は全てJSTで扱う。 */
 export function toJstDateIso(date: Date): string {
   const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
