@@ -125,7 +125,11 @@ export function DemoBanner() {
       </div>
 
       {warning && (
-        <div className="bg-red-50 border-b border-red-300 text-red-800 text-xs px-3 py-2 flex items-start gap-2">
+        // 保存した内容が失われうるという警告なので、読み上げ環境にも即座に伝わるようにする。
+        <div
+          role="alert"
+          className="bg-red-50 border-b border-red-300 text-red-800 text-xs px-3 py-2 flex items-start gap-2"
+        >
           <span className="flex-1 leading-relaxed">{warning}</span>
           <button type="button" onClick={() => setWarning(null)} className="shrink-0 underline">
             閉じる
