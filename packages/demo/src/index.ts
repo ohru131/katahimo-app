@@ -16,9 +16,26 @@ export type { SeedProgress } from './seed/seedDemoData';
 export interface DemoHandle {
   /** Google Chat通知の代わりに画面へ出すための購読。 */
   onNotification(listener: (notification: DemoNotification) => void): () => void;
+  /**
+   * デモの継続には支障しないが利用者に伝える必要がある事象(いまのところ
+   * IndexedDBへの書き出し失敗だけ)の購読。
+   */
+  onWarning(listener: (message: string) => void): () => void;
   /** データを全消しして、次回読み込み時にシードからやり直す。失敗時は DemoResetError を投げる。 */
   reset(): Promise<void>;
 }
+
+/**
+ * IndexedDBへの書き出しに失敗したときに画面へ出す文面。
+ *
+ * 「保存できませんでした」とは書かない。DBへのコミットは済んでいて、この画面で
+ * 見えている状態は正しいので、やり直すと日報が二重に登録される。失われるのは
+ * リロードをまたいだときだけなので、そのとおりに伝える。
+ */
+const PERSIST_FAILURE_MESSAGE =
+  'この操作はデモ内には反映されていますが、端末に保存できませんでした。' +
+  'ページを再読み込みすると失われます(保存し直す必要はありません)。' +
+  'ブラウザの空き容量やプライベートブラウジングの設定をご確認ください。';
 
 /**
  * リセットの失敗。`runtimeUsable` が false の場合はPGliteの接続が閉じた後の失敗で、
@@ -91,12 +108,24 @@ export async function startDemo(onProgress: (progress: SeedProgress) => void): P
   }
 
   const jar = new CookieJar();
-  const shim = installFetchShim(createDemoApiHandler(container, jar, () => flushDemoDatabase(client)));
+  const warningListeners = new Set<(message: string) => void>();
+  const shim = installFetchShim(
+    createDemoApiHandler(container, jar, {
+      flush: () => flushDemoDatabase(client),
+      onFailure: () => {
+        for (const listener of warningListeners) listener(PERSIST_FAILURE_MESSAGE);
+      },
+    }),
+  );
 
   onProgress({ message: '準備ができました', ratio: 1 });
 
   return {
     onNotification: (listener) => container.notifier.subscribe(listener),
+    onWarning: (listener) => {
+      warningListeners.add(listener);
+      return () => warningListeners.delete(listener);
+    },
     /**
      * デモデータを削除する。削除できなかった場合は DemoResetError を投げる
      * (他タブがIndexedDBを開いているとブロックされる)。
