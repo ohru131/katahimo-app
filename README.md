@@ -29,6 +29,7 @@
 | `@katahimo/api` | Honoサーバー(Cloud Runのエントリ) |
 | `@katahimo/worker` | outboxミラー・夜間同期・CSVポーリング |
 | `@katahimo/web` | Vite + React + PWA(現場スタッフのスマホ利用が主) |
+| `@katahimo/demo` | 公開デモ用。ブラウザ内PostgreSQL(PGlite)+架空データで、サーバー無しに全機能を動かす |
 
 ## セットアップ(ローカル開発)
 
@@ -144,6 +145,65 @@ GAS版と同じボトムシート形式のモーダルでRESERVA CSVの全項目
   AI生成(日報/事故報告の下書き・領収書OCR)は`GEMINI_API_KEY`未設定かつ管理者設定でもキー未保存の環境では
   常にフォールバック応答(GAS版が同じ状況で返すのと同じ値)になる。
 
+## 公開デモ(GitHub Pages)
+
+サーバーもデータベースも用意せずに全機能を触れる、紹介用の公開デモ。
+main への push で自動デプロイされる(`.github/workflows/deploy-demo.yml`)。
+
+**https://ohru131.github.io/katahimo-app/**
+
+```bash
+pnpm --filter @katahimo/web build:demo     # 静的ファイル一式を packages/web/dist に出力
+pnpm --filter @katahimo/web preview:demo   # ローカルで確認
+```
+
+### 何が本物で、何が差し替えなのか
+
+ブラウザの中で **PostgreSQL(PGlite/WASM)を起動し、本番と同じマイグレーション・同じDrizzleリポジトリ・
+同じusecases・同じHonoルート**を動かしている。`packages/web` 側のコードは1行も分岐しておらず、
+`/api/**` へのfetchを `packages/demo` がブラウザ内のHonoアプリへ横流ししているだけ
+(`fetchShim.ts`)。PII暗号化・ブラインドインデックス・セッション認証も本番の実装がそのまま動く。
+
+差し替えているのは、ブラウザで動かせないものと、公開デモに鍵を置けないものだけ:
+
+| ポート | 本番 | デモ |
+| --- | --- | --- |
+| `PasswordHasherPort` | `@node-rs/argon2`(ネイティブ) | `@noble/hashes` のargon2id(パラメータを軽く) |
+| `StoragePort` | GCS / ファイルシステム | IndexedDB |
+| `MapsPort` | Google Maps(GASブリッジ経由) | 緯度経度からの概算(距離×1.35・時速24km) |
+| `SchedulePort` | Googleカレンダー(GASブリッジ経由) | 日付から決定論的に生成(`seed/visitPlan.ts`) |
+| `NotifierPort` | Google Chat Webhook | 画面内トースト |
+| `ReportAiPort` | Gemini API | 既定は定型応答(下記) |
+| `MirrorPort` | outbox → スプレッドシート | 送信先が無いのでNoop |
+| `node:crypto` | Node標準 | `@noble/hashes`/`@noble/ciphers` による同期実装(`nodeCryptoShim.ts`) |
+
+`node:crypto`シムの出力が本物と1バイトも違わないことは `nodeCryptoShim.test.ts` で検証している。
+
+### AI(Gemini)の扱い
+
+静的サイトに自分のAPIキーを埋め込むと公開した瞬間に漏洩するため、**デモにキーは一切含めていない**。
+
+1. 既定は定型応答(`CannedReportAiPort`)。断り書き付きで返し、AIが書いたように見せかけない。
+2. 訪問者が設定モーダルの管理者設定に**自分のGemini APIキー**を登録すると、本番と同じ経路で実際に生成される。
+   キーはブラウザ内のPGliteに本番と同じ封筒暗号化をかけて保存され、どこへも送信されない。
+
+なお、デモ用のKEK/インデックス鍵は `packages/demo/src/container.ts` に固定値で書いてある(公開前提)。
+この鍵で守られるのは訪問者自身のブラウザに入った架空データだけなので、公開されていて問題ない。
+
+### データについて
+
+利用者20世帯は関西在住の歴史上の人物の名前を借りているが、**住所の番地・連絡先・子どもの情報はすべて架空**。
+訪問履歴・勤怠・予定は起動時に「今日」を基準に生成するため、いつアクセスしても日付が古びない。
+データはIndexedDBに保存され、画面上部の「リセット」で完全に消去できる。
+
+初回起動は約4〜5秒(スキーマ作成+シード投入)、2回目以降は約2秒。
+
+### 本番ビルドへの混入防止
+
+デモ用コード(PGliteのwasm 8MBと架空データ)が本番の配信物に紛れ込まないよう、通常ビルドでは
+`vite.config.ts` の `stripDemoEntry` プラグインがデモの入口モジュールごとスタブに差し替える。
+壊れたことを検知できるよう、CIで実際のビルド成果物を `scripts/assertNoDemoInBuild.mjs` が検査する。
+
 ## 動作デモ(RESERVA CSV取込)
 
 実際のRESERVA(外部予約システム)エクスポート形式のサンプルCSV(`fixtures/Kokyaku_202601191958_1_dummy.csv`、
@@ -189,6 +249,8 @@ pnpm exec tsx src/scripts/importLegacyStaff.ts demo "氏名" メールアドレ�
 | `pnpm test` | Vitest(純粋関数の回帰テスト。勤怠計算などGAS版との数値一致検証もここ) |
 | `pnpm lint` / `pnpm lint:fix` | Biome |
 | `pnpm build` | 全パッケージのビルド |
+| `pnpm --filter @katahimo/web build:demo` | GitHub Pages公開デモのビルド(`preview:demo`でローカル確認) |
+| `node scripts/assertNoDemoInBuild.mjs` | 本番ビルドにデモ用コード/データが混入していないかの検査 |
 | `pnpm db:generate` / `db:migrate` / `db:seed` | Drizzleのマイグレーション生成・適用・初期データ |
 
 ## PII暗号化の方針

@@ -7,9 +7,12 @@
     "typecheck": "tsc --noEmit",
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:demo": "VITE_DEMO=1 vite build",
+    "preview:demo": "VITE_DEMO=1 vite preview"
   },
   "dependencies": {
+    "@katahimo/demo": "workspace:*",
     "@katahimo/shared": "workspace:*",
     "@tanstack/react-query": "^5.62.7",
     "react": "^18.3.1",
