@@ -4,9 +4,9 @@ import type {
   NewAccidentReportInput,
 } from '@katahimo/core/ports';
 import { and, desc, eq, lt } from 'drizzle-orm';
-import type { Database } from '../client';
-import { withTenant } from '../client';
 import { accidentReports } from '../schema';
+import type { Database } from '../tenantScope';
+import { withTenant } from '../tenantScope';
 
 type AccidentReportRow = typeof accidentReports.$inferSelect;
 

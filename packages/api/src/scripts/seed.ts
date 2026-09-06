@@ -9,8 +9,8 @@ import {
   searchCustomersByFamilyName,
 } from '@katahimo/core';
 import { getDatabase } from '@katahimo/db';
-import { createContainer } from '../container';
 import { loadEnv } from '../env';
+import { createContainer } from '../nodeContainer';
 
 const DEMO_TENANT_SLUG = 'demo';
 const ADMIN_EMAIL = 'admin@example.com';

@@ -1,8 +1,8 @@
 import type { DailyReportRecord, DailyReportRepositoryPort, NewDailyReportInput } from '@katahimo/core/ports';
 import { and, desc, eq, lt } from 'drizzle-orm';
-import type { Database } from '../client';
-import { withTenant } from '../client';
 import { dailyReports } from '../schema';
+import type { Database } from '../tenantScope';
+import { withTenant } from '../tenantScope';
 
 type DailyReportRow = typeof dailyReports.$inferSelect;
 
