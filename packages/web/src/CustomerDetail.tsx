@@ -4,16 +4,62 @@ import { fetchCustomerDetail } from './api';
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs text-gray-500">{label}</dt>
-      <dd className="text-sm text-gray-800">{value}</dd>
+      <dd className="text-sm text-gray-800 break-words">{value}</dd>
     </div>
+  );
+}
+
+/** 封筒アイコン。 */
+function MailIcon() {
+  return (
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.616a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.917V6.75"
+      />
+    </svg>
+  );
+}
+
+/** 受話器アイコン。 */
+function PhoneIcon() {
+  return (
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102A1.125 1.125 0 0 0 5.872 2.25H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z"
+      />
+    </svg>
   );
 }
 
 /**
  * メール/電話番号の値にワンタップ操作ボタン(mailto:/tel:)を添える。GAS版showCustomerDetailの
- * 「キーに'メール'/'電話'を含む場合はボタンを付ける」ロジックと同じ配色・ラベルにしている。
+ * 「キーに'メール'/'電話'を含む場合はボタンを付ける」ロジックと同じ配色で、こちらは
+ * 「メール」「電話」の文字ではなくアイコンにしている。2カラムのグリッドに長いメール
+ * アドレスが入ると文字ラベルの分だけ幅が足りず、ボタンが隣の列にはみ出していた。
+ *
+ * はみ出しの直接の原因はflexアイテムの `min-width: auto` で、値が最長単語より狭くなれず
+ * `break-words` が効かないこと。アイコン化で幅は足りるが、それだけでは長い値で再発するため
+ * `min-w-0` も併せて指定する。
  */
 function ContactField({
   label,
@@ -26,18 +72,24 @@ function ContactField({
 }) {
   if (!value) return null;
   const href = type === 'email' ? `mailto:${value}` : `tel:${value}`;
-  const badgeLabel = type === 'email' ? 'メール' : '電話';
+  // アイコンだけになるので、読み上げとホバー用に何をするボタンなのかを持たせる。
+  const actionLabel = type === 'email' ? `${value} にメールを送る` : `${value} に電話をかける`;
   const badgeClass =
     type === 'email'
       ? 'bg-teal-100 text-teal-700 hover:bg-teal-200'
       : 'bg-green-100 text-green-700 hover:bg-green-200';
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs text-gray-500">{label}</dt>
       <dd className="text-sm text-gray-800 flex items-start gap-2">
-        <span className="flex-grow break-words">{value}</span>
-        <a href={href} className={`shrink-0 px-2 py-1 text-xs rounded transition-colors ${badgeClass}`}>
-          {badgeLabel}
+        <span className="min-w-0 flex-grow break-words">{value}</span>
+        <a
+          href={href}
+          aria-label={actionLabel}
+          title={actionLabel}
+          className={`shrink-0 p-2 rounded transition-colors ${badgeClass}`}
+        >
+          {type === 'email' ? <MailIcon /> : <PhoneIcon />}
         </a>
       </dd>
     </div>
@@ -62,10 +114,10 @@ function AddressField({
   const mapQuery = latLng?.trim() ? latLng.trim() : value;
   const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs text-gray-500">{label}</dt>
       <dd className="text-sm text-gray-800 flex items-start gap-2">
-        <span className="flex-grow break-words">{value}</span>
+        <span className="min-w-0 flex-grow break-words">{value}</span>
         <a
           href={mapUrl}
           target="_blank"
