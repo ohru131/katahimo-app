@@ -7,7 +7,13 @@ import {
   saveDailyReport,
 } from '@katahimo/core';
 import { DEMO_FIGURES, DEMO_OFFICE, DEMO_STAFF, DEMO_TENANT } from './figures';
-import { planVisitsForDate, recentBusinessDates, toJstDateIso, VISIT_SLOTS } from './visitPlan';
+import {
+  planVisitsForDate,
+  recentBusinessDates,
+  toJstDateIso,
+  upcomingWeekDates,
+  VISIT_SLOTS,
+} from './visitPlan';
 
 /**
  * 訪問履歴を作る期間(日)。
@@ -139,13 +145,15 @@ export async function seedDemoData(
     addressLatLng.set(address, { lat: figure.lat, lng: figure.lng });
   }
 
-  const businessDates = recentBusinessDates(today, HISTORY_DAYS);
+  // 今日ぶんも入れる。「今日の訪問がまだ1件も無い」状態でデモが始まると、
+  // 予定タブに出ている今日の予定と履歴が食い違って見える。
+  const businessDates = [...recentBusinessDates(today, HISTORY_DAYS), toJstDateIso(today)];
   let visitCounter = 0;
 
   for (const [dateIndex, businessDate] of businessDates.entries()) {
     onProgress({
       message: `訪問履歴を作成しています… (${dateIndex + 1}/${businessDates.length}日)`,
-      ratio: 0.45 + (0.5 * (dateIndex + 1)) / businessDates.length,
+      ratio: 0.45 + (0.4 * (dateIndex + 1)) / businessDates.length,
     });
 
     const visits = planVisitsForDate(businessDate, adminStaffName, DEMO_FIGURES.length);
@@ -194,14 +202,33 @@ export async function seedDemoData(
         });
       }
     }
+  }
 
-    await saveAttendanceDay(
-      container,
-      tenant.id,
-      adminStaffId,
-      businessDate,
-      buildAttendanceRow(visits, dateIndex),
-    );
+  // 出勤簿はスタッフ全員ぶん作る。管理者ぶんだけだと、スタッフのアカウントで
+  // ログインしたときに勤怠タブが空になる。日報と違って1日1件なので安く済む。
+  //
+  // 未来の日付も今週の土曜まで入れる。週間表示は保存済みの出勤簿しか出せないため、
+  // 過去だけだと今週が埋まらない(日曜にアクセスすると1件も出ない)。
+  const attendanceDates = [...businessDates, ...upcomingWeekDates(today)];
+  for (const [staffIndex, staffId] of staffIds.entries()) {
+    const staffName = DEMO_STAFF[staffIndex]?.name;
+    if (!staffName) continue;
+    onProgress({
+      message: `出勤簿を作成しています… (${staffIndex + 1}/${staffIds.length}人)`,
+      ratio: 0.85 + (0.14 * (staffIndex + 1)) / staffIds.length,
+    });
+    for (const [dateIndex, businessDate] of attendanceDates.entries()) {
+      // 予定タブと同じ純関数から引くので、出勤簿の訪問先と予定が一致する。
+      const visits = planVisitsForDate(businessDate, staffName, DEMO_FIGURES.length);
+      if (visits.length === 0) continue;
+      await saveAttendanceDay(
+        container,
+        tenant.id,
+        staffId,
+        businessDate,
+        buildAttendanceRow(visits, dateIndex),
+      );
+    }
   }
 
   onProgress({ message: '仕上げ中…', ratio: 1 });
