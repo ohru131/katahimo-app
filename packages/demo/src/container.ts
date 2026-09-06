@@ -22,6 +22,7 @@ import { LocalKmsPort } from '@katahimo/integrations/local-kms';
 import { NoopMirrorPort } from '@katahimo/integrations/mirror';
 import { BrowserStoragePort } from './ports/browserStoragePort';
 import { CannedReportAiPort } from './ports/cannedReportAiPort';
+import { DemoAppSettingsRepository } from './ports/demoAppSettingsRepository';
 import { DemoMapsPort } from './ports/demoMapsPort';
 import { DemoNotifierPort } from './ports/demoNotifierPort';
 import { demoPasswordHasher } from './ports/demoPasswordHasher';
@@ -30,10 +31,12 @@ import { type CustomerIdByName, DemoSchedulePort } from './ports/demoSchedulePor
 /**
  * デモ用の鍵。
  *
- * 本番のKEK/マスターキーとは無関係の固定値で、公開されていること自体は問題にならない
- * (この鍵で守られるのは、訪問者自身のブラウザに入った架空データだけ)。
- * ただし「暗号化されているから安全」という誤解を生まないよう、デモの説明文には
- * 鍵が公開されていることを明記すること。
+ * 本番のKEK/マスターキーとは無関係の固定値で、公開ビルドに含まれるため誰でも読める。
+ * この鍵で守られるのはシードで作った架空データだけなので、公開されていること自体は問題ない。
+ *
+ * 逆に言えば、この鍵で暗号化したものは実質平文と変わらない。訪問者が入力した本物の秘密
+ * (Gemini APIキー等)をこの鍵で暗号化して保存すると「暗号化しているから安全」という
+ * 誤った保証を与えることになるため、秘密項目はDemoAppSettingsRepositoryが永続化を止めている。
  */
 const DEMO_KEK = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
 const DEMO_BLIND_INDEX_KEY = 'ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100';
@@ -72,7 +75,8 @@ export function createDemoContainer(deps: DemoContainerDeps): DemoContainer {
     dailyReports: new DrizzleDailyReportRepository(deps.db),
     accidentReports: new DrizzleAccidentReportRepository(deps.db),
     receipts: new DrizzleReceiptRepository(deps.db),
-    appSettings: new DrizzleAppSettingsRepository(deps.db),
+    // 訪問者が入力したAPIキー/Webhook URLはメモリに留め、IndexedDBには書かない。
+    appSettings: new DemoAppSettingsRepository(new DrizzleAppSettingsRepository(deps.db)),
     crypto,
     blindIndex: new LocalBlindIndexPort(DEMO_BLIND_INDEX_KEY),
     passwordHasher: demoPasswordHasher,

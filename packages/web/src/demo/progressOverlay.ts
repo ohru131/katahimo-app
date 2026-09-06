@@ -24,7 +24,7 @@ export function createProgressOverlay(): ProgressOverlay {
         <div data-bar style="height:100%;width:4%;background:#3b82f6;transition:width .3s"></div>
       </div>
       <div data-message style="font-size:.875rem;opacity:.85;margin-top:1rem">読み込んでいます…</div>
-      <div style="font-size:.75rem;opacity:.5;margin-top:1rem;line-height:1.7">
+      <div data-hint style="font-size:.75rem;opacity:.5;margin-top:1rem;line-height:1.7">
         ブラウザの中でPostgreSQLを起動し、架空のデモデータを作成します。<br />
         初回は十数秒かかります(2回目以降は保存済みのデータを使います)。<br />
         入力した内容は端末の中だけに保存され、サーバーへは送信されません。
@@ -50,7 +50,9 @@ export function createProgressOverlay(): ProgressOverlay {
           error instanceof Error ? error.message : String(error)
         }`;
       }
-      const hint = overlay.querySelector<HTMLElement>('div > div:last-child');
+      // 構造セレクタ(div > div:last-child)だと外側のコンテナに一致してしまい、
+      // textContentの代入でタイトル・進捗バー・エラーメッセージまで消える。属性で名指しする。
+      const hint = overlay.querySelector<HTMLElement>('[data-hint]');
       if (hint) {
         hint.textContent =
           'プライベートブラウジングや、IndexedDBを無効にしている設定では動作しません。設定を確認して再読み込みしてください。';

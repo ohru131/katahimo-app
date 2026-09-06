@@ -50,12 +50,33 @@ function withCookieHeader(request: Request, cookieHeader: string): Request {
 }
 
 /**
- * ブラウザ内で動かすAPIハンドラを組み立てる。中身は本番と同じ `createApp` で、
- * その外側にCookieの橋渡しだけを足している。
+ * 更新系リクエストの後にIndexedDBへの書き出しを完了させる。
+ *
+ * PGliteはrelaxedDurability(初回シードを速くするため)で動かしているので、
+ * これが無いと「ログインした直後にリロードするとログアウトしている」「保存した日報が
+ * 消えている」といった状態が起きる。読み取りだけのリクエストでは何もしない。
  */
-export function createDemoApiHandler(container: Container, jar: CookieJar) {
+function flushAfterWrites(flush: () => Promise<void>): MiddlewareHandler {
+  return async (c, next) => {
+    await next();
+    if (c.req.method === 'GET' || c.req.method === 'HEAD') return;
+    try {
+      await flush();
+    } catch (error) {
+      // 書き出しに失敗してもレスポンス自体は返す(次の更新でまとめて書き出される)。
+      console.warn('[demo] デモDBの書き出しに失敗しました', error);
+    }
+  };
+}
+
+/**
+ * ブラウザ内で動かすAPIハンドラを組み立てる。中身は本番と同じ `createApp` で、
+ * その外側にCookieの橋渡しと、デモ特有の書き出し制御だけを足している。
+ */
+export function createDemoApiHandler(container: Container, jar: CookieJar, flush: () => Promise<void>) {
   const app = new Hono();
   app.use('*', captureSetCookie(jar));
+  app.use('*', flushAfterWrites(flush));
   // デモにはHTTPSも外部DBも無いので、Secure属性付きCookieもDB疎通確認も無効。
   app.route('/', createApp(container, { secureCookies: false }));
 
