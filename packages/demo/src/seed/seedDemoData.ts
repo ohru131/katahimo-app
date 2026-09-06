@@ -116,7 +116,9 @@ export async function seedDemoData(
       givenName: figure.givenName,
       familyNameKana: figure.familyNameKana,
       givenNameKana: figure.givenNameKana,
-      email: `${figure.familyNameKana.toLowerCase()}@demo.example.com`,
+      // カナをそのまま使うと `オダ@demo.example.com` のような非ASCIIのアドレスになり、
+      // 顧客詳細のmailto:リンクが壊れる。ローマ字のslugを使う。
+      email: `${figure.slug}@demo.example.com`,
       phone: figure.phone,
       addressDetail: figure.addressDetail,
       city: figure.city,

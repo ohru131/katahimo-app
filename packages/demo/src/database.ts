@@ -24,10 +24,10 @@ export interface DemoDatabase {
 export async function openDemoDatabase(): Promise<DemoDatabase> {
   const client = new PGlite({
     dataDir: `idb://${DATA_DIR}`,
-    // コミットのたびにIndexedDBへの書き出し完了を待たない。デモのシード投入は
-    // 数十件ぶんのトランザクションを直列に流すため、待つと初回起動が数倍遅くなる。
-    // 引き換えにブラウザを強制終了した場合の直近数件が失われうるが、
-    // 失われて困るデータが存在しないデモでは払って構わないコスト。
+    // コミットのたびにIndexedDBへの書き出し完了を待たない。シード投入は数百件の
+    // トランザクションを直列に流すため、待つと初回起動が12秒→4秒ほど変わる。
+    // 代わりに、シード完了時と各更新リクエストの後に flushDemoDatabase() で明示的に
+    // 書き出す(そうしないと、ログイン直後にリロードしただけでセッションが消える)。
     relaxedDurability: true,
   });
   await client.waitReady;
@@ -51,6 +51,40 @@ export async function openDemoDatabase(): Promise<DemoDatabase> {
   return { db, client, isFresh };
 }
 
+/** PGliteの内部FS。型定義に出ていないので、使う範囲だけをここで宣言する。 */
+interface PgliteInternalFs {
+  /** IndexedDBへの書き出しを実行して完了を待つ(実体は emscripten の FS.syncfs)。 */
+  syncToFs(relaxedDurability?: boolean): Promise<void>;
+}
+
+let flushUnavailableWarned = false;
+
+/**
+ * コミット済みの内容をIndexedDBへ確実に書き出す。
+ *
+ * relaxedDurabilityを有効にしているため、トランザクションがコミットしただけでは
+ * 書き出しが完了していない。`PGlite.syncToFs()` は公開APIだが、relaxedDurability時は
+ * 意図的に完了を待たない実装(内部で `await` していない)なので、実際に待てる
+ * FS側を直接呼ぶ。
+ *
+ * PGliteの内部構造に触れているため、将来のバージョンで到達できなくなる可能性がある。
+ * その場合でも壊れるのは「リロードで直前の操作が失われることがある」という程度なので、
+ * 例外にはせず警告だけ出してデモは動かし続ける。
+ */
+export async function flushDemoDatabase(client: PGlite): Promise<void> {
+  const fs = (client as unknown as { fs?: Partial<PgliteInternalFs> }).fs;
+  if (typeof fs?.syncToFs !== 'function') {
+    if (!flushUnavailableWarned) {
+      flushUnavailableWarned = true;
+      console.warn(
+        '[demo] PGliteの書き出しAPIが見つかりません。リロードで直前の操作が失われることがあります。',
+      );
+    }
+    return;
+  }
+  await fs.syncToFs(false);
+}
+
 /**
  * デモデータを完全に破棄する(画面の「デモデータをリセット」用)。
  * 次回起動時にスキーマ作成とシード投入からやり直される。
@@ -62,13 +96,20 @@ export async function destroyDemoDatabase(client: PGlite): Promise<void> {
   await Promise.all(
     targets.map(
       (name) =>
-        new Promise<void>((resolve) => {
+        new Promise<void>((resolve, reject) => {
           const request = indexedDB.deleteDatabase(name);
-          // ブロックされた場合(他タブが開いている等)もデモを固まらせないため、
-          // 失敗してもresolveしてリロードに進ませる。
           request.onsuccess = () => resolve();
-          request.onerror = () => resolve();
-          request.onblocked = () => resolve();
+          request.onerror = () => reject(request.error ?? new Error(`${name} を削除できませんでした`));
+          // onblockedは「他のタブがまだこのDBを開いている」状態。ここでresolveすると、
+          // 実際には消えていないのにリセット成功として画面をリロードしてしまい、
+          // 古いデータがそのまま残っているように見える。必ず失敗として扱う。
+          request.onblocked = () =>
+            reject(
+              new Error(
+                'デモを開いている他のタブがあるため、データを削除できませんでした。' +
+                  '他のタブを閉じてからもう一度お試しください。',
+              ),
+            );
         }),
     ),
   );

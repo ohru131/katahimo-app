@@ -42,11 +42,12 @@ export function DemoBanner() {
     setResetting(true);
     try {
       await runtime.handle.reset();
-      window.location.reload();
     } catch (error) {
-      setResetting(false);
-      window.alert(`リセットに失敗しました: ${error instanceof Error ? error.message : String(error)}`);
+      // 失敗しても、この時点でブラウザ内DBの接続は閉じられておりアプリは動かせない。
+      // 理由を伝えたうえで必ずリロードして、使える状態に戻す(データは残ったまま)。
+      window.alert(`リセットできませんでした。\n\n${error instanceof Error ? error.message : String(error)}`);
     }
+    window.location.reload();
   };
 
   return (
@@ -82,8 +83,8 @@ export function DemoBanner() {
             </p>
             <p>
               移動時間・距離は緯度経度からの概算値です。AIによる日報生成は既定では定型応答で、
-              設定画面でご自身のGemini APIキーを登録すると実際に生成されます
-              (キーも端末内にのみ保存されます)。
+              設定画面でご自身のGemini APIキーを登録すると実際に生成されます。キーは
+              メモリ上にのみ保持し、端末にも保存しません(タブを閉じると消えます)。
             </p>
           </div>
         )}

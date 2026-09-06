@@ -1,7 +1,7 @@
 import { installBufferPolyfill } from './bufferPolyfill';
 import { createDemoContainer, type DemoContainer } from './container';
 import { CookieJar } from './cookieJar';
-import { destroyDemoDatabase, openDemoDatabase } from './database';
+import { destroyDemoDatabase, flushDemoDatabase, openDemoDatabase } from './database';
 import { createDemoApiHandler } from './demoApi';
 import { installFetchShim } from './fetchShim';
 import { destroyBrowserStorage } from './ports/browserStoragePort';
@@ -64,22 +64,35 @@ export async function startDemo(onProgress: (progress: SeedProgress) => void): P
   if (isFresh) {
     const seeded = await seedDemoData(container, onProgress);
     for (const [name, id] of seeded.customerIdByName) customerIdByName.set(name, id);
+    // シードはrelaxedDurabilityのまま流しているので、ここで確実に書き出す。
+    // 書き出す前にタブを閉じられると、次回起動時に中途半端なデータで立ち上がる。
+    await flushDemoDatabase(client);
   } else {
     onProgress({ message: '保存済みのデモデータを読み込んでいます…', ratio: 0.8 });
     await loadCustomerIds(container, customerIdByName);
   }
 
   const jar = new CookieJar();
-  const shim = installFetchShim(createDemoApiHandler(container, jar));
+  const shim = installFetchShim(createDemoApiHandler(container, jar, () => flushDemoDatabase(client)));
 
   onProgress({ message: '準備ができました', ratio: 1 });
 
   return {
     onNotification: (listener) => container.notifier.subscribe(listener),
+    /**
+     * デモデータを削除する。削除に失敗した場合は例外を投げる(他タブがDBを開いていると
+     * ブロックされる)。
+     *
+     * 削除が終わるまでfetchの差し替えは外さない。先に外してしまうと、削除に失敗して
+     * 画面が残ったときに `/api/**` が本物のネットワークへ飛んで404になる。
+     *
+     * ただし削除処理の途中でPGliteの接続を閉じるため、失敗した場合もこのランタイムは
+     * もう使えない。呼び出し側はエラーを表示したうえで必ずリロードすること。
+     */
     async reset() {
+      await Promise.all([destroyDemoDatabase(client), destroyBrowserStorage()]);
       jar.clear();
       shim.uninstall();
-      await Promise.all([destroyDemoDatabase(client), destroyBrowserStorage()]);
     },
   };
 }

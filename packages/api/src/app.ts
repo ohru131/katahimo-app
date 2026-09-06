@@ -30,14 +30,21 @@ export function createApp(container: Container, options: CreateAppOptions) {
   /** Cloud Run のヘルスチェック用。DBに触らない軽量な生存確認。 */
   app.get('/api/health', (c) => c.json({ status: 'ok' }));
 
-  /** DB接続まで含めた疎通確認。デプロイ直後の確認とローカル動作確認に使う。 */
+  /**
+   * DB接続まで含めた疎通確認。デプロイ直後の確認とローカル動作確認に使う。
+   *
+   * 失敗の詳細はサーバーログにだけ出し、レスポンスには含めない。このルートには認証が
+   * 掛かっていないため、接続文字列やホスト名を含むドライバのエラーメッセージをそのまま
+   * 返すと、誰でも読める場所にDBの内部情報を晒すことになる。
+   */
   const pingDataStore = options.pingDataStore;
   if (pingDataStore) {
     app.get('/api/health/db', async (c) => {
       try {
         return c.json({ status: 'ok', now: await pingDataStore() });
       } catch (e) {
-        return c.json({ status: 'error', message: e instanceof Error ? e.message : String(e) }, 503);
+        console.error('[health] データストアへの疎通確認に失敗しました', e);
+        return c.json({ status: 'error' }, 503);
       }
     });
   }
