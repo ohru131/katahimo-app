@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/schema/index.ts",
-    "./repositories": "./src/repositories/index.ts"
+    "./repositories": "./src/repositories/index.ts",
+    "./tenant-scope": "./src/tenantScope.ts",
+    "./serialize-transactions": "./src/serializeTransactions.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

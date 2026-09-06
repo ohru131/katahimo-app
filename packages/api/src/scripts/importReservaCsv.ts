@@ -5,8 +5,8 @@ loadDotenv();
 import { readFileSync } from 'node:fs';
 import { getDatabase } from '@katahimo/db';
 import { applyReservaImportPlan, parseReservaCsv, planReservaImport } from '@katahimo/ingestion';
-import { createContainer } from '../container';
 import { loadEnv } from '../env';
+import { createContainer } from '../nodeContainer';
 
 /**
  * RESERVA顧客CSVを実際に取り込むための操作スクリプト。

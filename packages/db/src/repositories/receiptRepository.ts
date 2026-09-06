@@ -5,9 +5,9 @@ import type {
   ReceiptRepositoryPort,
 } from '@katahimo/core/ports';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
-import type { Database } from '../client';
-import { withTenant } from '../client';
 import { receipts } from '../schema';
+import type { Database } from '../tenantScope';
+import { withTenant } from '../tenantScope';
 
 type ReceiptRow = typeof receipts.$inferSelect;
 

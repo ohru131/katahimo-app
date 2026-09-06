@@ -1,8 +1,8 @@
 import type { NewSessionInput, SessionRecord, SessionRepositoryPort } from '@katahimo/core/ports';
 import { eq } from 'drizzle-orm';
-import type { Database } from '../client';
-import { withTenant } from '../client';
 import { sessions } from '../schema';
+import type { Database } from '../tenantScope';
+import { withTenant } from '../tenantScope';
 
 export class DrizzleSessionRepository implements SessionRepositoryPort {
   constructor(private readonly db: Database) {}

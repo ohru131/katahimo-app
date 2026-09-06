@@ -1,8 +1,5 @@
-import type { Database } from '@katahimo/db';
-import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { createContainer } from './container';
-import type { Env } from './env';
+import type { Container } from './container';
 import { createAttendanceRoutes } from './routes/attendance';
 import { createAuthRoutes } from './routes/auth';
 import { createCustomerRoutes } from './routes/customers';
@@ -12,29 +9,40 @@ import { createScheduleRoutes } from './routes/schedule';
 import { createSettingsRoutes } from './routes/settings';
 import { createStaffRoutes } from './routes/staff';
 
-export interface AppDeps {
-  env: Env;
-  db: Database;
+export interface CreateAppOptions {
+  /** セッションCookieにSecure属性を付けるか(本番はtrue)。 */
+  secureCookies: boolean;
+  /**
+   * `/api/health/db` の実装。データストアへの疎通確認結果(現在時刻)を返す。
+   * 省略するとこのルート自体を生やさない(ブラウザ内で動く公開デモのように、
+   * 外部DBへの疎通という概念がない構成のため)。
+   */
+  pingDataStore?: () => Promise<string | null>;
 }
 
-export function createApp(deps: AppDeps) {
+/**
+ * HonoアプリをContainerから組み立てる。ここでは依存の「組み立て方」を一切知らないので、
+ * Node+PostgreSQL(createContainer)でもブラウザ+PGlite(packages/demo)でも同じルート実装が動く。
+ */
+export function createApp(container: Container, options: CreateAppOptions) {
   const app = new Hono();
-  const container = createContainer(deps.env, deps.db);
 
   /** Cloud Run のヘルスチェック用。DBに触らない軽量な生存確認。 */
   app.get('/api/health', (c) => c.json({ status: 'ok' }));
 
   /** DB接続まで含めた疎通確認。デプロイ直後の確認とローカル動作確認に使う。 */
-  app.get('/api/health/db', async (c) => {
-    try {
-      const rows = await deps.db.execute<{ now: string }>(sql`SELECT now() AS now`);
-      return c.json({ status: 'ok', now: rows[0]?.now ?? null });
-    } catch (e) {
-      return c.json({ status: 'error', message: e instanceof Error ? e.message : String(e) }, 503);
-    }
-  });
+  const pingDataStore = options.pingDataStore;
+  if (pingDataStore) {
+    app.get('/api/health/db', async (c) => {
+      try {
+        return c.json({ status: 'ok', now: await pingDataStore() });
+      } catch (e) {
+        return c.json({ status: 'error', message: e instanceof Error ? e.message : String(e) }, 503);
+      }
+    });
+  }
 
-  app.route('/api/auth', createAuthRoutes(container, deps.env.NODE_ENV === 'production'));
+  app.route('/api/auth', createAuthRoutes(container, options.secureCookies));
   app.route('/api/customers', createCustomerRoutes(container));
   app.route('/api/attendance', createAttendanceRoutes(container));
   app.route('/api/reports', createReportRoutes(container));

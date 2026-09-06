@@ -5,9 +5,9 @@ import type {
   StaffRepositoryPort,
 } from '@katahimo/core/ports';
 import { eq } from 'drizzle-orm';
-import type { Database } from '../client';
-import { withTenant } from '../client';
 import { staff } from '../schema';
+import type { Database } from '../tenantScope';
+import { withTenant } from '../tenantScope';
 
 function toRecord(row: typeof staff.$inferSelect): StaffRecord {
   return {

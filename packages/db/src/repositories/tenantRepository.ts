@@ -1,7 +1,7 @@
 import type { NewTenantInput, TenantRecord, TenantRepositoryPort } from '@katahimo/core/ports';
 import { eq } from 'drizzle-orm';
-import type { Database } from '../client';
 import { tenants } from '../schema';
+import type { Database } from '../tenantScope';
 
 /** tenantsテーブルはRLS対象外なので、withTenant()を使わず直接dbで問い合わせる。 */
 export class DrizzleTenantRepository implements TenantRepositoryPort {

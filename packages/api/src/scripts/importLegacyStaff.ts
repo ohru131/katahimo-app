@@ -4,8 +4,8 @@ loadDotenv();
 
 import { importLegacyStaff } from '@katahimo/core';
 import { getDatabase } from '@katahimo/db';
-import { createContainer } from '../container';
 import { loadEnv } from '../env';
+import { createContainer } from '../nodeContainer';
 
 /**
  * GAS版スタッフ台帳(Staffシート)の1行分を、パスワードハッシュ(SHA-256+salt)ごと移行する。

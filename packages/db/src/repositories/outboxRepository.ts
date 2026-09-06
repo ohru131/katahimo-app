@@ -1,8 +1,8 @@
 import type { MirrorJob, OutboxJobRecord, OutboxRepositoryPort } from '@katahimo/core/ports';
 import { asc, eq, inArray, sql } from 'drizzle-orm';
-import type { Database } from '../client';
-import { withTenant } from '../client';
 import { outboxJobs } from '../schema';
+import type { Database } from '../tenantScope';
+import { withTenant } from '../tenantScope';
 
 type OutboxJobRow = typeof outboxJobs.$inferSelect;
 

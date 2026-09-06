@@ -1,11 +1,14 @@
-import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema';
 
-export type Database = ReturnType<typeof createDatabase>;
+export type { Database, DatabaseTransaction } from './tenantScope';
+export { withTenant } from './tenantScope';
 
-let singleton: Database | null = null;
+/** Node上でpostgres-jsに繋いだ実体。$client(接続プール)を触りたい場合はこちらの型を使う。 */
+export type NodeDatabase = ReturnType<typeof createDatabase>;
+
+let singleton: NodeDatabase | null = null;
 
 export function createDatabase(connectionString: string) {
   const client = postgres(connectionString, {
@@ -18,7 +21,7 @@ export function createDatabase(connectionString: string) {
 }
 
 /** プロセス全体で1つのプールを共有する。 */
-export function getDatabase(): Database {
+export function getDatabase(): NodeDatabase {
   if (singleton) return singleton;
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL が設定されていません(.env.example を参照)');
@@ -34,25 +37,4 @@ export async function closeDatabase(): Promise<void> {
   if (!singleton) return;
   await singleton.$client.end();
   singleton = null;
-}
-
-/**
- * テナントスコープでクエリを実行する。
- *
- * 全テーブルに Row Level Security を張り、ポリシーは current_setting('app.tenant_id') と
- * 突き合わせる形にしてある(doc/07 第4章)。アプリ側のWHERE句の書き忘れでは
- * 他テナントのデータが漏れない、という保証をDBに持たせるのが狙い。
- *
- * SET LOCAL はトランザクション内でのみ有効なため、必ずトランザクションで包む。
- * プール接続が使い回されても設定が残らないので、漏れの心配がない。
- */
-export async function withTenant<T>(
-  db: Database,
-  tenantId: string,
-  fn: (tx: Parameters<Parameters<Database['transaction']>[0]>[0]) => Promise<T>,
-): Promise<T> {
-  return db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT set_config('app.tenant_id', ${tenantId}, true)`);
-    return fn(tx);
-  });
 }

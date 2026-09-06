@@ -4,9 +4,9 @@ import type {
   AppSettingsRepositoryPort,
 } from '@katahimo/core/ports';
 import { eq } from 'drizzle-orm';
-import type { Database } from '../client';
-import { withTenant } from '../client';
 import { appSettings } from '../schema';
+import type { Database } from '../tenantScope';
+import { withTenant } from '../tenantScope';
 
 type AppSettingsRow = typeof appSettings.$inferSelect;
 

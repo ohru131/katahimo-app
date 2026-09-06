@@ -1,61 +1,57 @@
 import type {
+  AccidentReportRepositoryPort,
+  AppSettingsRepositoryPort,
+  AttendanceDayRepositoryPort,
+  BlindIndexPort,
+  CryptoPort,
+  CustomerRepositoryPort,
+  DailyReportRepositoryPort,
+  FamilyMemberRepositoryPort,
   MapsPort,
   MirrorPort,
   NotifierPort,
+  ReceiptRepositoryPort,
   ReportAiPort,
   ReportAiPortFactory,
   SchedulePort,
+  SessionRepositoryPort,
+  StaffRepositoryPort,
   StoragePort,
+  TenantRepositoryPort,
 } from '@katahimo/core/ports';
-import type { Database } from '@katahimo/db';
-import {
-  DrizzleAccidentReportRepository,
-  DrizzleAppSettingsRepository,
-  DrizzleAttendanceDayRepository,
-  DrizzleCustomerRepository,
-  DrizzleDailyReportRepository,
-  DrizzleFamilyMemberRepository,
-  DrizzleOutboxRepository,
-  DrizzleReceiptRepository,
-  DrizzleSessionRepository,
-  DrizzleStaffRepository,
-  DrizzleTenantKeyRepository,
-  DrizzleTenantRepository,
-} from '@katahimo/db/repositories';
-import {
-  ConsoleAuditLogPort,
-  GasBridgeMapsPort,
-  GasBridgeSchedulePort,
-  GeminiAiPort,
-  LocalBlindIndexPort,
-  LocalCryptoPort,
-  LocalFileStoragePort,
-  LocalKmsPort,
-  listAvailableGeminiModels,
-  NoopMapsPort,
-  NoopMirrorPort,
-  NoopReportAiPort,
-  NoopSchedulePort,
-  WebhookNotifierPort,
-} from '@katahimo/integrations';
-import { argon2PasswordHasher } from './authAdapters';
-import type { Env } from './env';
+import type { PasswordHasherPort } from '@katahimo/core/usecases';
 
-/** ルートハンドラに配る依存一式。usecases(@katahimo/core)にそのまま渡す形。 */
+export interface GeminiModelInfo {
+  name: string;
+  displayName: string;
+}
+
+/**
+ * ルートハンドラに配る依存一式。usecases(@katahimo/core)にそのまま渡す形。
+ *
+ * 型は必ずポート(インターフェース)で書くこと。DrizzleXxxRepositoryのような具象クラスで
+ * 書くと「Node上でPostgresに繋いだ構成」以外を組み立てられなくなり、ヘキサゴナル構成の
+ * 意味がなくなる。実際、ブラウザ上でPGliteを使う公開デモ(packages/demo)は同じ`createApp`に
+ * 別の実装を差し込んで動いている。
+ *
+ * このファイルは型だけを持ち、実行時importを一切持たない。ルート群がここをimportしても
+ * argon2(ネイティブバインディング)やpostgres-jsがバンドルに引きずり込まれないようにする
+ * ためで、Node向けの組み立ては ./nodeContainer に分けてある。
+ */
 export interface Container {
-  tenants: DrizzleTenantRepository;
-  staff: DrizzleStaffRepository;
-  sessions: DrizzleSessionRepository;
-  customers: DrizzleCustomerRepository;
-  familyMembers: DrizzleFamilyMemberRepository;
-  attendanceDays: DrizzleAttendanceDayRepository;
-  dailyReports: DrizzleDailyReportRepository;
-  accidentReports: DrizzleAccidentReportRepository;
-  receipts: DrizzleReceiptRepository;
-  appSettings: DrizzleAppSettingsRepository;
-  crypto: LocalCryptoPort;
-  blindIndex: LocalBlindIndexPort;
-  passwordHasher: typeof argon2PasswordHasher;
+  tenants: TenantRepositoryPort;
+  staff: StaffRepositoryPort;
+  sessions: SessionRepositoryPort;
+  customers: CustomerRepositoryPort;
+  familyMembers: FamilyMemberRepositoryPort;
+  attendanceDays: AttendanceDayRepositoryPort;
+  dailyReports: DailyReportRepositoryPort;
+  accidentReports: AccidentReportRepositoryPort;
+  receipts: ReceiptRepositoryPort;
+  appSettings: AppSettingsRepositoryPort;
+  crypto: CryptoPort;
+  blindIndex: BlindIndexPort;
+  passwordHasher: PasswordHasherPort;
   storage: StoragePort;
   notifier: NotifierPort;
   /** テナントがapp_settingsに独自キーを設定していない場合のフォールバック(.env設定 or Noop)。 */
@@ -63,7 +59,7 @@ export interface Container {
   /** テナント固有のGemini APIキー/モデルで都度ReportAiPortを組み立てるためのファクトリ。 */
   reportAiFactory: ReportAiPortFactory;
   /** 管理者設定画面の「最新モデル一覧を取得」用。保存前の入力中キーでも確認できるよう独立させている。 */
-  listGeminiModels: typeof listAvailableGeminiModels;
+  listGeminiModels: (apiKey: string) => Promise<GeminiModelInfo[]>;
   /**
    * ジオコーディング/ルート計算。GAS_BRIDGE_URL/GAS_BRIDGE_SECRETが設定されていれば
    * gas-childcare-visit-appのWeb App(Bridge.js)をプロキシとして使い、未設定ならNoopMapsPort
@@ -84,54 +80,4 @@ export interface Container {
   mirror: MirrorPort;
   /** GAS版 Script Properties AUTH_SALT と同じ値。移行済みスタッフのログインにのみ使う。 */
   legacyAuthSalt?: string;
-}
-
-export function createContainer(env: Env, db: Database): Container {
-  const kms = new LocalKmsPort(env.LOCAL_DEV_KEK);
-  const tenantKeys = new DrizzleTenantKeyRepository(db);
-  const crypto = new LocalCryptoPort(tenantKeys, kms, new ConsoleAuditLogPort());
-  const appSettings = new DrizzleAppSettingsRepository(db);
-  const gasBridgeOptions =
-    env.GAS_BRIDGE_URL && env.GAS_BRIDGE_SECRET
-      ? { baseUrl: env.GAS_BRIDGE_URL, secret: env.GAS_BRIDGE_SECRET }
-      : null;
-
-  return {
-    tenants: new DrizzleTenantRepository(db),
-    staff: new DrizzleStaffRepository(db),
-    sessions: new DrizzleSessionRepository(db),
-    customers: new DrizzleCustomerRepository(db),
-    familyMembers: new DrizzleFamilyMemberRepository(db),
-    attendanceDays: new DrizzleAttendanceDayRepository(db),
-    dailyReports: new DrizzleDailyReportRepository(db),
-    accidentReports: new DrizzleAccidentReportRepository(db),
-    receipts: new DrizzleReceiptRepository(db),
-    appSettings,
-    crypto,
-    blindIndex: new LocalBlindIndexPort(env.LOCAL_DEV_MASTER_KEY),
-    passwordHasher: argon2PasswordHasher,
-    storage: new LocalFileStoragePort(env.LOCAL_RECEIPT_STORAGE_DIR),
-    notifier: new WebhookNotifierPort({
-      async resolve(tenantId, channel) {
-        const settings = await appSettings.find(tenantId);
-        const encrypted =
-          channel === 'report' ? settings?.gchatReportWebhookUrl : settings?.gchatReceiptWebhookUrl;
-        if (encrypted) return crypto.decrypt(tenantId, encrypted);
-        return channel === 'report' ? env.GCHAT_REPORT_WEBHOOK_URL : env.GCHAT_RECEIPT_WEBHOOK_URL;
-      },
-    }),
-    reportAi: env.GEMINI_API_KEY
-      ? new GeminiAiPort({
-          apiKey: env.GEMINI_API_KEY,
-          reportModel: env.GEMINI_MODEL_REPORT,
-          ocrModel: env.GEMINI_MODEL_OCR,
-        })
-      : new NoopReportAiPort(),
-    reportAiFactory: { create: (opts) => new GeminiAiPort(opts) },
-    listGeminiModels: listAvailableGeminiModels,
-    maps: gasBridgeOptions ? new GasBridgeMapsPort(gasBridgeOptions) : new NoopMapsPort(),
-    schedule: gasBridgeOptions ? new GasBridgeSchedulePort(gasBridgeOptions) : new NoopSchedulePort(),
-    mirror: env.MIRROR_TO_GOOGLE_SHEETS ? new DrizzleOutboxRepository(db) : new NoopMirrorPort(),
-    legacyAuthSalt: env.LEGACY_AUTH_SALT,
-  };
 }

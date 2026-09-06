@@ -1,8 +1,8 @@
 import type { AttendanceDayRecord, AttendanceDayRepositoryPort, EncryptedField } from '@katahimo/core/ports';
 import { and, eq, gte, lt, lte } from 'drizzle-orm';
-import type { Database } from '../client';
-import { withTenant } from '../client';
 import { attendanceDays } from '../schema';
+import type { Database } from '../tenantScope';
+import { withTenant } from '../tenantScope';
 
 type AttendanceDayRow = typeof attendanceDays.$inferSelect;
 
