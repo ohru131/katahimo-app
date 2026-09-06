@@ -12,6 +12,7 @@ import {
   FakeNotifierPort,
   FakeOutboxRepository,
   FakePasswordHasherPort,
+  FakePasswordResetCodeRepository,
   FakeReceiptRepository,
   FakeSessionRepository,
   FakeStaffRepository,
@@ -34,6 +35,7 @@ describe('uploadReceipts', () => {
       tenants: new FakeTenantRepository(),
       staff,
       sessions: new FakeSessionRepository(),
+      passwordResetCodes: new FakePasswordResetCodeRepository(),
       passwordHasher: new FakePasswordHasherPort(),
     };
     const createdStaff = await registerStaff(authDeps, {

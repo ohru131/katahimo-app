@@ -4,6 +4,8 @@ import { AdminTargetStaffProvider } from './AdminTargetStaffContext';
 import { AttendanceTab } from './AttendanceTab';
 import type { StaffView } from './api';
 import { fetchMe, logout } from './api';
+import { ForgotPasswordForm } from './auth/ForgotPasswordForm';
+import { InitialPasswordChangeForm } from './auth/InitialPasswordChangeForm';
 import { CustomerSearch } from './CustomerSearch';
 import { LoginForm } from './LoginForm';
 import { ScheduleTab } from './ScheduleTab';
@@ -131,6 +133,8 @@ function AppShell({ staff, onLogout }: { staff: StaffView; onLogout: () => void 
 export function App() {
   const queryClient = useQueryClient();
   const [staff, setStaff] = useState<StaffView | null | undefined>(undefined);
+  // パスワード再設定はログイン前に使うので、ログイン画面と同じ階層で切り替える。
+  const [forgotInput, setForgotInput] = useState<{ tenantSlug: string; email: string } | null>(null);
 
   // 初回だけCookieセッションの有無を確認する(ページ再読み込み後もログイン状態を保つため)。
   useQuery({
@@ -152,15 +156,31 @@ export function App() {
     );
   }
 
-  if (!staff) {
-    return <LoginForm onLoggedIn={setStaff} />;
-  }
-
   const handleLogout = async () => {
     await logout();
     setStaff(null);
     queryClient.removeQueries({ queryKey: ['me'] });
   };
+
+  if (!staff) {
+    if (forgotInput) {
+      return (
+        <ForgotPasswordForm
+          tenantSlug={forgotInput.tenantSlug}
+          email={forgotInput.email}
+          onDone={() => setForgotInput(null)}
+          onCancel={() => setForgotInput(null)}
+        />
+      );
+    }
+    return <LoginForm onLoggedIn={setStaff} onForgotPassword={setForgotInput} />;
+  }
+
+  // 初期パスワードのままなら、変更を終えるまでアプリ本体を見せない
+  // (サーバー側も他のAPIを403で拒否している)。
+  if (staff.mustChangePassword) {
+    return <InitialPasswordChangeForm staff={staff} onChanged={setStaff} onLogout={handleLogout} />;
+  }
 
   return <AppShell staff={staff} onLogout={handleLogout} />;
 }

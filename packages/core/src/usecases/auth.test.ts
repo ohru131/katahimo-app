@@ -11,6 +11,7 @@ import {
 } from './auth';
 import {
   FakePasswordHasherPort,
+  FakePasswordResetCodeRepository,
   FakeSessionRepository,
   FakeStaffRepository,
   FakeTenantRepository,
@@ -25,6 +26,7 @@ describe('login / registerStaff / resolveSession', () => {
       tenants: new FakeTenantRepository(),
       staff: new FakeStaffRepository(),
       sessions: new FakeSessionRepository(),
+      passwordResetCodes: new FakePasswordResetCodeRepository(),
       passwordHasher: new FakePasswordHasherPort(),
     };
     const tenant = await deps.tenants.create({ name: 'テスト法人', slug: 'test-tenant' });
@@ -109,6 +111,7 @@ describe('GAS版レガシーパスワードハッシュからの移行ログイ�
       tenants: new FakeTenantRepository(),
       staff: new FakeStaffRepository(),
       sessions: new FakeSessionRepository(),
+      passwordResetCodes: new FakePasswordResetCodeRepository(),
       passwordHasher: new FakePasswordHasherPort(),
       legacyAuthSalt: legacySalt,
     };
@@ -205,6 +208,7 @@ describe('changePassword', () => {
       tenants: new FakeTenantRepository(),
       staff: new FakeStaffRepository(),
       sessions: new FakeSessionRepository(),
+      passwordResetCodes: new FakePasswordResetCodeRepository(),
       passwordHasher: new FakePasswordHasherPort(),
     };
     const tenant = await deps.tenants.create({ name: 'テスト法人', slug: 'test-tenant' });

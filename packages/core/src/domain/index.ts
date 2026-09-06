@@ -1,4 +1,5 @@
 export * from './attendance';
+export * from './auth';
 export * from './legacyAuth';
 export * from './legacyImport';
 export * from './pii';

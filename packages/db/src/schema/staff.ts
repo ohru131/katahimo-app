@@ -49,6 +49,14 @@ export const staff = pgTable(
     isAdmin: boolean().notNull().default(false),
     retirementDate: date(),
 
+    /**
+     * 初期パスワードのまま(または管理者にリセットされた直後)であることを示す。
+     * trueの間はログインできるが、パスワードを変更するまで他の操作をさせない
+     * (packages/web が初回パスワード変更の画面を強制表示する)。
+     * 本人がパスワードを変更した時点でfalseに戻る。
+     */
+    mustChangePassword: boolean().notNull().default(false),
+
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },

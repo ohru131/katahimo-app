@@ -7,9 +7,11 @@ import type {
   CustomerRepositoryPort,
   DailyReportRepositoryPort,
   FamilyMemberRepositoryPort,
+  MailerPort,
   MapsPort,
   MirrorPort,
   NotifierPort,
+  PasswordResetCodeRepositoryPort,
   ReceiptRepositoryPort,
   ReportAiPort,
   ReportAiPortFactory,
@@ -42,6 +44,7 @@ export interface Container {
   tenants: TenantRepositoryPort;
   staff: StaffRepositoryPort;
   sessions: SessionRepositoryPort;
+  passwordResetCodes: PasswordResetCodeRepositoryPort;
   customers: CustomerRepositoryPort;
   familyMembers: FamilyMemberRepositoryPort;
   attendanceDays: AttendanceDayRepositoryPort;
@@ -54,6 +57,7 @@ export interface Container {
   passwordHasher: PasswordHasherPort;
   storage: StoragePort;
   notifier: NotifierPort;
+  mailer: MailerPort;
   /** テナントがapp_settingsに独自キーを設定していない場合のフォールバック(.env設定 or Noop)。 */
   reportAi: ReportAiPort;
   /** テナント固有のGemini APIキー/モデルで都度ReportAiPortを組み立てるためのファクトリ。 */

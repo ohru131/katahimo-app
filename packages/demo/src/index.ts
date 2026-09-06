@@ -5,10 +5,12 @@ import { destroyDemoDatabase, flushDemoDatabase, openDemoDatabase } from './data
 import { createDemoApiHandler } from './demoApi';
 import { installFetchShim } from './fetchShim';
 import { destroyBrowserStorage } from './ports/browserStoragePort';
+import type { DemoMail } from './ports/demoMailerPort';
 import type { DemoNotification } from './ports/demoNotifierPort';
 import { DEMO_FIGURES, DEMO_OFFICE, DEMO_STAFF, DEMO_TENANT } from './seed/figures';
 import { type SeedProgress, seedDemoData } from './seed/seedDemoData';
 
+export type { DemoMail } from './ports/demoMailerPort';
 export type { DemoNotification } from './ports/demoNotifierPort';
 export { DEMO_STAFF, DEMO_TENANT } from './seed/figures';
 export type { SeedProgress } from './seed/seedDemoData';
@@ -21,6 +23,11 @@ export interface DemoHandle {
    * IndexedDBへの書き出し失敗だけ)の購読。
    */
   onWarning(listener: (message: string) => void): () => void;
+  /**
+   * 送信したメールの購読。デモの宛先は架空なので実際には届かない。
+   * 画面に出して、認証コードや初期パスワードを読めるようにするためのもの。
+   */
+  onMail(listener: (mail: DemoMail) => void): () => void;
   /** データを全消しして、次回読み込み時にシードからやり直す。失敗時は DemoResetError を投げる。 */
   reset(): Promise<void>;
 }
@@ -122,6 +129,7 @@ export async function startDemo(onProgress: (progress: SeedProgress) => void): P
 
   return {
     onNotification: (listener) => container.notifier.subscribe(listener),
+    onMail: (listener) => container.mailer.subscribe(listener),
     onWarning: (listener) => {
       warningListeners.add(listener);
       return () => warningListeners.delete(listener);

@@ -6,6 +6,7 @@ import {
   DrizzleCustomerRepository,
   DrizzleDailyReportRepository,
   DrizzleFamilyMemberRepository,
+  DrizzlePasswordResetCodeRepository,
   DrizzleReceiptRepository,
   DrizzleSessionRepository,
   DrizzleStaffRepository,
@@ -23,6 +24,7 @@ import { NoopMirrorPort } from '@katahimo/integrations/mirror';
 import { BrowserStoragePort } from './ports/browserStoragePort';
 import { CannedReportAiPort } from './ports/cannedReportAiPort';
 import { DemoAppSettingsRepository } from './ports/demoAppSettingsRepository';
+import { DemoMailerPort } from './ports/demoMailerPort';
 import { DemoMapsPort } from './ports/demoMapsPort';
 import { DemoNotifierPort } from './ports/demoNotifierPort';
 import { demoPasswordHasher } from './ports/demoPasswordHasher';
@@ -51,6 +53,7 @@ export interface DemoContainerDeps {
 
 export interface DemoContainer extends Container {
   notifier: DemoNotifierPort;
+  mailer: DemoMailerPort;
 }
 
 /**
@@ -69,6 +72,7 @@ export function createDemoContainer(deps: DemoContainerDeps): DemoContainer {
     tenants: new DrizzleTenantRepository(deps.db),
     staff: new DrizzleStaffRepository(deps.db),
     sessions: new DrizzleSessionRepository(deps.db),
+    passwordResetCodes: new DrizzlePasswordResetCodeRepository(deps.db),
     customers: new DrizzleCustomerRepository(deps.db),
     familyMembers: new DrizzleFamilyMemberRepository(deps.db),
     attendanceDays: new DrizzleAttendanceDayRepository(deps.db),
@@ -82,6 +86,9 @@ export function createDemoContainer(deps: DemoContainerDeps): DemoContainer {
     passwordHasher: demoPasswordHasher,
     storage: new BrowserStoragePort(),
     notifier: new DemoNotifierPort(),
+    // 架空のメールアドレス宛なので実際には送れない。画面に出して、届いたメールを
+    // 読むのと同じように認証コード・初期パスワードを拾えるようにする。
+    mailer: new DemoMailerPort(),
     // APIキー未設定時のフォールバックを定型応答にする。訪問者が管理者設定で自分の
     // Gemini APIキーを登録した場合は、reportAiFactory経由で本物のGeminiが使われる
     // (キーは訪問者のブラウザ内のPGliteに、本番と同じ封筒暗号化をかけて保存される)。

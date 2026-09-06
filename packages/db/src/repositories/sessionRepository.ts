@@ -24,6 +24,12 @@ export class DrizzleSessionRepository implements SessionRepositoryPort {
     });
   }
 
+  async deleteAllForStaff(tenantId: string, staffId: string): Promise<void> {
+    await withTenant(this.db, tenantId, async (tx) => {
+      await tx.delete(sessions).where(eq(sessions.staffId, staffId));
+    });
+  }
+
   async findByTokenHash(tenantId: string, tokenHash: string): Promise<SessionRecord | null> {
     return withTenant(this.db, tenantId, async (tx) => {
       const rows = await tx.select().from(sessions).where(eq(sessions.tokenHash, tokenHash)).limit(1);
