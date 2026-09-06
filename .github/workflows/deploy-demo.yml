@@ -1,0 +1,57 @@
+name: Deploy demo
+
+# main が更新されるたびに、GitHub Pages の公開デモ
+# (https://ohru131.github.io/katahimo-app/)を作り直す。
+# デモはブラウザ内でPGliteを動かす完全な静的サイトで、サーバーもDBも必要ない。
+on:
+  push:
+    branches: [main]
+  # デプロイだけやり直したい場合のために手動実行も残す。
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 連続pushでデプロイが競合しないように、進行中のものは待たせる
+# (中断すると公開中のサイトが壊れた状態で残りうるので cancel-in-progress は使わない)。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @katahimo/web build:demo
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

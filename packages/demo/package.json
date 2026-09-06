@@ -1,0 +1,28 @@
+{
+  "name": "@katahimo/demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.17",
+    "@katahimo/api": "workspace:*",
+    "@katahimo/core": "workspace:*",
+    "@katahimo/db": "workspace:*",
+    "@katahimo/integrations": "workspace:*",
+    "@katahimo/shared": "workspace:*",
+    "@noble/ciphers": "^1.2.1",
+    "@noble/hashes": "^1.7.1",
+    "buffer": "^6.0.3",
+    "drizzle-orm": "^0.38.2",
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "vite": "^6.0.3"
+  }
+}

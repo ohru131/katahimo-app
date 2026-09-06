@@ -30,3 +30,12 @@ jobs:
       - run: pnpm typecheck
 
       - run: pnpm test
+
+      # デモ用のコード(PGliteのwasmや架空データ)が本番の配信物に紛れ込んでいないことを、
+      # 設定を読むのではなく実際のビルド成果物を検査して確かめる。
+      - run: pnpm --filter @katahimo/web build
+      - run: node scripts/assertNoDemoInBuild.mjs
+
+      # 公開デモ(GitHub Pages)がビルドできなくなっていないことも各PRで確認する。
+      # デプロイして初めて壊れているのに気づく、という状態を避けるため。
+      - run: pnpm --filter @katahimo/web build:demo

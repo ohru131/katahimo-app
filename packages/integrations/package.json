@@ -4,7 +4,15 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./audit": "./src/audit/index.ts",
+    "./gas-bridge": "./src/gas-bridge/index.ts",
+    "./gemini": "./src/gemini/index.ts",
+    "./google-chat": "./src/google-chat/index.ts",
+    "./local-crypto": "./src/local-crypto/index.ts",
+    "./local-kms": "./src/local-kms/index.ts",
+    "./local-storage": "./src/local-storage/index.ts",
+    "./mirror": "./src/mirror/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
