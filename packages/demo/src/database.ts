@@ -7,7 +7,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 // ときにデモだけ壊れる(しかも気付くのが遅れる)ため、必ず単一の正から生成する。
 import INIT_SCHEMA_SQL from '../../db/drizzle/0000_init_schema.sql?raw';
 
-/** IndexedDB上のデータ置き場。リセット時にこの名前を含むDBを消す。 */
+/** PGliteに渡すデータ置き場の名前(IndexedDB上は `/pglite/<この名前>` になる)。 */
 const DATA_DIR = 'katahimo-demo';
 
 export interface DemoDatabase {
@@ -88,29 +88,19 @@ export async function flushDemoDatabase(client: PGlite): Promise<void> {
 /**
  * デモデータを完全に破棄する(画面の「デモデータをリセット」用)。
  * 次回起動時にスキーマ作成とシード投入からやり直される。
+ *
+ * IndexedDBのデータベース(`/pglite/...`)ごと削除する方法は使えない。PGliteは
+ * `close()` の後も書き出しのためにIndexedDBの接続を開き直すことがあり、
+ * `deleteDatabase()` が `onblocked` のまま完了しない(20秒待っても完了しないことを実測)。
+ * 他タブが原因ではないので、待っても案内を出しても解決しない。
+ *
+ * そこで、DBファイルを消すのではなくスキーマを落とす。次回起動時の
+ * `to_regclass('public.tenants')` がnullになるので初回起動と同じ経路に入り、
+ * スキーマ作成とシード投入がやり直される。
  */
 export async function destroyDemoDatabase(client: PGlite): Promise<void> {
+  await client.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+  // 消したことを確実にIndexedDBへ反映してから閉じる(relaxedDurabilityのため)。
+  await flushDemoDatabase(client);
   await client.close();
-  const databases = (await indexedDB.databases?.()) ?? [];
-  const targets = databases.map((d) => d.name).filter((name): name is string => !!name?.includes(DATA_DIR));
-  await Promise.all(
-    targets.map(
-      (name) =>
-        new Promise<void>((resolve, reject) => {
-          const request = indexedDB.deleteDatabase(name);
-          request.onsuccess = () => resolve();
-          request.onerror = () => reject(request.error ?? new Error(`${name} を削除できませんでした`));
-          // onblockedは「他のタブがまだこのDBを開いている」状態。ここでresolveすると、
-          // 実際には消えていないのにリセット成功として画面をリロードしてしまい、
-          // 古いデータがそのまま残っているように見える。必ず失敗として扱う。
-          request.onblocked = () =>
-            reject(
-              new Error(
-                'デモを開いている他のタブがあるため、データを削除できませんでした。' +
-                  '他のタブを閉じてからもう一度お試しください。',
-              ),
-            );
-        }),
-    ),
-  );
 }

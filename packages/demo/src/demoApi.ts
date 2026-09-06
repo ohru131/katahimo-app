@@ -55,6 +55,10 @@ function withCookieHeader(request: Request, cookieHeader: string): Request {
  * PGliteはrelaxedDurability(初回シードを速くするため)で動かしているので、
  * これが無いと「ログインした直後にリロードするとログアウトしている」「保存した日報が
  * 消えている」といった状態が起きる。読み取りだけのリクエストでは何もしない。
+ *
+ * 書き出しに失敗した場合は成功レスポンスを握りつぶしてエラーを返す。DB上は書き込めていても
+ * 端末に残らない以上、利用者にとっては保存できていないのと同じで、「保存しました」と
+ * 表示するのは嘘になる(ストレージ容量不足などで実際に起こりうる)。
  */
 function flushAfterWrites(flush: () => Promise<void>): MiddlewareHandler {
   return async (c, next) => {
@@ -63,8 +67,17 @@ function flushAfterWrites(flush: () => Promise<void>): MiddlewareHandler {
     try {
       await flush();
     } catch (error) {
-      // 書き出しに失敗してもレスポンス自体は返す(次の更新でまとめて書き出される)。
-      console.warn('[demo] デモDBの書き出しに失敗しました', error);
+      console.error('[demo] デモDBの書き出しに失敗しました', error);
+      return c.json(
+        {
+          success: false,
+          code: 'demo_persist_failed',
+          message:
+            'この操作を端末に保存できませんでした。ブラウザの空き容量やプライベートモードの設定をご確認ください。' +
+            'ページを再読み込みすると、この操作は失われます。',
+        },
+        500,
+      );
     }
   };
 }

@@ -13,6 +13,20 @@ const CHANNEL_LABEL: Record<string, string> = {
 };
 
 /**
+ * リセット失敗後もデモをそのまま使い続けられるか。
+ *
+ * `@katahimo/demo` の DemoResetError が持つフラグを見る。値としてimportすると
+ * 本番ビルドにデモパッケージが入ってしまうため、構造だけで判定する。
+ */
+function isRuntimeUsable(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { runtimeUsable?: unknown }).runtimeUsable === true
+  );
+}
+
+/**
  * デモ環境であることの明示と、データのリセット導線。
  *
  * 「本番のデータを触っているのでは」と一瞬でも思わせないことが目的なので、常時表示にしている。
@@ -43,9 +57,16 @@ export function DemoBanner() {
     try {
       await runtime.handle.reset();
     } catch (error) {
-      // 失敗しても、この時点でブラウザ内DBの接続は閉じられておりアプリは動かせない。
-      // 理由を伝えたうえで必ずリロードして、使える状態に戻す(データは残ったまま)。
       window.alert(`リセットできませんでした。\n\n${error instanceof Error ? error.message : String(error)}`);
+      // 領収書画像の削除に失敗しただけなら、ブラウザ内DBの接続はまだ生きている。
+      // ここでリロードすると、消えていない画像を抱えたままデモが再起動するので、
+      // 画面はそのままにして再試行できるようにする。
+      if (isRuntimeUsable(error)) {
+        setResetting(false);
+        return;
+      }
+      // DBを閉じた後の失敗。この状態ではAPIが応答できないので、リロードして使える状態に戻す
+      // (データは残ったまま)。
     }
     window.location.reload();
   };
@@ -79,12 +100,17 @@ export function DemoBanner() {
             </p>
             <p>
               データベース(PostgreSQL)はブラウザの中で動いており、入力した内容は
-              お使いの端末から外部へ送信されません。「リセット」で完全に消去できます。
+              <strong>既定では</strong>お使いの端末から外部へ送信されません。
+              「リセット」で完全に消去できます。
             </p>
             <p>
-              移動時間・距離は緯度経度からの概算値です。AIによる日報生成は既定では定型応答で、
-              設定画面でご自身のGemini APIキーを登録すると実際に生成されます。キーは
-              メモリ上にのみ保持し、端末にも保存しません(タブを閉じると消えます)。
+              移動時間・距離は緯度経度からの概算値です。AIによる日報生成は既定では定型応答なので、
+              この状態では入力内容が外部へ送られることはありません。
+            </p>
+            <p>
+              <strong>設定画面でご自身のGemini APIキーを登録した場合に限り</strong>、日報生成・
+              領収書OCRの入力内容(メモの本文や領収書画像)がGoogleのGemini APIへ送信されます。
+              キーはメモリ上にのみ保持し、端末にも保存しません(タブを閉じると消えます)。
             </p>
           </div>
         )}

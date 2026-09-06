@@ -16,8 +16,26 @@ export type { SeedProgress } from './seed/seedDemoData';
 export interface DemoHandle {
   /** Google Chat通知の代わりに画面へ出すための購読。 */
   onNotification(listener: (notification: DemoNotification) => void): () => void;
-  /** データを全消しして、次回読み込み時にシードからやり直す。 */
+  /** データを全消しして、次回読み込み時にシードからやり直す。失敗時は DemoResetError を投げる。 */
   reset(): Promise<void>;
+}
+
+/**
+ * リセットの失敗。`runtimeUsable` が false の場合はPGliteの接続が閉じた後の失敗で、
+ * 画面をリロードしないとデモを操作できない。true ならまだそのまま使い続けられる。
+ */
+export class DemoResetError extends Error {
+  readonly runtimeUsable: boolean;
+
+  constructor(message: string, options: { runtimeUsable: boolean }) {
+    super(message);
+    this.name = 'DemoResetError';
+    this.runtimeUsable = options.runtimeUsable;
+  }
+}
+
+function toMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** 住所→緯度経度の対応表。DEMO_FIGURESから導出できるので、DBを読む必要はない。 */
@@ -80,17 +98,33 @@ export async function startDemo(onProgress: (progress: SeedProgress) => void): P
   return {
     onNotification: (listener) => container.notifier.subscribe(listener),
     /**
-     * デモデータを削除する。削除に失敗した場合は例外を投げる(他タブがDBを開いていると
-     * ブロックされる)。
+     * デモデータを削除する。削除できなかった場合は DemoResetError を投げる
+     * (他タブがIndexedDBを開いているとブロックされる)。
      *
-     * 削除が終わるまでfetchの差し替えは外さない。先に外してしまうと、削除に失敗して
-     * 画面が残ったときに `/api/**` が本物のネットワークへ飛んで404になる。
+     * 順序が重要:
+     * 1. 領収書画像(IndexedDB)を先に消す。ここで失敗しても、まだPGliteの接続は
+     *    生きているのでデモはそのまま使い続けられる(`runtimeUsable: true`)。
+     * 2. そのあとPGliteを閉じてDBを消す。`destroyDemoDatabase()` は削除の前に
+     *    `client.close()` するため、ここで失敗したらもうAPIは応答できない
+     *    (`runtimeUsable: false` → 呼び出し側はリロードするしかない)。
      *
-     * ただし削除処理の途中でPGliteの接続を閉じるため、失敗した場合もこのランタイムは
-     * もう使えない。呼び出し側はエラーを表示したうえで必ずリロードすること。
+     * 並列(Promise.all)にすると、画像の削除に失敗しただけでPGliteが閉じられ、
+     * 「何も消えていないのにデモが動かない」状態になるため直列にしている。
+     *
+     * 削除が終わるまでfetchの差し替えは外さない。先に外すと、失敗して画面が残ったときに
+     * `/api/**` が本物のネットワークへ飛んで404になる。
      */
     async reset() {
-      await Promise.all([destroyDemoDatabase(client), destroyBrowserStorage()]);
+      try {
+        await destroyBrowserStorage();
+      } catch (error) {
+        throw new DemoResetError(toMessage(error), { runtimeUsable: true });
+      }
+      try {
+        await destroyDemoDatabase(client);
+      } catch (error) {
+        throw new DemoResetError(toMessage(error), { runtimeUsable: false });
+      }
       jar.clear();
       shim.uninstall();
     },
