@@ -8,6 +8,7 @@ import { createReportRoutes } from './routes/reports';
 import { createScheduleRoutes } from './routes/schedule';
 import { createSettingsRoutes } from './routes/settings';
 import { createStaffRoutes } from './routes/staff';
+import { requirePasswordChangeGuard } from './session';
 
 export interface CreateAppOptions {
   /** セッションCookieにSecure属性を付けるか(本番はtrue)。 */
@@ -48,6 +49,10 @@ export function createApp(container: Container, options: CreateAppOptions) {
       }
     });
   }
+
+  // 初期パスワードのままのスタッフを、パスワード変更以外のAPIから締め出す。
+  // ルートを足すたびに書き足す必要がないよう、全ルートの手前に1つだけ置く。
+  app.use('/api/*', requirePasswordChangeGuard(container));
 
   app.route('/api/auth', createAuthRoutes(container, options.secureCookies));
   app.route('/api/customers', createCustomerRoutes(container));

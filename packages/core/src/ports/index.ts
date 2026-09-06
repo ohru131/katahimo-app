@@ -3,6 +3,7 @@ export * from './audit';
 export * from './calendar';
 export * from './crypto';
 export * from './kms';
+export * from './mailer';
 export * from './maps';
 export * from './mirror';
 export * from './mirrorSender';

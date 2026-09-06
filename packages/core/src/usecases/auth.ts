@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { computeLegacyHash, normalizeEmailForIndex } from '../domain';
+import { computeLegacyHash, isAcceptablePassword, normalizeEmailForIndex } from '../domain';
 import type {
   NewSessionInput,
   NewStaffInput,
+  PasswordResetCodeRepositoryPort,
   SessionRepositoryPort,
   StaffRepositoryPort,
   TenantRepositoryPort,
@@ -17,6 +18,7 @@ export interface AuthDeps {
   tenants: TenantRepositoryPort;
   staff: StaffRepositoryPort;
   sessions: SessionRepositoryPort;
+  passwordResetCodes: PasswordResetCodeRepositoryPort;
   passwordHasher: PasswordHasherPort;
   /**
    * GAS版Script Properties AUTH_SALTと同じ値。既存スタッフがパスワード変更なしでログイン
@@ -45,7 +47,15 @@ export type LoginResult =
       /** httpOnly Cookieにそのまま保存する値。tenantIdを含むため、これ単体で以後のセッション検証が完結する。 */
       sessionCookieValue: string;
       expiresAt: Date;
-      staff: { id: string; tenantId: string; name: string; email: string; isAdmin: boolean };
+      staff: {
+        id: string;
+        tenantId: string;
+        name: string;
+        email: string;
+        isAdmin: boolean;
+        /** trueならパスワードを変更するまで他の操作をさせない(初期パスワードのまま)。 */
+        mustChangePassword: boolean;
+      };
     }
   | { ok: false; reason: 'tenant_not_found' | 'invalid_credentials' | 'retired' };
 
@@ -129,6 +139,7 @@ export async function login(deps: AuthDeps, input: LoginInput): Promise<LoginRes
       name: staff.name,
       email: staff.email,
       isAdmin: staff.isAdmin,
+      mustChangePassword: staff.mustChangePassword,
     },
   };
 }
@@ -139,6 +150,8 @@ export interface ResolvedSession {
   name: string;
   email: string;
   isAdmin: boolean;
+  /** trueならパスワードを変更するまで他の操作をさせない(初期パスワードのまま)。 */
+  mustChangePassword: boolean;
 }
 
 /**
@@ -163,18 +176,23 @@ export async function resolveSession(deps: AuthDeps, cookieValue: string): Promi
     name: staffRecord.name,
     email: staffRecord.email,
     isAdmin: staffRecord.isAdmin,
+    mustChangePassword: staffRecord.mustChangePassword,
   };
 }
 
 export type ChangePasswordResult =
   | { ok: true }
-  | { ok: false; reason: 'invalid_session' | 'incorrect_current_password' };
+  | { ok: false; reason: 'invalid_session' | 'incorrect_current_password' | 'weak_password' };
 
 /**
  * ログイン中スタッフ自身のパスワード変更。GAS版Auth.js changePasswordに対応。
  * 現在のパスワードはargon2idを優先して検証し、まだargon2id化していないスタッフは
  * レガシーハッシュ(sha256+salt)でも検証する(loginのサイレント再ハッシュと同じ考え方)。
  * 新パスワードは常にargon2idで保存し、legacyPasswordHashは(あれば)クリアする。
+ *
+ * ここでは他のセッションを破棄しない。現在のパスワードを言えている以上、
+ * 乗っ取りを想定する場面ではないため(乗っ取られている前提のパスワード再設定
+ * (usecases/passwordReset.ts)では全セッションを破棄する)。
  */
 export async function changePassword(
   deps: AuthDeps,
@@ -183,6 +201,8 @@ export async function changePassword(
   currentPassword: string,
   newPassword: string,
 ): Promise<ChangePasswordResult> {
+  if (!isAcceptablePassword(newPassword)) return { ok: false, reason: 'weak_password' };
+
   const staffRecord = await deps.staff.findById(tenantId, staffId);
   if (!staffRecord) return { ok: false, reason: 'invalid_session' };
 
@@ -198,7 +218,10 @@ export async function changePassword(
   if (!matched) return { ok: false, reason: 'incorrect_current_password' };
 
   const newHash = await deps.passwordHasher.hash(newPassword);
-  await deps.staff.upgradeToArgon2Hash(tenantId, staffId, newHash);
+  // 本人による変更なので、初期パスワードの強制変更フラグはここで下ろす。
+  await deps.staff.setPassword(tenantId, staffId, newHash, false);
+  // 再設定コードを発行したまま自力で思い出した場合に、そのコードを残さない。
+  await deps.passwordResetCodes.consumeAllForStaff(tenantId, staffId);
   return { ok: true };
 }
 

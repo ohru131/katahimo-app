@@ -5,6 +5,8 @@ export interface StaffView {
   name: string;
   email: string;
   isAdmin: boolean;
+  /** 初期パスワードのまま。trueの間は変更するまで他の操作ができない(APIも403を返す)。 */
+  mustChangePassword: boolean;
 }
 
 export interface CustomerView {
@@ -95,6 +97,94 @@ export async function changePassword(currentPassword: string, newPassword: strin
   });
   const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
   if (!body.success) throw new Error(body.message || 'パスワードの変更に失敗しました');
+}
+
+/**
+ * パスワード再設定コードの発行を依頼する。
+ *
+ * 宛先が登録されているかどうかにかかわらず成功する。存在しないメールアドレスで
+ * エラーになると、誰でも「この事業所に誰が登録されているか」を確かめられてしまうため
+ * (サーバー側も同じ理由で結果を出し分けていない)。
+ */
+export async function requestPasswordReset(tenantSlug: string, email: string): Promise<void> {
+  const res = await fetch('/api/auth/forgot-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ tenantSlug, email }),
+  });
+  await parseJsonOrThrow<{ success: boolean }>(res);
+}
+
+/** メールで届いた認証コードでパスワードを再設定する。 */
+export async function resetPasswordWithCode(input: {
+  tenantSlug: string;
+  email: string;
+  code: string;
+  newPassword: string;
+}): Promise<void> {
+  const res = await fetch('/api/auth/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'パスワードの再設定に失敗しました');
+}
+
+export interface StaffAdminView {
+  id: string;
+  name: string;
+  email: string;
+  isAdmin: boolean;
+  retirementDate: string | null;
+  retired: boolean;
+  mustChangePassword: boolean;
+}
+
+/** 管理者のスタッフ管理画面用。退職済みも含む全件。 */
+export async function fetchStaffForAdmin(): Promise<StaffAdminView[]> {
+  const res = await fetch('/api/staff/admin', { credentials: 'include' });
+  const body = await parseJsonOrThrow<{ staff: StaffAdminView[] }>(res);
+  return body.staff;
+}
+
+/** スタッフを登録する。初期パスワードは本人のメールへ自動送信される。 */
+export async function createStaff(input: { name: string; email: string; isAdmin: boolean }): Promise<void> {
+  const res = await fetch('/api/staff/admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'スタッフの登録に失敗しました');
+}
+
+/** 氏名・管理者権限・退職日の更新。渡した項目だけが変わる。 */
+export async function updateStaff(
+  staffId: string,
+  patch: { name?: string; isAdmin?: boolean; retirementDate?: string | null },
+): Promise<void> {
+  const res = await fetch(`/api/staff/admin/${staffId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(patch),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'スタッフ情報の更新に失敗しました');
+}
+
+/** 初期パスワードを再発行してメールで送り直す。既存のログインは切れる。 */
+export async function resetStaffPassword(staffId: string): Promise<void> {
+  const res = await fetch(`/api/staff/admin/${staffId}/reset-password`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || '初期パスワードの再発行に失敗しました');
 }
 
 export interface ActiveStaffView {

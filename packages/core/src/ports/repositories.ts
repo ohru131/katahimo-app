@@ -27,6 +27,8 @@ export interface StaffRecord {
   legacyPasswordHash: string | null;
   isAdmin: boolean;
   retirementDate: string | null;
+  /** 初期パスワードのまま。trueの間は本人がパスワードを変更するまで他の操作をさせない。 */
+  mustChangePassword: boolean;
 }
 
 export interface NewStaffInput {
@@ -38,6 +40,8 @@ export interface NewStaffInput {
   passwordHash?: string | null;
   legacyPasswordHash?: string | null;
   isAdmin: boolean;
+  /** 管理者が初期パスワードを発行して作った場合はtrue。 */
+  mustChangePassword?: boolean;
 }
 
 /** 管理者向け「対象スタッフ」セレクタ用の最小情報。 */
@@ -46,13 +50,47 @@ export interface ActiveStaffRecord {
   name: string;
 }
 
+/** 管理者のスタッフ管理画面が扱う情報。退職済みも含む全件を並べるために使う。 */
+export interface StaffAdminRecord {
+  id: string;
+  name: string;
+  email: string;
+  isAdmin: boolean;
+  retirementDate: string | null;
+  mustChangePassword: boolean;
+}
+
+/** 管理者によるスタッフ情報の更新。渡された項目だけを書き換える。 */
+export interface UpdateStaffInput {
+  name?: string;
+  isAdmin?: boolean;
+  /** 退職日。nullを渡すと在籍中に戻す。 */
+  retirementDate?: string | null;
+}
+
 export interface StaffRepositoryPort {
   /** emailは呼び出し側が`normalizeEmailForIndex`で正規化済みの値を渡す前提(ログイン時の検索キー)。 */
   findByEmail(tenantId: string, email: string): Promise<StaffRecord | null>;
   findById(tenantId: string, staffId: string): Promise<StaffRecord | null>;
   create(input: NewStaffInput): Promise<StaffRecord>;
-  /** ログイン成功時、レガシーハッシュをargon2idへサイレント再ハッシュするために使う。changePasswordでも同じ形の更新に使う。 */
+  /**
+   * ログイン成功時、レガシーハッシュ(sha256+salt)をargon2idへサイレント再ハッシュする。
+   * 本人の意思によるパスワード変更ではないので `mustChangePassword` には触れない。
+   */
   upgradeToArgon2Hash(tenantId: string, staffId: string, passwordHash: string): Promise<void>;
+  /**
+   * パスワードを設定し直す(本人による変更・コードによる再設定・管理者による初期パスワード発行)。
+   * レガシーハッシュは常にクリアし、`mustChangePassword` は呼び出し側が明示的に指定する。
+   */
+  setPassword(
+    tenantId: string,
+    staffId: string,
+    passwordHash: string,
+    mustChangePassword: boolean,
+  ): Promise<void>;
+  /** 管理者のスタッフ管理画面用。退職済みも含む全件を返す。 */
+  listAll(tenantId: string): Promise<StaffAdminRecord[]>;
+  update(tenantId: string, staffId: string, input: UpdateStaffInput): Promise<void>;
   /**
    * 退職済み(retirementDateが今日以前)を除いた全スタッフ。GAS版PastSchedule.js
    * getActiveStaffNames_に対応(管理者が「対象スタッフ」を選ぶセレクタ用)。
@@ -78,12 +116,47 @@ export interface SessionRecord {
 export interface SessionRepositoryPort {
   create(input: NewSessionInput): Promise<SessionRecord>;
   /**
+   * そのスタッフのセッションを全て削除する。パスワードの再設定・変更時に呼び、
+   * 乗っ取られていた場合に既存のログインを道連れで無効化する
+   * (GAS版はセッションを残したままだった)。
+   */
+  deleteAllForStaff(tenantId: string, staffId: string): Promise<void>;
+  /**
    * セッションCookieには `tenantId.rawToken` の形でテナントIDを含める(usecases/auth.ts の
    * encodeSessionCookie/decodeSessionCookie参照)ため、この検索は常にtenantIdが先に分かっている
    * 前提で呼ぶ。sessionsテーブルはRLS対象であり、tenantIdが分からないまま検索しようとすると
    * (app.tenant_idが未設定のため)常に0件になる、というRLSの設計上の制約に対応するための構造。
    */
   findByTokenHash(tenantId: string, tokenHash: string): Promise<SessionRecord | null>;
+}
+
+export interface NewPasswordResetCodeInput {
+  tenantId: string;
+  staffId: string;
+  /** 6桁コードのSHA-256(hex)。生のコードはメール本文にしか存在しない。 */
+  codeHash: string;
+  expiresAt: Date;
+}
+
+export interface PasswordResetCodeRecord {
+  id: string;
+  tenantId: string;
+  staffId: string;
+  codeHash: string;
+  expiresAt: Date;
+  consumedAt: Date | null;
+  failedAttempts: number;
+}
+
+export interface PasswordResetCodeRepositoryPort {
+  create(input: NewPasswordResetCodeInput): Promise<PasswordResetCodeRecord>;
+  /** 未使用かつ期限内で最も新しいコード。再発行すると古いものは使えなくなる。 */
+  findLatestActive(tenantId: string, staffId: string): Promise<PasswordResetCodeRecord | null>;
+  markConsumed(tenantId: string, id: string): Promise<void>;
+  /** 誤入力を数える。戻り値は加算後の回数で、上限に達したら呼び出し側がコードを無効化する。 */
+  incrementFailedAttempts(tenantId: string, id: string): Promise<number>;
+  /** そのスタッフの未使用コードを全て使用済みにする。再設定完了時とパスワード変更時に呼ぶ。 */
+  consumeAllForStaff(tenantId: string, staffId: string): Promise<void>;
 }
 
 export interface TenantRecord {

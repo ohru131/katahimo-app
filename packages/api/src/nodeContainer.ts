@@ -7,6 +7,7 @@ import {
   DrizzleDailyReportRepository,
   DrizzleFamilyMemberRepository,
   DrizzleOutboxRepository,
+  DrizzlePasswordResetCodeRepository,
   DrizzleReceiptRepository,
   DrizzleSessionRepository,
   DrizzleStaffRepository,
@@ -15,6 +16,7 @@ import {
 } from '@katahimo/db/repositories';
 import {
   ConsoleAuditLogPort,
+  GasBridgeMailerPort,
   GasBridgeMapsPort,
   GasBridgeSchedulePort,
   GeminiAiPort,
@@ -22,6 +24,7 @@ import {
   LocalCryptoPort,
   LocalFileStoragePort,
   LocalKmsPort,
+  LoggingMailerPort,
   listAvailableGeminiModels,
   NoopMapsPort,
   NoopMirrorPort,
@@ -52,6 +55,7 @@ export function createContainer(env: Env, db: Database): Container {
     tenants: new DrizzleTenantRepository(db),
     staff: new DrizzleStaffRepository(db),
     sessions: new DrizzleSessionRepository(db),
+    passwordResetCodes: new DrizzlePasswordResetCodeRepository(db),
     customers: new DrizzleCustomerRepository(db),
     familyMembers: new DrizzleFamilyMemberRepository(db),
     attendanceDays: new DrizzleAttendanceDayRepository(db),
@@ -72,6 +76,9 @@ export function createContainer(env: Env, db: Database): Container {
         return channel === 'report' ? env.GCHAT_REPORT_WEBHOOK_URL : env.GCHAT_RECEIPT_WEBHOOK_URL;
       },
     }),
+    // パスワード再設定コード・初期パスワードの通知。GAS版と同じくMailApp経由で送る
+    // (doc/10「新規GCP APIより既存GASブリッジを優先」)。未設定ならログに出すだけ。
+    mailer: gasBridgeOptions ? new GasBridgeMailerPort(gasBridgeOptions) : new LoggingMailerPort(),
     reportAi: env.GEMINI_API_KEY
       ? new GeminiAiPort({
           apiKey: env.GEMINI_API_KEY,

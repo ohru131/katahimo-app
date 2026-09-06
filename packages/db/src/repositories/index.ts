@@ -5,6 +5,7 @@ export * from './customerRepository';
 export * from './dailyReportRepository';
 export * from './familyMemberRepository';
 export * from './outboxRepository';
+export * from './passwordResetCodeRepository';
 export * from './receiptRepository';
 export * from './sessionRepository';
 export * from './staffRepository';

@@ -1,8 +1,10 @@
 import type {
   ActiveStaffRecord,
   NewStaffInput,
+  StaffAdminRecord,
   StaffRecord,
   StaffRepositoryPort,
+  UpdateStaffInput,
 } from '@katahimo/core/ports';
 import { eq } from 'drizzle-orm';
 import { staff } from '../schema';
@@ -20,6 +22,7 @@ function toRecord(row: typeof staff.$inferSelect): StaffRecord {
     legacyPasswordHash: row.legacyPasswordHash,
     isAdmin: row.isAdmin,
     retirementDate: row.retirementDate,
+    mustChangePassword: row.mustChangePassword,
   };
 }
 
@@ -54,6 +57,7 @@ export class DrizzleStaffRepository implements StaffRepositoryPort {
           passwordHash: input.passwordHash ?? null,
           legacyPasswordHash: input.legacyPasswordHash ?? null,
           isAdmin: input.isAdmin,
+          mustChangePassword: input.mustChangePassword ?? false,
         })
         .returning();
       const row = rows[0];
@@ -65,6 +69,46 @@ export class DrizzleStaffRepository implements StaffRepositoryPort {
   async upgradeToArgon2Hash(tenantId: string, staffId: string, passwordHash: string): Promise<void> {
     await withTenant(this.db, tenantId, async (tx) => {
       await tx.update(staff).set({ passwordHash, legacyPasswordHash: null }).where(eq(staff.id, staffId));
+    });
+  }
+
+  async setPassword(
+    tenantId: string,
+    staffId: string,
+    passwordHash: string,
+    mustChangePassword: boolean,
+  ): Promise<void> {
+    await withTenant(this.db, tenantId, async (tx) => {
+      await tx
+        .update(staff)
+        .set({ passwordHash, legacyPasswordHash: null, mustChangePassword, updatedAt: new Date() })
+        .where(eq(staff.id, staffId));
+    });
+  }
+
+  async listAll(tenantId: string): Promise<StaffAdminRecord[]> {
+    return withTenant(this.db, tenantId, async (tx) => {
+      const rows = await tx.select().from(staff);
+      return rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        isAdmin: r.isAdmin,
+        retirementDate: r.retirementDate,
+        mustChangePassword: r.mustChangePassword,
+      }));
+    });
+  }
+
+  async update(tenantId: string, staffId: string, input: UpdateStaffInput): Promise<void> {
+    await withTenant(this.db, tenantId, async (tx) => {
+      // 渡された項目だけを書き換える(undefinedの項目は現状維持。retirementDateは
+      // nullが「在籍中に戻す」という意味を持つので、undefinedと区別する必要がある)。
+      const values: Partial<typeof staff.$inferInsert> = { updatedAt: new Date() };
+      if (input.name !== undefined) values.name = input.name;
+      if (input.isAdmin !== undefined) values.isAdmin = input.isAdmin;
+      if (input.retirementDate !== undefined) values.retirementDate = input.retirementDate;
+      await tx.update(staff).set(values).where(eq(staff.id, staffId));
     });
   }
 

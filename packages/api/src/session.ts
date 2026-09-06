@@ -1,10 +1,19 @@
 import { resolveSession } from '@katahimo/core';
 import type { ResolvedSession } from '@katahimo/core/usecases';
-import type { Context } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Container } from './container';
 
 export const SESSION_COOKIE_NAME = 'katahimo_session';
+
+/**
+ * 1リクエスト内でのセッション解決結果。
+ *
+ * 初期パスワードの強制変更チェック(requirePasswordChangeGuard)がミドルウェアで
+ * セッションを引くため、そのままだとルート側の解決と合わせて毎回2回DBを引くことになる。
+ * Contextはリクエストごとに使い捨てなので、それをキーに結果を覚えておく。
+ */
+const resolvedSessions = new WeakMap<Context, ResolvedSession | null>();
 
 /**
  * リクエストのCookieからログイン中ユーザーを解決する唯一の入口。
@@ -13,10 +22,53 @@ export const SESSION_COOKIE_NAME = 'katahimo_session';
  * をAPI全体で1箇所に集約するためのヘルパー。各ルートはこの戻り値の`tenantId`/`staffId`だけを
  * 使い、リクエストボディやクエリパラメータのtenantId/staffId(があっても)は無視すること。
  */
-export async function getAuthenticatedSession(c: Context, container: Container) {
+export async function getAuthenticatedSession(
+  c: Context,
+  container: Container,
+): Promise<ResolvedSession | null> {
+  const cached = resolvedSessions.get(c);
+  if (cached !== undefined) return cached;
+
   const cookieValue = getCookie(c, SESSION_COOKIE_NAME);
-  if (!cookieValue) return null;
-  return resolveSession(container, cookieValue);
+  const session = cookieValue ? await resolveSession(container, cookieValue) : null;
+  resolvedSessions.set(c, session);
+  return session;
+}
+
+/**
+ * 初期パスワードのままのスタッフに、パスワード変更以外のAPIを使わせない。
+ *
+ * 画面側だけで変更を促しても、APIを直接叩けば通ってしまう。「変更するまで使えない」を
+ * 成り立たせるのはサーバー側なので、全ルートの手前で1箇所だけ見る。
+ *
+ * ログイン・ログアウト・自分の状態確認・パスワード変更だけは通す
+ * (通さないとパスワードを変更する手段が無くなる)。
+ */
+const PASSWORD_CHANGE_ALLOWED_PATHS = new Set([
+  '/api/auth/login',
+  '/api/auth/logout',
+  '/api/auth/me',
+  '/api/auth/change-password',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+]);
+
+export function requirePasswordChangeGuard(container: Container): MiddlewareHandler {
+  return async (c, next) => {
+    if (PASSWORD_CHANGE_ALLOWED_PATHS.has(new URL(c.req.url).pathname)) return next();
+
+    const session = await getAuthenticatedSession(c, container);
+    if (session?.mustChangePassword) {
+      return c.json(
+        {
+          code: 'password_change_required',
+          message: '初期パスワードのままです。パスワードを変更してください。',
+        },
+        403,
+      );
+    }
+    return next();
+  };
 }
 
 /**

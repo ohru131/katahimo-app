@@ -5,6 +5,7 @@ export * from './customers';
 export * from './dailyReports';
 export * from './familyMembers';
 export * from './outbox';
+export * from './passwordResetCodes';
 export * from './receipts';
 export * from './sessions';
 export * from './staff';

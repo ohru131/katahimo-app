@@ -9,6 +9,7 @@ import {
   saveGoogleChatWebhookSettings,
 } from '../api';
 import { ChangePasswordModal } from './ChangePasswordModal';
+import { StaffAdminModal } from './StaffAdminModal';
 import { applyTextSize, getStoredTextSize, type TextSize } from './textSize';
 
 const TEXT_SIZE_OPTIONS: { value: TextSize; label: string }[] = [
@@ -52,6 +53,7 @@ function ModelOptions({ current, fetched }: { current: string; fetched: GeminiMo
 export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: () => void }) {
   const [textSize, setTextSize] = useState<TextSize>(() => getStoredTextSize());
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showStaffAdmin, setShowStaffAdmin] = useState(false);
 
   const settingsQuery = useQuery({
     queryKey: ['admin-settings'],
@@ -192,6 +194,14 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
 
           {staff.isAdmin && (
             <div className="border-t pt-4">
+              <button
+                type="button"
+                onClick={() => setShowStaffAdmin(true)}
+                className="w-full py-2 mb-4 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200"
+              >
+                スタッフ管理
+              </button>
+
               <h4 className="text-sm font-bold text-red-600 mb-3">管理者設定</h4>
 
               {settingsQuery.isPending && (
@@ -347,6 +357,12 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
       </div>
 
       {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
+      {showStaffAdmin && (
+        <StaffAdminModal
+          selfStaffId={staff.staffId ?? staff.id ?? ''}
+          onClose={() => setShowStaffAdmin(false)}
+        />
+      )}
     </div>
   );
 }

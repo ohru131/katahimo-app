@@ -7,6 +7,14 @@ interface Toast {
   text: string;
 }
 
+/** デモが「送信した」メール。宛先が架空なので実際には届かない。 */
+interface DemoMailView {
+  id: number;
+  to: string;
+  subject: string;
+  body: string;
+}
+
 const CHANNEL_LABEL: Record<string, string> = {
   report: '日報通知',
   receipt: '領収書通知',
@@ -38,6 +46,8 @@ export function DemoBanner() {
   const [resetting, setResetting] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [warning, setWarning] = useState<string | null>(null);
+  const [mails, setMails] = useState<DemoMailView[]>([]);
+  const [openMailId, setOpenMailId] = useState<number | null>(null);
 
   useEffect(() => {
     const runtime = getDemoRuntime();
@@ -51,9 +61,24 @@ export function DemoBanner() {
     // 書き出し失敗はトーストにしない。8秒で消えると気付かないまま
     // リロードして「保存したはずのものが消えた」ことになる。
     const unsubscribeWarning = runtime.handle.onWarning(setWarning);
+    // 認証コードや初期パスワードはメール本文にしか出ない。デモの宛先は架空で
+    // 実際には届かないので、ここに出して読めるようにする。
+    let nextMailId = 0;
+    const unsubscribeMail = runtime.handle.onMail((mail) => {
+      const view: DemoMailView = {
+        id: nextMailId++,
+        to: mail.to,
+        subject: mail.subject,
+        body: mail.body,
+      };
+      setMails((current) => [view, ...current].slice(0, 5));
+      // 最新のメールを開いた状態にする。コードを探して開く手間を省く。
+      setOpenMailId(view.id);
+    });
     return () => {
       unsubscribeNotification();
       unsubscribeWarning();
+      unsubscribeMail();
     };
   }, []);
 
@@ -134,6 +159,43 @@ export function DemoBanner() {
           <button type="button" onClick={() => setWarning(null)} className="shrink-0 underline">
             閉じる
           </button>
+        </div>
+      )}
+
+      {mails.length > 0 && (
+        <div className="bg-sky-50 border-b border-sky-300 text-sky-900 text-xs">
+          <div className="px-3 py-2 flex items-center gap-2">
+            <span className="font-bold shrink-0">📧 デモの受信箱</span>
+            <span className="flex-1 text-sky-700">
+              宛先が架空なので実際には送信されません。ここで内容を確認できます。
+            </span>
+            <button
+              type="button"
+              onClick={() => setMails([])}
+              className="shrink-0 underline hover:text-sky-950"
+            >
+              消す
+            </button>
+          </div>
+          <ul className="px-3 pb-2 space-y-1">
+            {mails.map((mail) => (
+              <li key={mail.id} className="bg-white border border-sky-200 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setOpenMailId(openMailId === mail.id ? null : mail.id)}
+                  className="w-full text-left px-2 py-1.5"
+                >
+                  <span className="font-bold">{mail.subject}</span>
+                  <span className="text-sky-700"> → {mail.to}</span>
+                </button>
+                {openMailId === mail.id && (
+                  <pre className="px-2 pb-2 whitespace-pre-wrap font-sans text-sky-900 leading-relaxed">
+                    {mail.body}
+                  </pre>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

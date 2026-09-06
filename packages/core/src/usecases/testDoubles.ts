@@ -1,5 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
 import type { BlindIndexPort, CryptoPort, EncryptedValue } from '../ports/crypto';
+import type { MailerPort, MailMessage } from '../ports/mailer';
 import type { MirrorJob, OutboxJobRecord, OutboxRepositoryPort } from '../ports/mirror';
 import type {
   AccidentReportMirrorPayload,
@@ -31,18 +32,23 @@ import type {
   NewCustomerInput,
   NewDailyReportInput,
   NewFamilyMemberInput,
+  NewPasswordResetCodeInput,
   NewReceiptInput,
   NewSessionInput,
   NewStaffInput,
   NewTenantInput,
+  PasswordResetCodeRecord,
+  PasswordResetCodeRepositoryPort,
   ReceiptRecord,
   ReceiptRepositoryPort,
   SessionRecord,
   SessionRepositoryPort,
+  StaffAdminRecord,
   StaffRecord,
   StaffRepositoryPort,
   TenantRecord,
   TenantRepositoryPort,
+  UpdateStaffInput,
 } from '../ports/repositories';
 import type { StoragePort, StoredFile } from '../ports/storage';
 import type { PasswordHasherPort } from './auth';
@@ -127,6 +133,7 @@ export class FakeStaffRepository implements StaffRepositoryPort {
       legacyPasswordHash: input.legacyPasswordHash ?? null,
       isAdmin: input.isAdmin,
       retirementDate: null,
+      mustChangePassword: input.mustChangePassword ?? false,
     };
     this.rows.push(record);
     return record;
@@ -138,6 +145,41 @@ export class FakeStaffRepository implements StaffRepositoryPort {
       record.passwordHash = passwordHash;
       record.legacyPasswordHash = null;
     }
+  }
+
+  async setPassword(
+    tenantId: string,
+    staffId: string,
+    passwordHash: string,
+    mustChangePassword: boolean,
+  ): Promise<void> {
+    const record = this.rows.find((s) => s.tenantId === tenantId && s.id === staffId);
+    if (record) {
+      record.passwordHash = passwordHash;
+      record.legacyPasswordHash = null;
+      record.mustChangePassword = mustChangePassword;
+    }
+  }
+
+  async listAll(tenantId: string): Promise<StaffAdminRecord[]> {
+    return this.rows
+      .filter((s) => s.tenantId === tenantId)
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        email: s.email,
+        isAdmin: s.isAdmin,
+        retirementDate: s.retirementDate,
+        mustChangePassword: s.mustChangePassword,
+      }));
+  }
+
+  async update(tenantId: string, staffId: string, input: UpdateStaffInput): Promise<void> {
+    const record = this.rows.find((s) => s.tenantId === tenantId && s.id === staffId);
+    if (!record) return;
+    if (input.name !== undefined) record.name = input.name;
+    if (input.isAdmin !== undefined) record.isAdmin = input.isAdmin;
+    if (input.retirementDate !== undefined) record.retirementDate = input.retirementDate;
   }
 
   async listActive(tenantId: string): Promise<ActiveStaffRecord[]> {
@@ -169,8 +211,19 @@ export class FakeSessionRepository implements SessionRepositoryPort {
     this.rows.push(record);
     return record;
   }
+  async deleteAllForStaff(tenantId: string, staffId: string): Promise<void> {
+    for (let i = this.rows.length - 1; i >= 0; i--) {
+      const row = this.rows[i];
+      if (row && row.tenantId === tenantId && row.staffId === staffId) this.rows.splice(i, 1);
+    }
+  }
   async findByTokenHash(tenantId: string, tokenHash: string): Promise<SessionRecord | null> {
     return this.rows.find((s) => s.tenantId === tenantId && s.tokenHash === tokenHash) ?? null;
+  }
+
+  /** テスト専用: そのスタッフのセッション数。再設定で破棄されたことを確かめるのに使う。 */
+  countForStaff(tenantId: string, staffId: string): number {
+    return this.rows.filter((s) => s.tenantId === tenantId && s.staffId === staffId).length;
   }
 }
 
@@ -624,5 +677,76 @@ export class FakeMirrorSenderPort implements MirrorSenderPort {
   }
   async sendAttendanceDay(payload: AttendanceDayMirrorPayload): Promise<void> {
     this.attendanceDays.push(payload);
+  }
+}
+
+/** 送ったメールを溜めるだけの MailerPort。文面と宛先の検証に使う。 */
+export class FakeMailer implements MailerPort {
+  readonly sent: MailMessage[] = [];
+
+  async send(message: MailMessage): Promise<void> {
+    this.sent.push(message);
+  }
+
+  /** 最後に送ったメール。1通も送っていなければ undefined。 */
+  get last(): MailMessage | undefined {
+    return this.sent[this.sent.length - 1];
+  }
+}
+
+export class FakePasswordResetCodeRepository implements PasswordResetCodeRepositoryPort {
+  private readonly rows: PasswordResetCodeRecord[] = [];
+  private seq = 0;
+
+  async create(input: NewPasswordResetCodeInput): Promise<PasswordResetCodeRecord> {
+    const record: PasswordResetCodeRecord = {
+      id: `reset-${++this.seq}`,
+      tenantId: input.tenantId,
+      staffId: input.staffId,
+      codeHash: input.codeHash,
+      expiresAt: input.expiresAt,
+      consumedAt: null,
+      failedAttempts: 0,
+    };
+    this.rows.push(record);
+    return record;
+  }
+
+  async findLatestActive(tenantId: string, staffId: string): Promise<PasswordResetCodeRecord | null> {
+    const now = Date.now();
+    // 実装(Drizzle側)は created_at の降順で1件返すので、ここでは後に作ったものを優先する。
+    for (let i = this.rows.length - 1; i >= 0; i--) {
+      const row = this.rows[i];
+      if (!row) continue;
+      if (row.tenantId !== tenantId || row.staffId !== staffId) continue;
+      if (row.consumedAt || row.expiresAt.getTime() <= now) continue;
+      return row;
+    }
+    return null;
+  }
+
+  async markConsumed(tenantId: string, id: string): Promise<void> {
+    const row = this.rows.find((r) => r.tenantId === tenantId && r.id === id);
+    if (row) row.consumedAt = new Date();
+  }
+
+  async incrementFailedAttempts(tenantId: string, id: string): Promise<number> {
+    const row = this.rows.find((r) => r.tenantId === tenantId && r.id === id);
+    if (!row) return 0;
+    row.failedAttempts += 1;
+    return row.failedAttempts;
+  }
+
+  async consumeAllForStaff(tenantId: string, staffId: string): Promise<void> {
+    for (const row of this.rows) {
+      if (row.tenantId === tenantId && row.staffId === staffId && !row.consumedAt) {
+        row.consumedAt = new Date();
+      }
+    }
+  }
+
+  /** テスト専用: 期限を過去にずらす。 */
+  expireAllForTest(): void {
+    for (const row of this.rows) row.expiresAt = new Date(Date.now() - 1000);
   }
 }

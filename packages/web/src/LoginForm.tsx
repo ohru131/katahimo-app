@@ -8,7 +8,14 @@ import { getDemoRuntime, IS_DEMO_MODE } from './demo/demoRuntime';
  * GAS版(gas-childcare-visit-app/index.html)のログインモーダルと同じ見た目・文言にしている
  * (移行時の混乱を減らすため)。マルチテナントSaaS化に伴い法人ID(tenantSlug)欄のみ追加。
  */
-export function LoginForm({ onLoggedIn }: { onLoggedIn: (staff: StaffView) => void }) {
+export function LoginForm({
+  onLoggedIn,
+  onForgotPassword,
+}: {
+  onLoggedIn: (staff: StaffView) => void;
+  /** 入力途中の法人ID・メールアドレスを引き継いで再設定画面へ移る。 */
+  onForgotPassword: (input: { tenantSlug: string; email: string }) => void;
+}) {
   // デモビルドでは、初見の人がそのままログインできるよう管理者アカウントを入れておく。
   const demoRuntime = IS_DEMO_MODE ? getDemoRuntime() : null;
   const defaultAccount = demoRuntime?.credentials[0];
@@ -110,6 +117,14 @@ export function LoginForm({ onLoggedIn }: { onLoggedIn: (staff: StaffView) => vo
           className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl transition-colors"
         >
           {mutation.isPending ? 'ログイン中…' : 'ログイン'}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onForgotPassword({ tenantSlug, email })}
+          className="w-full text-sm text-gray-500 hover:text-gray-700 underline"
+        >
+          パスワードをお忘れですか?
         </button>
       </form>
     </div>

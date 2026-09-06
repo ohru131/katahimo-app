@@ -2,6 +2,7 @@ export * from './attendance';
 export * from './auth';
 export * from './customers';
 export * from './mirrorWorker';
+export * from './passwordReset';
 export * from './receipts';
 export * from './reportAi';
 export * from './reports';
