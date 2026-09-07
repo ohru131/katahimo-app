@@ -5,8 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1788737711204,
+      "when": 1788237307871,
       "tag": "0000_init_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788746968648,
+      "tag": "0001_password_reset_and_initial_password",
       "breakpoints": true
     }
   ]

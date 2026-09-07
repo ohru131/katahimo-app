@@ -1,7 +1,8 @@
+import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { login, registerStaff } from './auth';
 import type { PasswordResetDeps } from './passwordReset';
-import { requestPasswordReset, resetPasswordWithCode } from './passwordReset';
+import { computeResetCodeVerifier, requestPasswordReset, resetPasswordWithCode } from './passwordReset';
 import {
   FakeMailer,
   FakePasswordHasherPort,
@@ -41,6 +42,7 @@ describe('パスワード再設定', () => {
       passwordResetCodes: new FakePasswordResetCodeRepository(),
       passwordHasher: new FakePasswordHasherPort(),
       mailer,
+      resetCodePepper: 'test-pepper',
     };
     const tenant = await deps.tenants.create({ name: 'テスト法人', slug: TENANT_SLUG });
     tenantId = tenant.id;
@@ -209,5 +211,29 @@ describe('パスワード再設定', () => {
     });
 
     expect(sessions.countForStaff(tenantId, staffId)).toBe(0);
+  });
+});
+
+/**
+ * 6桁のコードは100万通りしかない。単純なハッシュをDBに置くと、DBが漏れた時点で
+ * 全パターンを試して有効なコードを復元できてしまう。DBに置かないペッパーが
+ * 必要な形(HMAC)になっていることを固定する。
+ */
+describe('computeResetCodeVerifier', () => {
+  it('ペッパーが違えば別の値になる', () => {
+    expect(computeResetCodeVerifier('pepper-a', '123456')).not.toBe(
+      computeResetCodeVerifier('pepper-b', '123456'),
+    );
+  });
+
+  it('ペッパー無しのSHA-256とは一致しない(総当たりで逆算できない)', () => {
+    const plainSha256 = createHash('sha256').update('123456', 'utf8').digest('hex');
+    expect(computeResetCodeVerifier('pepper-a', '123456')).not.toBe(plainSha256);
+  });
+
+  it('同じペッパー・同じコードなら同じ値になる', () => {
+    expect(computeResetCodeVerifier('pepper-a', '123456')).toBe(
+      computeResetCodeVerifier('pepper-a', '123456'),
+    );
   });
 });

@@ -74,7 +74,7 @@ export function createStaffRoutes(container: Container) {
           : '氏名とメールアドレスを正しく入力してください';
       return c.json({ success: false, message }, 400);
     }
-    return c.json({ success: true, staffId: result.staffId });
+    return c.json({ success: true, staffId: result.staffId, mailDelivered: result.mailDelivered });
   });
 
   /** 管理者によるスタッフ情報(氏名・権限・退職日)の更新。 */
@@ -138,7 +138,7 @@ export function createStaffRoutes(container: Container) {
 
     const result = await resetStaffPasswordByAdmin(container, session.tenantId, c.req.param('staffId'));
     if (!result.ok) return c.json({ success: false, message: 'スタッフが見つかりません' }, 404);
-    return c.json({ success: true });
+    return c.json({ success: true, mailDelivered: result.mailDelivered });
   });
 
   return app;

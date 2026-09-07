@@ -23,6 +23,15 @@ const envSchema = z.object({
   // 別の値にすること(こちらが漏れてもblind indexの鍵には影響しない、逆も同様)。
   LOCAL_DEV_KEK: z.string().regex(/^[0-9a-f]{64}$/i, 'LOCAL_DEV_KEK は32バイト(64桁の16進数)にしてください'),
 
+  // パスワード再設定コード(6桁)の検証子を計算する鍵。32バイト(64桁hex)。
+  // DBには検証子(HMAC)だけを保存し、この鍵はDBに置かない。単純なハッシュだと
+  // 6桁=100万通りしか無いためDBが漏れた時点で有効なコードを復元できてしまう、
+  // というのを防ぐためのもの。LOCAL_DEV_MASTER_KEY/LOCAL_DEV_KEKとは別の値にする
+  // (一方が漏れても他方に影響しない権限分離。crypto.ts参照)。
+  PASSWORD_RESET_PEPPER: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/i, 'PASSWORD_RESET_PEPPER は32バイト(64桁の16進数)にしてください'),
+
   // 移行期のみ必要: GAS版 Script Properties の AUTH_SALT と同じ値。
   // 未設定でも起動はできるが、既存パスワードでのログインは失敗する。
   LEGACY_AUTH_SALT: z.string().optional(),

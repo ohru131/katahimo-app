@@ -42,6 +42,14 @@ import { type CustomerIdByName, DemoSchedulePort } from './ports/demoSchedulePor
  */
 const DEMO_KEK = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
 const DEMO_BLIND_INDEX_KEY = 'ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100';
+/**
+ * パスワード再設定コードの検証子を計算する鍵。DEMO_KEKと同じく公開ビルドに含まれる固定値。
+ *
+ * 本番ではこれをDBに置かないことで「DBが漏れても6桁コードを復元できない」を成立させるが、
+ * デモはDBもこの鍵も訪問者のブラウザの中にあるので、その保証はもともと成り立たない。
+ * 守る対象が架空データだけなので問題にならない。
+ */
+const DEMO_RESET_CODE_PEPPER = '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0';
 
 export interface DemoContainerDeps {
   db: Database;
@@ -89,6 +97,7 @@ export function createDemoContainer(deps: DemoContainerDeps): DemoContainer {
     // 架空のメールアドレス宛なので実際には送れない。画面に出して、届いたメールを
     // 読むのと同じように認証コード・初期パスワードを拾えるようにする。
     mailer: new DemoMailerPort(),
+    resetCodePepper: DEMO_RESET_CODE_PEPPER,
     // APIキー未設定時のフォールバックを定型応答にする。訪問者が管理者設定で自分の
     // Gemini APIキーを登録した場合は、reportAiFactory経由で本物のGeminiが使われる
     // (キーは訪問者のブラウザ内のPGliteに、本番と同じ封筒暗号化をかけて保存される)。

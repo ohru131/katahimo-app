@@ -32,7 +32,10 @@ export function InitialPasswordChangeForm({
       return fetchMe();
     },
     onSuccess: (updated) => {
+      // 変更中にセッションが切れた場合は取り直せない。そのままだと古い状態のまま
+      // この画面が出続けるので、ログイン画面へ戻す。
       if (updated) onChanged(updated);
+      else onLogout();
     },
   });
 

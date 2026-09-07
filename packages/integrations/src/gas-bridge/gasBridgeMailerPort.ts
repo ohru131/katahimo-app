@@ -27,16 +27,22 @@ export class GasBridgeMailerPort implements MailerPort {
 /**
  * GAS_BRIDGE_URL/GAS_BRIDGE_SECRET未設定時のフォールバック。
  *
- * 例外にはせず、送るはずだった内容をサーバーログに出す。パスワード再設定は
- * 「メールが届かない」以外の壊れ方をしないほうが運用しやすく、ブリッジ未設定の
- * 開発環境でも再設定コードをログから拾って動作確認できる。
- * 本文には再設定コードや初期パスワードが含まれるため、本番でこの実装が
- * 使われている状態は設定漏れとして扱うこと。
+ * 例外にはせず、メールを送っていないことをサーバーログに出す。パスワード再設定は
+ * 「メールが届かない」以外の壊れ方をしないほうが運用しやすい。
+ *
+ * 本文をログに出すのは開発環境だけにする。本文には再設定コードと初期パスワードが
+ * 含まれており、ブリッジの設定漏れひとつで認証情報がログに溜まり続ける状態になるため
+ * (本番でこの実装が選ばれているのは設定漏れだが、そのときの被害を最小にしておく)。
+ * 開発環境では、ここに出た本文からコードを拾って動作確認できる。
  */
 export class LoggingMailerPort implements MailerPort {
+  /** 本文までログに出すか。呼び出し側(nodeContainer)が検証済みのNODE_ENVから渡す。 */
+  constructor(private readonly logBody: boolean) {}
+
   async send(message: MailMessage): Promise<void> {
+    const detail = this.logBody ? `\n${message.body}` : ' (本文は開発環境でのみログに出します)';
     console.warn(
-      `[mailer] GASブリッジが未設定のためメールを送信していません。to=${message.to} subject=${message.subject}\n${message.body}`,
+      `[mailer] GASブリッジが未設定のためメールを送信していません。subject=${message.subject}${detail}`,
     );
   }
 }

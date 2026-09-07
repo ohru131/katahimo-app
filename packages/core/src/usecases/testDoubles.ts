@@ -19,6 +19,7 @@ import type {
   AppSettingsRepositoryPort,
   AttendanceDayRecord,
   AttendanceDayRepositoryPort,
+  ConsumeResetCodeResult,
   CustomerPatchInput,
   CustomerProfileFields,
   CustomerRecord,
@@ -28,16 +29,15 @@ import type {
   EncryptedField,
   FamilyMemberRecord,
   FamilyMemberRepositoryPort,
+  IssuePasswordResetCodeInput,
   NewAccidentReportInput,
   NewCustomerInput,
   NewDailyReportInput,
   NewFamilyMemberInput,
-  NewPasswordResetCodeInput,
   NewReceiptInput,
   NewSessionInput,
   NewStaffInput,
   NewTenantInput,
-  PasswordResetCodeRecord,
   PasswordResetCodeRepositoryPort,
   ReceiptRecord,
   ReceiptRepositoryPort,
@@ -49,6 +49,7 @@ import type {
   TenantRecord,
   TenantRepositoryPort,
   UpdateStaffInput,
+  VerifyPasswordResetCodeInput,
 } from '../ports/repositories';
 import type { StoragePort, StoredFile } from '../ports/storage';
 import type { PasswordHasherPort } from './auth';
@@ -683,9 +684,19 @@ export class FakeMirrorSenderPort implements MirrorSenderPort {
 /** 送ったメールを溜めるだけの MailerPort。文面と宛先の検証に使う。 */
 export class FakeMailer implements MailerPort {
   readonly sent: MailMessage[] = [];
+  private failNext = false;
 
   async send(message: MailMessage): Promise<void> {
+    if (this.failNext) {
+      this.failNext = false;
+      throw new Error('メール送信に失敗しました(テスト)');
+    }
     this.sent.push(message);
+  }
+
+  /** テスト専用: 次の1通だけ送信を失敗させる。 */
+  failNextForTest(): void {
+    this.failNext = true;
   }
 
   /** 最後に送ったメール。1通も送っていなければ undefined。 */
@@ -695,46 +706,54 @@ export class FakeMailer implements MailerPort {
 }
 
 export class FakePasswordResetCodeRepository implements PasswordResetCodeRepositoryPort {
-  private readonly rows: PasswordResetCodeRecord[] = [];
+  private readonly rows: {
+    id: string;
+    tenantId: string;
+    staffId: string;
+    codeVerifier: string;
+    expiresAt: Date;
+    consumedAt: Date | null;
+    failedAttempts: number;
+  }[] = [];
   private seq = 0;
 
-  async create(input: NewPasswordResetCodeInput): Promise<PasswordResetCodeRecord> {
-    const record: PasswordResetCodeRecord = {
+  async issue(input: IssuePasswordResetCodeInput): Promise<void> {
+    await this.consumeAllForStaff(input.tenantId, input.staffId);
+    this.rows.push({
       id: `reset-${++this.seq}`,
       tenantId: input.tenantId,
       staffId: input.staffId,
-      codeHash: input.codeHash,
+      codeVerifier: input.codeVerifier,
       expiresAt: input.expiresAt,
       consumedAt: null,
       failedAttempts: 0,
-    };
-    this.rows.push(record);
-    return record;
+    });
   }
 
-  async findLatestActive(tenantId: string, staffId: string): Promise<PasswordResetCodeRecord | null> {
+  async verifyAndConsume(input: VerifyPasswordResetCodeInput): Promise<ConsumeResetCodeResult> {
     const now = Date.now();
-    // 実装(Drizzle側)は created_at の降順で1件返すので、ここでは後に作ったものを優先する。
-    for (let i = this.rows.length - 1; i >= 0; i--) {
-      const row = this.rows[i];
-      if (!row) continue;
-      if (row.tenantId !== tenantId || row.staffId !== staffId) continue;
-      if (row.consumedAt || row.expiresAt.getTime() <= now) continue;
-      return row;
+    // 実装(Drizzle側)は created_at の降順で1件だけ見るので、後に作ったものを優先する。
+    const row = [...this.rows]
+      .reverse()
+      .find(
+        (r) =>
+          r.tenantId === input.tenantId &&
+          r.staffId === input.staffId &&
+          !r.consumedAt &&
+          r.expiresAt.getTime() > now,
+      );
+    if (!row) return 'unavailable';
+
+    if (row.failedAttempts >= input.maxFailedAttempts) {
+      row.consumedAt = new Date();
+      return 'unavailable';
     }
-    return null;
-  }
-
-  async markConsumed(tenantId: string, id: string): Promise<void> {
-    const row = this.rows.find((r) => r.tenantId === tenantId && r.id === id);
-    if (row) row.consumedAt = new Date();
-  }
-
-  async incrementFailedAttempts(tenantId: string, id: string): Promise<number> {
-    const row = this.rows.find((r) => r.tenantId === tenantId && r.id === id);
-    if (!row) return 0;
-    row.failedAttempts += 1;
-    return row.failedAttempts;
+    if (row.codeVerifier !== input.codeVerifier) {
+      row.failedAttempts += 1;
+      return 'mismatch';
+    }
+    row.consumedAt = new Date();
+    return 'consumed';
   }
 
   async consumeAllForStaff(tenantId: string, staffId: string): Promise<void> {
@@ -745,7 +764,7 @@ export class FakePasswordResetCodeRepository implements PasswordResetCodeReposit
     }
   }
 
-  /** テスト専用: 期限を過去にずらす。 */
+  /** テスト専用: 有効なコードの期限を過去にずらす。 */
   expireAllForTest(): void {
     for (const row of this.rows) row.expiresAt = new Date(Date.now() - 1000);
   }

@@ -58,6 +58,8 @@ export interface Container {
   storage: StoragePort;
   notifier: NotifierPort;
   mailer: MailerPort;
+  /** パスワード再設定コードの検証子を計算する鍵(環境変数 PASSWORD_RESET_PEPPER)。 */
+  resetCodePepper: string;
   /** テナントがapp_settingsに独自キーを設定していない場合のフォールバック(.env設定 or Noop)。 */
   reportAi: ReportAiPort;
   /** テナント固有のGemini APIキー/モデルで都度ReportAiPortを組み立てるためのファクトリ。 */

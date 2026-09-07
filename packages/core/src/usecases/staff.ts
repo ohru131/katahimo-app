@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { generateInitialPassword, normalizeEmailForIndex } from '../domain';
 import type { MailerPort } from '../ports/mailer';
 import type {
+  PasswordResetCodeRepositoryPort,
   SessionRepositoryPort,
   StaffAdminRecord,
   StaffRepositoryPort,
@@ -15,6 +16,8 @@ export interface StaffDeps {
 
 export interface StaffAdminDeps extends StaffDeps {
   sessions: SessionRepositoryPort;
+  /** パスワードを差し替えたときに、未使用の再設定コードを無効化するために使う。 */
+  passwordResetCodes: PasswordResetCodeRepositoryPort;
   passwordHasher: PasswordHasherPort;
   mailer: MailerPort;
 }
@@ -73,7 +76,19 @@ export interface CreateStaffInput {
 }
 
 export type CreateStaffResult =
-  | { ok: true; staffId: string }
+  | {
+      ok: true;
+      staffId: string;
+      /**
+       * 初期パスワードのメールを送れたか。
+       *
+       * falseでもアカウントは作成済み。「作成に失敗した」と返してしまうと、
+       * 管理者がやり直しても `email_taken` になり、誰も知らないパスワードの
+       * アカウントが残ったまま身動きが取れなくなる。画面には「初期パスワードを
+       * 再発行してください」と案内させる。
+       */
+      mailDelivered: boolean;
+    }
   | { ok: false; reason: 'invalid_input' | 'email_taken' };
 
 /**
@@ -107,11 +122,14 @@ export async function createStaffWithInitialPassword(
     mustChangePassword: true,
   });
 
-  await sendInitialPasswordMail(deps, { name, email, initialPassword });
-  return { ok: true, staffId: created.id };
+  // 作成済みなので、メール送信の失敗を作成の失敗として返さない(上の mailDelivered 参照)。
+  const mailDelivered = await sendInitialPasswordMail(deps, { name, email, initialPassword });
+  return { ok: true, staffId: created.id, mailDelivered };
 }
 
-export type ResetStaffPasswordResult = { ok: true } | { ok: false; reason: 'not_found' };
+export type ResetStaffPasswordResult =
+  | { ok: true; mailDelivered: boolean }
+  | { ok: false; reason: 'not_found' };
 
 /**
  * 管理者がスタッフの初期パスワードを再発行する。
@@ -131,13 +149,15 @@ export async function resetStaffPasswordByAdmin(
   const initialPassword = generateInitialPassword((size) => randomBytes(size));
   await deps.staff.setPassword(tenantId, staffId, await deps.passwordHasher.hash(initialPassword), true);
   await deps.sessions.deleteAllForStaff(tenantId, staffId);
+  // 未使用の再設定コードが残っていると、再発行した初期パスワードをそれで上書きできてしまう。
+  await deps.passwordResetCodes.consumeAllForStaff(tenantId, staffId);
 
-  await sendInitialPasswordMail(deps, {
+  const mailDelivered = await sendInitialPasswordMail(deps, {
     name: staffRecord.name,
     email: staffRecord.email,
     initialPassword,
   });
-  return { ok: true };
+  return { ok: true, mailDelivered };
 }
 
 export type UpdateStaffResult =
@@ -178,24 +198,36 @@ export async function updateStaffByAdmin(
   return { ok: true };
 }
 
-/** 初期パスワードの通知メール。登録直後と管理者による再発行で同じ文面を使う。 */
+/**
+ * 初期パスワードの通知メール。登録直後と管理者による再発行で同じ文面を使う。
+ *
+ * 送信できたかを戻り値で返し、例外は投げない。呼び出し側では既にアカウントの
+ * 作成やパスワードの差し替えが済んでいるため、ここで例外にすると
+ * 「DBは変わったのに呼び出し側は失敗と受け取る」ずれが起きる。
+ */
 async function sendInitialPasswordMail(
   deps: StaffAdminDeps,
   input: { name: string; email: string; initialPassword: string },
-): Promise<void> {
-  await deps.mailer.send({
-    to: input.email,
-    subject: '【katahimo】初期パスワードのお知らせ',
-    body: [
-      `${input.name} 様`,
-      '',
-      'katahimo 訪問管理のアカウントを発行しました。',
-      '以下の初期パスワードでログインし、続けて表示される画面でご自身のパスワードに変更してください。',
-      '',
-      `メールアドレス: ${input.email}`,
-      `初期パスワード: ${input.initialPassword}`,
-      '',
-      '初期パスワードは変更するまで有効です。第三者に知られないようご注意ください。',
-    ].join('\n'),
-  });
+): Promise<boolean> {
+  try {
+    await deps.mailer.send({
+      to: input.email,
+      subject: '【katahimo】初期パスワードのお知らせ',
+      body: [
+        `${input.name} 様`,
+        '',
+        'katahimo 訪問管理のアカウントを発行しました。',
+        '以下の初期パスワードでログインし、続けて表示される画面でご自身のパスワードに変更してください。',
+        '',
+        `メールアドレス: ${input.email}`,
+        `初期パスワード: ${input.initialPassword}`,
+        '',
+        '初期パスワードは変更するまで有効です。第三者に知られないようご注意ください。',
+      ].join('\n'),
+    });
+    return true;
+  } catch (error) {
+    console.error('[staff] 初期パスワードのメール送信に失敗しました', error);
+    return false;
+  }
 }

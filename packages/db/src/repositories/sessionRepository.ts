@@ -1,5 +1,5 @@
 import type { NewSessionInput, SessionRecord, SessionRepositoryPort } from '@katahimo/core/ports';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { sessions } from '../schema';
 import type { Database } from '../tenantScope';
 import { withTenant } from '../tenantScope';
@@ -26,7 +26,10 @@ export class DrizzleSessionRepository implements SessionRepositoryPort {
 
   async deleteAllForStaff(tenantId: string, staffId: string): Promise<void> {
     await withTenant(this.db, tenantId, async (tx) => {
-      await tx.delete(sessions).where(eq(sessions.staffId, staffId));
+      // RLSでもテナントは絞られるが、DELETEはWHERE句にも明示する。
+      // RLSが外れた状態(所有者ロールでの接続等)で他テナントのセッションまで
+      // 消してしまうと、取り返しがつかない。
+      await tx.delete(sessions).where(and(eq(sessions.tenantId, tenantId), eq(sessions.staffId, staffId)));
     });
   }
 
