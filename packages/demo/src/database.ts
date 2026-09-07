@@ -79,8 +79,16 @@ export async function applyPendingMigrations(client: PGlite, migrations: DemoMig
 
   for (const migration of migrations) {
     if (applied.has(migration.tag)) continue;
-    await client.exec(migration.sql);
-    await client.query(`INSERT INTO ${LEDGER_TABLE} (tag) VALUES ($1);`, [migration.tag]);
+    // SQLの適用と台帳への記録は必ず一緒にコミットする。分けると、この2つの間で
+    // タブを閉じられたり書き込みに失敗したりしたときに「適用済みだが記録されていない」
+    // 状態が残り、次の起動で同じマイグレーションを流して
+    // 「テーブルが既に存在する」で落ちる(しかもリセットするまで直らない)。
+    await client.transaction(async (tx) => {
+      await tx.exec(migration.sql);
+      // テーブル名は同ファイル内の定数。パラメータにできるのは値だけなので、
+      // タグ側だけをプレースホルダにしている。
+      await tx.query(`INSERT INTO ${LEDGER_TABLE} (tag) VALUES ($1);`, [migration.tag]);
+    });
   }
 
   return isFresh;

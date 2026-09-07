@@ -108,6 +108,35 @@ describe('applyPendingMigrations', () => {
     expect(rows[0]?.count).toBe('0');
   });
 
+  /**
+   * SQLの適用と台帳への記録が別コミットだと、その間に落ちたときに
+   * 「適用済みだが記録されていない」状態が残り、次の起動で同じSQLを流して
+   * 「テーブルが既に存在する」で落ちる(リセットするまで直らない)。
+   *
+   * 台帳側のCHECK制約で記録だけを失敗させ、SQLの適用が巻き戻ることを確かめる。
+   * 同じトランザクションになっていなければ、marker テーブルが残って落ちる。
+   */
+  it('台帳への記録が失敗したらSQLの適用も巻き戻す', async () => {
+    // 特定のタグだけ記録できない台帳を先に作っておく(実装側は CREATE TABLE IF NOT EXISTS)。
+    await client.exec(`
+      CREATE TABLE demo_applied_migrations (
+        tag text PRIMARY KEY,
+        applied_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT reject_marker CHECK (tag <> '9999_marker')
+      );
+    `);
+    const rejected: DemoMigration = {
+      tag: '9999_marker',
+      sql: 'CREATE TABLE marker (id int);',
+    };
+
+    await expect(applyPendingMigrations(client, [rejected])).rejects.toThrow();
+
+    // 記録に失敗した以上、テーブルも作られていないこと。
+    expect(await tableExists(client, 'marker')).toBe(false);
+    expect(await appliedTags(client)).toEqual([]);
+  });
+
   it('マイグレーションを1件も読めなければ起動を止める', async () => {
     await expect(applyPendingMigrations(client, [])).rejects.toThrow(
       'マイグレーションSQLを読み込めませんでした',
