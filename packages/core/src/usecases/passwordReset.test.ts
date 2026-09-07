@@ -242,6 +242,57 @@ describe('パスワード再設定', () => {
     expect(after.ok).toBe(false);
   });
 
+  /**
+   * 書き込みが失敗したときに「パスワードだけ変わった」「セッションだけ残った」という
+   * 中途半端な状態を残さないこと。コードは消費済みになるが、それは再発行でやり直せる。
+   */
+  it('セッション破棄が失敗したらパスワードも書き換えない', async () => {
+    await requestPasswordReset(deps, { tenantSlug: TENANT_SLUG, email: EMAIL });
+    const code = codeFromMail(mailer);
+    await login(authDeps, { tenantSlug: TENANT_SLUG, email: EMAIL, password: 'original-password' });
+    const before = await deps.staff.findById(tenantId, staffId);
+
+    sessions.deleteAllForStaff = async () => {
+      throw new Error('セッションの破棄に失敗しました');
+    };
+
+    await expect(
+      resetPasswordWithCode(deps, {
+        tenantSlug: TENANT_SLUG,
+        email: EMAIL,
+        code,
+        newPassword: NEW_PASSWORD,
+      }),
+    ).rejects.toThrow('セッションの破棄に失敗しました');
+
+    // パスワードは元のまま。新しいパスワードでは入れない。
+    const after = await deps.staff.findById(tenantId, staffId);
+    expect(after?.passwordHash).toBe(before?.passwordHash);
+  });
+
+  it('パスワードの書き込みが失敗したら元のパスワードのまま残る', async () => {
+    await requestPasswordReset(deps, { tenantSlug: TENANT_SLUG, email: EMAIL });
+    const code = codeFromMail(mailer);
+    const before = await deps.staff.findById(tenantId, staffId);
+
+    deps.staff.replacePassword = async () => {
+      throw new Error('パスワードの書き込みに失敗しました');
+    };
+
+    await expect(
+      resetPasswordWithCode(deps, {
+        tenantSlug: TENANT_SLUG,
+        email: EMAIL,
+        code,
+        newPassword: NEW_PASSWORD,
+      }),
+    ).rejects.toThrow('パスワードの書き込みに失敗しました');
+
+    const after = await deps.staff.findById(tenantId, staffId);
+    expect(after?.passwordHash).toBe(before?.passwordHash);
+    expect(after?.mustChangePassword).toBe(false);
+  });
+
   it('再設定すると既存のログインを全て切る', async () => {
     await login(authDeps, { tenantSlug: TENANT_SLUG, email: EMAIL, password: 'original-password' });
     await login(authDeps, { tenantSlug: TENANT_SLUG, email: EMAIL, password: 'original-password' });

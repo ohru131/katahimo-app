@@ -51,10 +51,7 @@ export interface DemoMigration {
  * `migrations` を引数で受け取るのは、`import.meta.glob` に依存せずテストから
  * 実際のPostgres(PGlite)に対して当てられるようにするため。
  */
-export async function applyPendingMigrations(
-  client: PGlite,
-  migrations: DemoMigration[],
-): Promise<boolean> {
+export async function applyPendingMigrations(client: PGlite, migrations: DemoMigration[]): Promise<boolean> {
   if (migrations.length === 0) throw new Error('マイグレーションSQLを読み込めませんでした');
 
   const schemaExists = await relationExists(client, 'public.tenants');
