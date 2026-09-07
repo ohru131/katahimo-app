@@ -130,32 +130,54 @@ export interface SessionRepositoryPort {
   findByTokenHash(tenantId: string, tokenHash: string): Promise<SessionRecord | null>;
 }
 
-export interface NewPasswordResetCodeInput {
+export interface IssuePasswordResetCodeInput {
   tenantId: string;
   staffId: string;
-  /** 6桁コードのSHA-256(hex)。生のコードはメール本文にしか存在しない。 */
-  codeHash: string;
+  /**
+   * 6桁コードの検証子。サーバー側のペッパーを鍵にしたHMAC-SHA256(hex)。
+   * 単純なハッシュにしないのは、6桁=100万通りしかなく、DBが漏れた時点で
+   * オフラインで全パターンを試せば有効なコードを復元できてしまうため。
+   */
+  codeVerifier: string;
   expiresAt: Date;
 }
 
-export interface PasswordResetCodeRecord {
-  id: string;
+export type ConsumeResetCodeResult =
+  /** 検証子が一致し、その場で使用済みにした。 */
+  | 'consumed'
+  /** 有効なコードはあったが検証子が違う。試行回数を1つ加算した。 */
+  | 'mismatch'
+  /** 有効なコードが無い(未発行・期限切れ・使用済み・試行回数の上限に到達)。 */
+  | 'unavailable';
+
+export interface VerifyPasswordResetCodeInput {
   tenantId: string;
   staffId: string;
-  codeHash: string;
-  expiresAt: Date;
-  consumedAt: Date | null;
-  failedAttempts: number;
+  codeVerifier: string;
+  /** この回数の誤入力に達したコードは、期限内でも無効として扱う。 */
+  maxFailedAttempts: number;
 }
 
+/**
+ * パスワード再設定コードの保管。
+ *
+ * 「読んで、判定して、書く」を呼び出し側に分けて持たせない形にしている。分けると、
+ * 同時に走ったリクエストが揃って古い試行回数を読み、上限をすり抜けて何度でも
+ * 推測できてしまう(6桁しかないので、これは実際に効く攻撃になる)。
+ * 発行と検証をそれぞれ1つの操作にまとめ、実装側がトランザクション+行ロックで守る。
+ */
 export interface PasswordResetCodeRepositoryPort {
-  create(input: NewPasswordResetCodeInput): Promise<PasswordResetCodeRecord>;
-  /** 未使用かつ期限内で最も新しいコード。再発行すると古いものは使えなくなる。 */
-  findLatestActive(tenantId: string, staffId: string): Promise<PasswordResetCodeRecord | null>;
-  markConsumed(tenantId: string, id: string): Promise<void>;
-  /** 誤入力を数える。戻り値は加算後の回数で、上限に達したら呼び出し側がコードを無効化する。 */
-  incrementFailedAttempts(tenantId: string, id: string): Promise<number>;
-  /** そのスタッフの未使用コードを全て使用済みにする。再設定完了時とパスワード変更時に呼ぶ。 */
+  /**
+   * 新しいコードを発行する。同じスタッフの未使用コードは同時に無効化する
+   * (有効なコードが複数あると、総当たりの的がその数だけ増える)。
+   */
+  issue(input: IssuePasswordResetCodeInput): Promise<void>;
+  /**
+   * 有効なコードを行ロックしたうえで検証子を突き合わせ、一致すればその場で使用済みにする。
+   * 一致しなければ試行回数を加算する。判定と更新が同じロックの中で完結する。
+   */
+  verifyAndConsume(input: VerifyPasswordResetCodeInput): Promise<ConsumeResetCodeResult>;
+  /** そのスタッフの未使用コードを全て使用済みにする。パスワードが別経路で変わったときに呼ぶ。 */
   consumeAllForStaff(tenantId: string, staffId: string): Promise<void>;
 }
 

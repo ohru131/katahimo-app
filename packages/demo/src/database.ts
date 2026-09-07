@@ -3,9 +3,20 @@ import * as schema from '@katahimo/db/schema';
 import { serializeTransactions } from '@katahimo/db/serialize-transactions';
 import type { Database } from '@katahimo/db/tenant-scope';
 import { drizzle } from 'drizzle-orm/pglite';
-// 本番と同じマイグレーションをそのまま流す。デモ専用のDDLを別に持つと、スキーマを変えた
-// ときにデモだけ壊れる(しかも気付くのが遅れる)ため、必ず単一の正から生成する。
-import INIT_SCHEMA_SQL from '../../db/drizzle/0000_init_schema.sql?raw';
+
+/**
+ * 本番と同じマイグレーションをそのまま流す。デモ専用のDDLを別に持つと、スキーマを変えた
+ * ときにデモだけ壊れる(しかも気付くのが遅れる)ため、必ず単一の正から生成する。
+ *
+ * ファイル名を列挙せずglobで集めるのは、マイグレーションを追加したときに
+ * ここを書き足し忘れてデモだけ古いスキーマで動く、という壊れ方を防ぐため。
+ * `0000_`, `0001_`, … と連番が先頭に付く命名なので、ファイル名順=適用順になる。
+ */
+const MIGRATION_SQL: string[] = Object.entries(
+  import.meta.glob('../../db/drizzle/*.sql', { query: '?raw', import: 'default', eager: true }),
+)
+  .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  .map(([, sql]) => sql as string);
 
 /** PGliteに渡すデータ置き場の名前(IndexedDB上は `/pglite/<この名前>` になる)。 */
 const DATA_DIR = 'katahimo-demo';
@@ -41,7 +52,8 @@ export async function openDemoDatabase(): Promise<DemoDatabase> {
   );
   const isFresh = rows[0]?.exists !== true;
   if (isFresh) {
-    await client.exec(INIT_SCHEMA_SQL);
+    if (MIGRATION_SQL.length === 0) throw new Error('マイグレーションSQLを読み込めませんでした');
+    for (const sql of MIGRATION_SQL) await client.exec(sql);
   }
 
   // PGliteは接続を1本しか持たないため、トランザクションを直列化しないと

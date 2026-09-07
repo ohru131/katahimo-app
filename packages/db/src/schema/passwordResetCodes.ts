@@ -7,10 +7,10 @@ import { tenants } from './tenants';
 /**
  * パスワード再設定の認証コード。GAS版 Auth.js の `PasswordResets` シートに対応。
  *
- * GAS版はコードを平文でシートに書いていたが、ここではセッショントークンと同じく
- * SHA-256ハッシュだけを保存する(DBダンプが漏れても、有効期限内のコードをそのまま
- * 使えないようにするため)。6桁しかないので総当たりは現実的な脅威で、
- * `failedAttempts` で試行回数を数えて上限で無効化する。
+ * GAS版はコードを平文でシートに書いていたが、ここではサーバー側のペッパーを鍵にした
+ * HMACの検証子だけを保存する(DBダンプが漏れても、そこから有効なコードを復元できない
+ * ようにするため)。6桁しかないので総当たりは現実的な脅威で、`failedAttempts` で
+ * 試行回数を数えて上限で無効化する。
  */
 export const passwordResetCodes = pgTable(
   'password_reset_codes',
@@ -20,8 +20,15 @@ export const passwordResetCodes = pgTable(
       .notNull()
       .references(() => tenants.id),
     staffId: uuid().notNull(),
-    /** 6桁コードのSHA-256(hex)。生のコードはメール本文にしか存在しない。 */
-    codeHash: text().notNull(),
+    /**
+     * 6桁コードの検証子。サーバー側のペッパー(DBには置かない)を鍵にした
+     * HMAC-SHA256(hex)。生のコードはメール本文にしか存在しない。
+     *
+     * 単純なSHA-256にしないのは、6桁=100万通りしかなく、DBが漏れた時点で
+     * オフラインで全パターンを試せば有効なコードを復元できてしまうため。
+     * ペッパーが無いと計算できない形にしておく。
+     */
+    codeVerifier: text().notNull(),
     expiresAt: timestamp({ withTimezone: true }).notNull(),
     /** 使用済みになった時刻。一度使ったコードは再利用できない。 */
     consumedAt: timestamp({ withTimezone: true }),

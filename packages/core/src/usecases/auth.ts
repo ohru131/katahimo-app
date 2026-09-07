@@ -231,6 +231,15 @@ export interface RegisterStaffInput {
   email: string;
   password: string;
   isAdmin: boolean;
+  /**
+   * 初回ログイン時にパスワード変更を強制するか。既定はfalse。
+   *
+   * この関数は呼び出し側がパスワードを決めて渡す経路(シード・テスト・移行)なので、
+   * 「本人しか知らないパスワードに変えさせる」必要のある状態ではない。
+   * 管理者がスタッフを追加する経路は初期パスワードをサーバー側で生成するため、
+   * usecases/staff.ts の createStaffWithInitialPassword が明示的にtrueで作る。
+   */
+  mustChangePassword?: boolean;
 }
 
 /**
@@ -247,6 +256,8 @@ export async function registerStaff(deps: AuthDeps, input: RegisterStaffInput) {
     email: normalizeEmailForIndex(input.email),
     passwordHash,
     isAdmin: input.isAdmin,
+    // スキーマの既定値に任せず明示する(認証の状態を暗黙に決めさせない)。
+    mustChangePassword: input.mustChangePassword ?? false,
   };
   return deps.staff.create(record);
 }
@@ -273,6 +284,8 @@ export async function importLegacyStaff(deps: AuthDeps, input: ImportLegacyStaff
     passwordHash: null,
     legacyPasswordHash: input.legacyPasswordHash,
     isAdmin: input.isAdmin,
+    // 移行元のパスワードをそのまま使えるようにするのが目的なので、変更は強制しない。
+    mustChangePassword: false,
   };
   return deps.staff.create(record);
 }

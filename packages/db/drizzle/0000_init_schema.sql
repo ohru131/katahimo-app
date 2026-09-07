@@ -12,6 +12,7 @@ CREATE TABLE "accident_reports" (
 );
 --> statement-breakpoint
 ALTER TABLE "accident_reports" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "accident_reports" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app_settings" (
 	"tenant_id" uuid PRIMARY KEY NOT NULL,
 	"gemini_api_key_ciphertext" text,
@@ -26,6 +27,7 @@ CREATE TABLE "app_settings" (
 );
 --> statement-breakpoint
 ALTER TABLE "app_settings" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "app_settings" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "attendance_days" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -38,6 +40,7 @@ CREATE TABLE "attendance_days" (
 );
 --> statement-breakpoint
 ALTER TABLE "attendance_days" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "attendance_days" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "customers" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -84,6 +87,7 @@ CREATE TABLE "customers" (
 );
 --> statement-breakpoint
 ALTER TABLE "customers" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "customers" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "daily_reports" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -99,6 +103,7 @@ CREATE TABLE "daily_reports" (
 );
 --> statement-breakpoint
 ALTER TABLE "daily_reports" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "daily_reports" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "family_members" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -114,6 +119,7 @@ CREATE TABLE "family_members" (
 );
 --> statement-breakpoint
 ALTER TABLE "family_members" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "family_members" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "outbox_jobs" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -128,18 +134,7 @@ CREATE TABLE "outbox_jobs" (
 );
 --> statement-breakpoint
 ALTER TABLE "outbox_jobs" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-CREATE TABLE "password_reset_codes" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"tenant_id" uuid NOT NULL,
-	"staff_id" uuid NOT NULL,
-	"code_hash" text NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL,
-	"consumed_at" timestamp with time zone,
-	"failed_attempts" integer DEFAULT 0 NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-ALTER TABLE "password_reset_codes" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "outbox_jobs" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "receipts" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -159,6 +154,7 @@ CREATE TABLE "receipts" (
 );
 --> statement-breakpoint
 ALTER TABLE "receipts" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "receipts" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "sessions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -169,6 +165,7 @@ CREATE TABLE "sessions" (
 );
 --> statement-breakpoint
 ALTER TABLE "sessions" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "sessions" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "staff" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -179,13 +176,13 @@ CREATE TABLE "staff" (
 	"legacy_password_hash" text,
 	"is_admin" boolean DEFAULT false NOT NULL,
 	"retirement_date" date,
-	"must_change_password" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "staff_tenant_id_uk" UNIQUE("tenant_id","id")
 );
 --> statement-breakpoint
 ALTER TABLE "staff" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "staff" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "tenant_keys" (
 	"tenant_id" uuid PRIMARY KEY NOT NULL,
 	"dek_version" integer DEFAULT 1 NOT NULL,
@@ -197,6 +194,7 @@ CREATE TABLE "tenant_keys" (
 );
 --> statement-breakpoint
 ALTER TABLE "tenant_keys" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "tenant_keys" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "tenants" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" text NOT NULL,
@@ -217,8 +215,6 @@ ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_tenant_customer_fk" FO
 ALTER TABLE "family_members" ADD CONSTRAINT "family_members_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "family_members" ADD CONSTRAINT "family_members_tenant_customer_fk" FOREIGN KEY ("tenant_id","customer_id") REFERENCES "public"."customers"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "outbox_jobs" ADD CONSTRAINT "outbox_jobs_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "password_reset_codes" ADD CONSTRAINT "password_reset_codes_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "password_reset_codes" ADD CONSTRAINT "password_reset_codes_tenant_staff_fk" FOREIGN KEY ("tenant_id","staff_id") REFERENCES "public"."staff"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "receipts" ADD CONSTRAINT "receipts_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "receipts" ADD CONSTRAINT "receipts_tenant_staff_fk" FOREIGN KEY ("tenant_id","staff_id") REFERENCES "public"."staff"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "receipts" ADD CONSTRAINT "receipts_tenant_customer_fk" FOREIGN KEY ("tenant_id","customer_id") REFERENCES "public"."customers"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -231,7 +227,6 @@ CREATE UNIQUE INDEX "customers_tenant_external_idx" ON "customers" USING btree (
 CREATE INDEX "customers_tenant_family_name_idx" ON "customers" USING btree ("tenant_id","family_name");--> statement-breakpoint
 CREATE UNIQUE INDEX "outbox_jobs_tenant_idempotency_key_idx" ON "outbox_jobs" USING btree ("tenant_id","idempotency_key");--> statement-breakpoint
 CREATE INDEX "outbox_jobs_tenant_status_created_at_idx" ON "outbox_jobs" USING btree ("tenant_id","status","created_at");--> statement-breakpoint
-CREATE INDEX "password_reset_codes_staff_idx" ON "password_reset_codes" USING btree ("tenant_id","staff_id","created_at");--> statement-breakpoint
 CREATE INDEX "receipts_tenant_dedupe_blind_index_idx" ON "receipts" USING btree ("tenant_id","dedupe_blind_index");--> statement-breakpoint
 CREATE UNIQUE INDEX "sessions_token_hash_idx" ON "sessions" USING btree ("token_hash");--> statement-breakpoint
 CREATE UNIQUE INDEX "staff_tenant_email_idx" ON "staff" USING btree ("tenant_id","email");--> statement-breakpoint
@@ -243,7 +238,6 @@ CREATE POLICY "tenant_isolation" ON "customers" AS PERMISSIVE FOR ALL TO public 
 CREATE POLICY "tenant_isolation" ON "daily_reports" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "family_members" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "outbox_jobs" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
-CREATE POLICY "tenant_isolation" ON "password_reset_codes" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "receipts" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "sessions" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "staff" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint

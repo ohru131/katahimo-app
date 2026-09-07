@@ -150,16 +150,31 @@ export async function fetchStaffForAdmin(): Promise<StaffAdminView[]> {
   return body.staff;
 }
 
-/** スタッフを登録する。初期パスワードは本人のメールへ自動送信される。 */
-export async function createStaff(input: { name: string; email: string; isAdmin: boolean }): Promise<void> {
+/**
+ * スタッフを登録する。初期パスワードは本人のメールへ自動送信される。
+ *
+ * 戻り値の `mailDelivered` がfalseのときは、アカウントは作成できたがメールを
+ * 送れていない。呼び出し側は「初期パスワードを再発行してください」と案内する
+ * (作成自体は済んでいるので、やり直すとメールアドレス重複で弾かれる)。
+ */
+export async function createStaff(input: {
+  name: string;
+  email: string;
+  isAdmin: boolean;
+}): Promise<{ mailDelivered: boolean }> {
   const res = await fetch('/api/staff/admin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(input),
   });
-  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  const body = await parseJsonOrThrow<{
+    success: boolean;
+    mailDelivered?: boolean;
+    message?: string;
+  }>(res);
   if (!body.success) throw new Error(body.message || 'スタッフの登録に失敗しました');
+  return { mailDelivered: body.mailDelivered !== false };
 }
 
 /** 氏名・管理者権限・退職日の更新。渡した項目だけが変わる。 */
@@ -178,13 +193,18 @@ export async function updateStaff(
 }
 
 /** 初期パスワードを再発行してメールで送り直す。既存のログインは切れる。 */
-export async function resetStaffPassword(staffId: string): Promise<void> {
+export async function resetStaffPassword(staffId: string): Promise<{ mailDelivered: boolean }> {
   const res = await fetch(`/api/staff/admin/${staffId}/reset-password`, {
     method: 'POST',
     credentials: 'include',
   });
-  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  const body = await parseJsonOrThrow<{
+    success: boolean;
+    mailDelivered?: boolean;
+    message?: string;
+  }>(res);
   if (!body.success) throw new Error(body.message || '初期パスワードの再発行に失敗しました');
+  return { mailDelivered: body.mailDelivered !== false };
 }
 
 export interface ActiveStaffView {

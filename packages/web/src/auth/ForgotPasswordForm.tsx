@@ -181,7 +181,20 @@ export function ForgotPasswordForm({
 
         <button
           type="button"
-          onClick={codeSent ? () => setCodeSent(false) : onCancel}
+          // メールアドレスを入れ直すときは、前のコードと「コードが違います」の表示も消す。
+          // 残しておくと、コードを再送した直後に古いエラーが出たままになる。
+          onClick={
+            codeSent
+              ? () => {
+                  setCodeSent(false);
+                  setCode('');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                  setMismatch(false);
+                  resetMutation.reset();
+                }
+              : onCancel
+          }
           className="w-full text-sm text-gray-500 hover:text-gray-700 underline"
         >
           {codeSent ? 'メールアドレスを入力し直す' : 'ログイン画面に戻る'}

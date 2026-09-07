@@ -33,8 +33,14 @@ export function StaffAdminModal({ selfStaffId, onClose }: { selfStaffId: string;
 
   const createMutation = useMutation({
     mutationFn: () => createStaff({ name, email, isAdmin }),
-    onSuccess: () => {
-      setNotice(`${email} に初期パスワードを送信しました`);
+    onSuccess: (result) => {
+      // メールを送れなくてもアカウントは作成済み。ここで「失敗」と見せると、
+      // やり直してメールアドレス重複で弾かれるだけになる。
+      setNotice(
+        result.mailDelivered
+          ? `${email} に初期パスワードを送信しました`
+          : `${email} を登録しましたが、メールを送信できませんでした。下の「初期パスワードを再発行」でもう一度お試しください。`,
+      );
       setName('');
       setEmail('');
       setIsAdmin(false);
@@ -53,8 +59,12 @@ export function StaffAdminModal({ selfStaffId, onClose }: { selfStaffId: string;
 
   const resetMutation = useMutation({
     mutationFn: (staff: StaffAdminView) => resetStaffPassword(staff.id),
-    onSuccess: (_result, staff) => {
-      setNotice(`${staff.email} に新しい初期パスワードを送信しました`);
+    onSuccess: (result, staff) => {
+      setNotice(
+        result.mailDelivered
+          ? `${staff.email} に新しい初期パスワードを送信しました`
+          : `${staff.email} の初期パスワードを再発行しましたが、メールを送信できませんでした。もう一度お試しください。`,
+      );
       refresh();
     },
   });

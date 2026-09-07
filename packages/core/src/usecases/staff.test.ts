@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDeps } from './auth';
 import { changePassword, login, registerStaff } from './auth';
+import { requestPasswordReset, resetPasswordWithCode } from './passwordReset';
 import type { StaffAdminDeps, StaffDeps } from './staff';
 import {
   createStaffWithInitialPassword,
@@ -133,6 +134,10 @@ describe('管理者によるスタッフ管理', () => {
     adminStaffId = admin.id;
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   /** 初期パスワードはメール本文にしか出ないので、そこから取り出す。 */
   function initialPasswordFromMail(): string {
     const match = mailer.last?.body.match(/初期パスワード: (\S+)/);
@@ -256,7 +261,10 @@ describe('管理者によるスタッフ管理', () => {
       password: first,
     });
 
-    expect(await resetStaffPasswordByAdmin(deps, tenantId, created.staffId)).toEqual({ ok: true });
+    expect(await resetStaffPasswordByAdmin(deps, tenantId, created.staffId)).toEqual({
+      ok: true,
+      mailDelivered: true,
+    });
     const second = initialPasswordFromMail();
     expect(second).not.toBe(first);
     expect((deps.sessions as FakeSessionRepository).countForStaff(tenantId, created.staffId)).toBe(0);
@@ -267,6 +275,63 @@ describe('管理者によるスタッフ管理', () => {
       password: first,
     });
     expect(old.ok).toBe(false);
+  });
+
+  it('メールを送れなくてもアカウントは作られ、再発行を促せる状態になる', async () => {
+    // 送信に失敗したのに「作成失敗」と返すと、やり直してもメールアドレス重複で
+    // 弾かれるだけで、誰も知らないパスワードのアカウントが残ってしまう。
+    const failing = new FakeMailer();
+    failing.failNextForTest();
+    // 送信失敗はサーバーログに出す設計なので、テスト出力を汚さないよう黙らせる。
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await createStaffWithInitialPassword({ ...deps, mailer: failing }, tenantId, {
+      name: '不通 八郎',
+      email: 'hachiro@example.com',
+      isAdmin: false,
+    });
+    expect(result).toMatchObject({ ok: true, mailDelivered: false });
+
+    // 同じメールアドレスで作り直せない=アカウントは残っている。
+    expect(
+      await createStaffWithInitialPassword(deps, tenantId, {
+        name: '不通 八郎',
+        email: 'hachiro@example.com',
+        isAdmin: false,
+      }),
+    ).toEqual({ ok: false, reason: 'email_taken' });
+
+    // 再発行でメールを送り直せる。
+    if (!result.ok) throw new Error('前提の登録に失敗しました');
+    expect(await resetStaffPasswordByAdmin(deps, tenantId, result.staffId)).toEqual({
+      ok: true,
+      mailDelivered: true,
+    });
+  });
+
+  it('初期パスワードの再発行で、未使用の再設定コードも無効化する', async () => {
+    // 残っていると、再発行した初期パスワードを古いコードで上書きできてしまう。
+    const created = await createStaffWithInitialPassword(deps, tenantId, {
+      name: 'コード 九郎',
+      email: 'kuro@example.com',
+      isAdmin: false,
+    });
+    if (!created.ok) throw new Error('前提の登録に失敗しました');
+
+    const resetDeps = { ...deps, ...authDeps, mailer, resetCodePepper: 'test-pepper' };
+    await requestPasswordReset(resetDeps, { tenantSlug: 'admin-tenant', email: 'kuro@example.com' });
+    const code = mailer.last?.body.match(/認証コード: (\d{6})/)?.[1];
+    if (!code) throw new Error('認証コードがメール本文にありません');
+
+    await resetStaffPasswordByAdmin(deps, tenantId, created.staffId);
+
+    expect(
+      await resetPasswordWithCode(resetDeps, {
+        tenantSlug: 'admin-tenant',
+        email: 'kuro@example.com',
+        code,
+        newPassword: 'code-should-not-work',
+      }),
+    ).toEqual({ ok: false, reason: 'invalid_code' });
   });
 
   it('一覧は在籍中を先に、同じ区分では氏名順に並べる', async () => {
