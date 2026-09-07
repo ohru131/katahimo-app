@@ -1,5 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { computeLegacyHash, isAcceptablePassword, normalizeEmailForIndex } from '../domain';
+import {
+  computeLegacyHash,
+  isAcceptablePassword,
+  MIN_PASSWORD_LENGTH,
+  normalizeEmailForIndex,
+} from '../domain';
 import type {
   NewSessionInput,
   NewStaffInput,
@@ -261,6 +266,13 @@ export interface RegisterStaffInput {
  * なるため、表記ゆれで一致しなくならないよう正規化して保存する)。
  */
 export async function registerStaff(deps: AuthDeps, input: RegisterStaffInput) {
+  // 呼び出し側がパスワードを決める経路なので、最低文字数はここで担保する。
+  // 通さないと、シードで作る最初の管理者(=最も価値の高いアカウント)だけが
+  // ポリシーの外に残る。利用者の入力ではなく設定・実装の誤りなので例外にする。
+  if (!isAcceptablePassword(input.password)) {
+    throw new Error(`パスワードは${MIN_PASSWORD_LENGTH}文字以上にしてください`);
+  }
+
   const passwordHash = await deps.passwordHasher.hash(input.password);
 
   const record: NewStaffInput = {

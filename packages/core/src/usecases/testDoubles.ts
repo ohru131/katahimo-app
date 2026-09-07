@@ -168,10 +168,13 @@ export class FakeStaffRepository implements StaffRepositoryPort {
     if (!record) return 'stale';
     if (input.expect && record.passwordHash !== input.expect.passwordHash) return 'stale';
 
+    // 本物は1トランザクションなので、セッション破棄が失敗すれば書き換えも巻き戻る。
+    // ダブルでも同じ観測結果になるよう、破棄を先に済ませてから書き換える。
+    if (input.revokeSessions) await this.sessions?.deleteAllForStaff(input.tenantId, input.staffId);
+
     record.passwordHash = input.passwordHash;
     record.legacyPasswordHash = null;
     record.mustChangePassword = input.mustChangePassword;
-    if (input.revokeSessions) await this.sessions?.deleteAllForStaff(input.tenantId, input.staffId);
     return 'applied';
   }
 

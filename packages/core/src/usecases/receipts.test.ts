@@ -42,7 +42,7 @@ describe('uploadReceipts', () => {
       tenantId,
       name: '佐藤 花子',
       email: 'hanako@example.com',
-      password: 'pw',
+      password: 'seed-password',
       isAdmin: false,
     });
     staffId = createdStaff.id;

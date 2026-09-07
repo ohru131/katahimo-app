@@ -43,14 +43,14 @@ describe('listActiveStaffForAdmin', () => {
       tenantId,
       name: '鈴木 三郎',
       email: 'suzuki@example.com',
-      password: 'pw',
+      password: 'seed-password',
       isAdmin: false,
     });
     await registerStaff(authDeps, {
       tenantId,
       name: '佐藤 花子',
       email: 'sato@example.com',
-      password: 'pw',
+      password: 'seed-password',
       isAdmin: true,
     });
 
@@ -63,14 +63,14 @@ describe('listActiveStaffForAdmin', () => {
       tenantId,
       name: '田中 一郎',
       email: 'tanaka@example.com',
-      password: 'pw',
+      password: 'seed-password',
       isAdmin: false,
     });
     const retired = await registerStaff(authDeps, {
       tenantId,
       name: '高橋 四郎',
       email: 'takahashi@example.com',
-      password: 'pw',
+      password: 'seed-password',
       isAdmin: false,
     });
     staffRepo.setRetirementDateForTest(tenantId, retired.id, '2020-01-01');
@@ -84,14 +84,14 @@ describe('listActiveStaffForAdmin', () => {
       tenantId: 'tenant-1',
       name: '佐藤 花子',
       email: 'sato@example.com',
-      password: 'pw',
+      password: 'seed-password',
       isAdmin: false,
     });
     await registerStaff(authDeps, {
       tenantId: 'tenant-2',
       name: '鈴木 三郎',
       email: 'suzuki@example.com',
-      password: 'pw',
+      password: 'seed-password',
       isAdmin: false,
     });
 
