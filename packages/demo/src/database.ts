@@ -12,14 +12,82 @@ import { drizzle } from 'drizzle-orm/pglite';
  * ここを書き足し忘れてデモだけ古いスキーマで動く、という壊れ方を防ぐため。
  * `0000_`, `0001_`, … と連番が先頭に付く命名なので、ファイル名順=適用順になる。
  */
-const MIGRATION_SQL: string[] = Object.entries(
+const MIGRATIONS: DemoMigration[] = Object.entries(
   import.meta.glob('../../db/drizzle/*.sql', { query: '?raw', import: 'default', eager: true }),
 )
   .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-  .map(([, sql]) => sql as string);
+  .map(([path, sql]) => ({ tag: path.replace(/^.*\//, '').replace(/\.sql$/, ''), sql: sql as string }));
 
 /** PGliteに渡すデータ置き場の名前(IndexedDB上は `/pglite/<この名前>` になる)。 */
 const DATA_DIR = 'katahimo-demo';
+
+/**
+ * 適用済みマイグレーションの台帳。本番の `migrate()` が `drizzle.__drizzle_migrations`
+ * でやっていることを、デモでも持つ。
+ *
+ * これが無いと、既にデモを開いたことがある訪問者のIndexedDBには古いスキーマだけが
+ * 残り、あとから追加したマイグレーションが永久に当たらない(スキーマ作成を
+ * 「テーブルが1つも無いとき」だけの処理にしていると、そうなる)。
+ */
+const LEDGER_TABLE = 'demo_applied_migrations';
+
+async function relationExists(client: PGlite, qualifiedName: string): Promise<boolean> {
+  const { rows } = await client.query<{ exists: boolean }>('SELECT to_regclass($1) IS NOT NULL AS exists;', [
+    qualifiedName,
+  ]);
+  return rows[0]?.exists === true;
+}
+
+/** マイグレーション1件。`tag`はファイル名から拡張子を除いたもの(台帳のキー)。 */
+export interface DemoMigration {
+  tag: string;
+  sql: string;
+}
+
+/**
+ * 未適用のマイグレーションを順に当てる。戻り値は「スキーマを新規に作ったか」
+ * (=シード投入が必要か)。
+ *
+ * `migrations` を引数で受け取るのは、`import.meta.glob` に依存せずテストから
+ * 実際のPostgres(PGlite)に対して当てられるようにするため。
+ */
+export async function applyPendingMigrations(
+  client: PGlite,
+  migrations: DemoMigration[],
+): Promise<boolean> {
+  if (migrations.length === 0) throw new Error('マイグレーションSQLを読み込めませんでした');
+
+  const schemaExists = await relationExists(client, 'public.tenants');
+  const ledgerExists = await relationExists(client, `public.${LEDGER_TABLE}`);
+
+  let isFresh = !schemaExists;
+  if (schemaExists && !ledgerExists) {
+    // 台帳を持たない時代に作られたDB。どこまで当たっているか判断できないので作り直す。
+    // 消えるのは架空のシードデータと訪問者がデモで入力した内容だけなので、
+    // 古いスキーマのまま認証経路が落ちる状態で使わせるより、こちらのほうが良い。
+    console.warn('[demo] スキーマが古い形式のため、デモデータを作り直します。');
+    await client.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+    isFresh = true;
+  }
+
+  await client.exec(
+    `CREATE TABLE IF NOT EXISTS ${LEDGER_TABLE} (
+       tag text PRIMARY KEY,
+       applied_at timestamptz NOT NULL DEFAULT now()
+     );`,
+  );
+
+  const { rows } = await client.query<{ tag: string }>(`SELECT tag FROM ${LEDGER_TABLE};`);
+  const applied = new Set(rows.map((row) => row.tag));
+
+  for (const migration of migrations) {
+    if (applied.has(migration.tag)) continue;
+    await client.exec(migration.sql);
+    await client.query(`INSERT INTO ${LEDGER_TABLE} (tag) VALUES ($1);`, [migration.tag]);
+  }
+
+  return isFresh;
+}
 
 export interface DemoDatabase {
   db: Database;
@@ -47,14 +115,7 @@ export async function openDemoDatabase(): Promise<DemoDatabase> {
   // PGliteのセッションは起動ごとに作り直されるため、毎回設定する必要がある。
   await client.exec("SET TIME ZONE 'Asia/Tokyo';");
 
-  const { rows } = await client.query<{ exists: boolean }>(
-    "SELECT to_regclass('public.tenants') IS NOT NULL AS exists;",
-  );
-  const isFresh = rows[0]?.exists !== true;
-  if (isFresh) {
-    if (MIGRATION_SQL.length === 0) throw new Error('マイグレーションSQLを読み込めませんでした');
-    for (const sql of MIGRATION_SQL) await client.exec(sql);
-  }
+  const isFresh = await applyPendingMigrations(client, MIGRATIONS);
 
   // PGliteは接続を1本しか持たないため、トランザクションを直列化しないと
   // usecasesのPromise.all(...)でBEGINが入れ子になって壊れる。
@@ -111,6 +172,8 @@ export async function flushDemoDatabase(client: PGlite): Promise<void> {
  * スキーマ作成とシード投入がやり直される。
  */
 export async function destroyDemoDatabase(client: PGlite): Promise<void> {
+  // 適用済みマイグレーションの台帳も public スキーマにあるので一緒に消える。
+  // 次回起動時は台帳が空になり、全マイグレーションが当たり直す。
   await client.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   // 消したことを確実にIndexedDBへ反映してから閉じる(relaxedDurabilityのため)。
   await flushDemoDatabase(client);

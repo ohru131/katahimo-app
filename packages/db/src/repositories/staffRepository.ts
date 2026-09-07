@@ -1,13 +1,15 @@
 import type {
   ActiveStaffRecord,
   NewStaffInput,
+  ReplacePasswordInput,
+  ReplacePasswordResult,
   StaffAdminRecord,
   StaffRecord,
   StaffRepositoryPort,
   UpdateStaffInput,
 } from '@katahimo/core/ports';
-import { eq } from 'drizzle-orm';
-import { staff } from '../schema';
+import { and, eq } from 'drizzle-orm';
+import { sessions, staff } from '../schema';
 import type { Database } from '../tenantScope';
 import { withTenant } from '../tenantScope';
 
@@ -72,17 +74,37 @@ export class DrizzleStaffRepository implements StaffRepositoryPort {
     });
   }
 
-  async setPassword(
-    tenantId: string,
-    staffId: string,
-    passwordHash: string,
-    mustChangePassword: boolean,
-  ): Promise<void> {
-    await withTenant(this.db, tenantId, async (tx) => {
+  async replacePassword(input: ReplacePasswordInput): Promise<ReplacePasswordResult> {
+    return withTenant(this.db, input.tenantId, async (tx) => {
+      // 先に行ロックを取る。認証済みの書き込み同士が混ざって「後から来たほうが勝つ」
+      // 状態になるのを防ぐ(管理者の再発行と、コードによる再設定が同時に走る場合)。
+      const rows = await tx
+        .select({ passwordHash: staff.passwordHash })
+        .from(staff)
+        .where(eq(staff.id, input.staffId))
+        .for('update')
+        .limit(1);
+      const row = rows[0];
+      if (!row) return 'stale';
+      if (input.expect && row.passwordHash !== input.expect.passwordHash) return 'stale';
+
       await tx
         .update(staff)
-        .set({ passwordHash, legacyPasswordHash: null, mustChangePassword, updatedAt: new Date() })
-        .where(eq(staff.id, staffId));
+        .set({
+          passwordHash: input.passwordHash,
+          legacyPasswordHash: null,
+          mustChangePassword: input.mustChangePassword,
+          updatedAt: new Date(),
+        })
+        .where(eq(staff.id, input.staffId));
+
+      if (input.revokeSessions) {
+        await tx
+          .delete(sessions)
+          .where(and(eq(sessions.tenantId, input.tenantId), eq(sessions.staffId, input.staffId)));
+      }
+
+      return 'applied';
     });
   }
 

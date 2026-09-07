@@ -219,7 +219,20 @@ export async function changePassword(
 
   const newHash = await deps.passwordHasher.hash(newPassword);
   // 本人による変更なので、初期パスワードの強制変更フラグはここで下ろす。
-  await deps.staff.setPassword(tenantId, staffId, newHash, false);
+  // 他のセッションは破棄しない(現在のパスワードを言えている以上、乗っ取りを想定する場面ではない)。
+  // `expect` は、現在のパスワードを確認してからこの書き込みまでの間に別経路が
+  // 差し替えていた場合に、こちらを捨てるための条件。
+  const replaced = await deps.staff.replacePassword({
+    tenantId,
+    staffId,
+    passwordHash: newHash,
+    mustChangePassword: false,
+    revokeSessions: false,
+    expect: { passwordHash: staffRecord.passwordHash },
+  });
+  // 確認した時点のパスワードが既に別のものに変わっている。利用者が入力した
+  // 「現在のパスワード」はもう現在のものではないので、そう伝える。
+  if (replaced === 'stale') return { ok: false, reason: 'incorrect_current_password' };
   // 再設定コードを発行したまま自力で思い出した場合に、そのコードを残さない。
   await deps.passwordResetCodes.consumeAllForStaff(tenantId, staffId);
   return { ok: true };

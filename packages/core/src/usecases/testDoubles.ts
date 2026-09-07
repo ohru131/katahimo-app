@@ -41,6 +41,8 @@ import type {
   PasswordResetCodeRepositoryPort,
   ReceiptRecord,
   ReceiptRepositoryPort,
+  ReplacePasswordInput,
+  ReplacePasswordResult,
   SessionRecord,
   SessionRepositoryPort,
   StaffAdminRecord,
@@ -117,11 +119,24 @@ export class FakeStaffRepository implements StaffRepositoryPort {
   private readonly rows: StaffRecord[] = [];
   private seq = 0;
 
+  /**
+   * 本物の実装は`replacePassword`のなかでセッションも消す(同じトランザクション)。
+   * その挙動をテストからも観測できるよう、セッション側の置き換えを受け取る。
+   */
+  constructor(private readonly sessions?: Pick<SessionRepositoryPort, 'deleteAllForStaff'>) {}
+
+  /**
+   * 本物のリポジトリはDBから読んだ値のコピーを返す。ここで内部の行をそのまま返すと
+   * 呼び出し側が持つ`StaffRecord`が後の更新で勝手に変わり、「読んだ時点の値」を前提に
+   * した処理(楽観ロックなど)のテストが通ってしまう。必ずコピーを返す。
+   */
   async findByEmail(tenantId: string, email: string): Promise<StaffRecord | null> {
-    return this.rows.find((s) => s.tenantId === tenantId && s.email === email) ?? null;
+    const record = this.rows.find((s) => s.tenantId === tenantId && s.email === email);
+    return record ? { ...record } : null;
   }
   async findById(tenantId: string, staffId: string): Promise<StaffRecord | null> {
-    return this.rows.find((s) => s.tenantId === tenantId && s.id === staffId) ?? null;
+    const record = this.rows.find((s) => s.tenantId === tenantId && s.id === staffId);
+    return record ? { ...record } : null;
   }
   async create(input: NewStaffInput): Promise<StaffRecord> {
     const record: StaffRecord = {
@@ -137,7 +152,7 @@ export class FakeStaffRepository implements StaffRepositoryPort {
       mustChangePassword: input.mustChangePassword ?? false,
     };
     this.rows.push(record);
-    return record;
+    return { ...record };
   }
 
   async upgradeToArgon2Hash(tenantId: string, staffId: string, passwordHash: string): Promise<void> {
@@ -148,18 +163,16 @@ export class FakeStaffRepository implements StaffRepositoryPort {
     }
   }
 
-  async setPassword(
-    tenantId: string,
-    staffId: string,
-    passwordHash: string,
-    mustChangePassword: boolean,
-  ): Promise<void> {
-    const record = this.rows.find((s) => s.tenantId === tenantId && s.id === staffId);
-    if (record) {
-      record.passwordHash = passwordHash;
-      record.legacyPasswordHash = null;
-      record.mustChangePassword = mustChangePassword;
-    }
+  async replacePassword(input: ReplacePasswordInput): Promise<ReplacePasswordResult> {
+    const record = this.rows.find((s) => s.tenantId === input.tenantId && s.id === input.staffId);
+    if (!record) return 'stale';
+    if (input.expect && record.passwordHash !== input.expect.passwordHash) return 'stale';
+
+    record.passwordHash = input.passwordHash;
+    record.legacyPasswordHash = null;
+    record.mustChangePassword = input.mustChangePassword;
+    if (input.revokeSessions) await this.sessions?.deleteAllForStaff(input.tenantId, input.staffId);
+    return 'applied';
   }
 
   async listAll(tenantId: string): Promise<StaffAdminRecord[]> {

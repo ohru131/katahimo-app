@@ -26,12 +26,13 @@ describe('listActiveStaffForAdmin', () => {
   const tenantId = 'tenant-1';
 
   beforeEach(() => {
-    staffRepo = new FakeStaffRepository();
+    const sessions = new FakeSessionRepository();
+    staffRepo = new FakeStaffRepository(sessions);
     deps = { staff: staffRepo };
     authDeps = {
       tenants: new FakeTenantRepository(),
       staff: staffRepo,
-      sessions: new FakeSessionRepository(),
+      sessions,
       passwordResetCodes: new FakePasswordResetCodeRepository(),
       passwordHasher: new FakePasswordHasherPort(),
     };
@@ -114,10 +115,12 @@ describe('管理者によるスタッフ管理', () => {
 
   beforeEach(async () => {
     mailer = new FakeMailer();
+    const sessions = new FakeSessionRepository();
     authDeps = {
       tenants: new FakeTenantRepository(),
-      staff: new FakeStaffRepository(),
-      sessions: new FakeSessionRepository(),
+      // 本物の実装はパスワードの差し替えと同じトランザクションでセッションを消す。
+      staff: new FakeStaffRepository(sessions),
+      sessions,
       passwordResetCodes: new FakePasswordResetCodeRepository(),
       passwordHasher: new FakePasswordHasherPort(),
     };

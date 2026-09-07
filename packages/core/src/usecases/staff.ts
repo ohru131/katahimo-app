@@ -147,8 +147,17 @@ export async function resetStaffPasswordByAdmin(
   if (!staffRecord) return { ok: false, reason: 'not_found' };
 
   const initialPassword = generateInitialPassword((size) => randomBytes(size));
-  await deps.staff.setPassword(tenantId, staffId, await deps.passwordHasher.hash(initialPassword), true);
-  await deps.sessions.deleteAllForStaff(tenantId, staffId);
+  // 差し替えとセッション破棄を1トランザクションで行う。端末を紛失したスタッフの
+  // 締め出しに使う導線なので、破棄だけ失敗して古いログインが残ると意味がない。
+  // `expect` は渡さない。管理者による再発行は、同時に走る再設定より優先させる。
+  const replaced = await deps.staff.replacePassword({
+    tenantId,
+    staffId,
+    passwordHash: await deps.passwordHasher.hash(initialPassword),
+    mustChangePassword: true,
+    revokeSessions: true,
+  });
+  if (replaced === 'stale') return { ok: false, reason: 'not_found' };
   // 未使用の再設定コードが残っていると、再発行した初期パスワードをそれで上書きできてしまう。
   await deps.passwordResetCodes.consumeAllForStaff(tenantId, staffId);
 

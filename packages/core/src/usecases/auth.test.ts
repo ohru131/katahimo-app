@@ -204,10 +204,11 @@ describe('changePassword', () => {
   let staffId: string;
 
   beforeEach(async () => {
+    const sessions = new FakeSessionRepository();
     deps = {
       tenants: new FakeTenantRepository(),
-      staff: new FakeStaffRepository(),
-      sessions: new FakeSessionRepository(),
+      staff: new FakeStaffRepository(sessions),
+      sessions,
       passwordResetCodes: new FakePasswordResetCodeRepository(),
       passwordHasher: new FakePasswordHasherPort(),
     };
@@ -221,6 +222,30 @@ describe('changePassword', () => {
       isAdmin: false,
     });
     staffId = created.id;
+  });
+
+  /** 現在のパスワードを確認してから書き込むまでの間に差し替えられた場合。 */
+  it('確認したパスワードが書き込み前に変わっていれば拒否する', async () => {
+    const hasher = deps.passwordHasher;
+    const hash = hasher.hash.bind(hasher);
+    // 新しいパスワードをハッシュしている間に、別経路が差し替えた状況を再現する。
+    hasher.hash = async (password: string) => {
+      const result = await hash(password);
+      await deps.staff.replacePassword({
+        tenantId,
+        staffId,
+        passwordHash: 'HASH:admin-reissued',
+        mustChangePassword: true,
+        revokeSessions: true,
+      });
+      return result;
+    };
+
+    const result = await changePassword(deps, tenantId, staffId, 'correct-horse', 'new-password');
+    expect(result).toEqual({ ok: false, reason: 'incorrect_current_password' });
+
+    const record = await deps.staff.findById(tenantId, staffId);
+    expect(record?.passwordHash).toBe('HASH:admin-reissued');
   });
 
   it('現在のパスワードが正しければ変更できる', async () => {
