@@ -68,6 +68,36 @@ export interface UpdateStaffInput {
   retirementDate?: string | null;
 }
 
+/**
+ * パスワードの差し替え。認証(現在のパスワード確認・再設定コードの消費)が済んだ
+ * あとの書き込みを1トランザクションにまとめるための入力。
+ */
+export interface ReplacePasswordInput {
+  tenantId: string;
+  staffId: string;
+  passwordHash: string;
+  mustChangePassword: boolean;
+  /**
+   * このスタッフの既存セッションを同じトランザクションで破棄するか。
+   *
+   * 別トランザクションに分けると、破棄だけ失敗したときに「パスワードは変わったのに
+   * 攻撃者のログインは生きている」状態が残る。再設定の目的そのものが失われるため、
+   * 破棄できないなら書き換えも巻き戻す。
+   */
+  revokeSessions: boolean;
+  /**
+   * 楽観ロック。渡した場合、現在のpassword_hashがこの値と一致するときだけ書き換える。
+   *
+   * 認証してから書き込むまでの間に別経路がパスワードを差し替えていたら、こちらの
+   * 書き込みを捨てるために使う(管理者による初期パスワードの再発行を、生きている
+   * 再設定コードで巻き戻せてしまうのを防ぐ)。
+   */
+  expect?: { passwordHash: string | null };
+}
+
+/** `stale` は`expect`と一致せず(または対象の行が無く)何も書かなかったことを表す。 */
+export type ReplacePasswordResult = 'applied' | 'stale';
+
 export interface StaffRepositoryPort {
   /** emailは呼び出し側が`normalizeEmailForIndex`で正規化済みの値を渡す前提(ログイン時の検索キー)。 */
   findByEmail(tenantId: string, email: string): Promise<StaffRecord | null>;
@@ -82,12 +112,7 @@ export interface StaffRepositoryPort {
    * パスワードを設定し直す(本人による変更・コードによる再設定・管理者による初期パスワード発行)。
    * レガシーハッシュは常にクリアし、`mustChangePassword` は呼び出し側が明示的に指定する。
    */
-  setPassword(
-    tenantId: string,
-    staffId: string,
-    passwordHash: string,
-    mustChangePassword: boolean,
-  ): Promise<void>;
+  replacePassword(input: ReplacePasswordInput): Promise<ReplacePasswordResult>;
   /** 管理者のスタッフ管理画面用。退職済みも含む全件を返す。 */
   listAll(tenantId: string): Promise<StaffAdminRecord[]>;
   update(tenantId: string, staffId: string, input: UpdateStaffInput): Promise<void>;

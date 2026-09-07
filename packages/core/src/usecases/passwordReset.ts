@@ -3,7 +3,6 @@ import { generateResetCode, isAcceptablePassword, normalizeEmailForIndex } from 
 import type { MailerPort } from '../ports/mailer';
 import type {
   PasswordResetCodeRepositoryPort,
-  SessionRepositoryPort,
   StaffRecord,
   StaffRepositoryPort,
   TenantRepositoryPort,
@@ -24,7 +23,6 @@ const MAX_FAILED_ATTEMPTS = 5;
 export interface PasswordResetDeps {
   tenants: TenantRepositoryPort;
   staff: StaffRepositoryPort;
-  sessions: SessionRepositoryPort;
   passwordResetCodes: PasswordResetCodeRepositoryPort;
   passwordHasher: PasswordHasherPort;
   mailer: MailerPort;
@@ -141,8 +139,23 @@ export async function resetPasswordWithCode(
   if (outcome !== 'consumed') return { ok: false, reason: 'invalid_code' };
 
   const passwordHash = await deps.passwordHasher.hash(input.newPassword);
-  await deps.staff.setPassword(tenant.id, staffRecord.id, passwordHash, false);
-  await deps.sessions.deleteAllForStaff(tenant.id, staffRecord.id);
+  // パスワードの差し替えとセッション破棄を1トランザクションで行う。分けると、破棄だけ
+  // 失敗したときに「パスワードは変わったのに乗っ取り側のログインは生きている」状態が残る。
+  //
+  // `expect` は、コードを消費してからこの書き込みまでの間に別経路(管理者による初期
+  // パスワードの再発行など)がパスワードを差し替えていたら、こちらを捨てるための条件。
+  // 端末を紛失したスタッフの締め出しを、生きている再設定コードで巻き戻せてしまうため。
+  const replaced = await deps.staff.replacePassword({
+    tenantId: tenant.id,
+    staffId: staffRecord.id,
+    passwordHash,
+    mustChangePassword: false,
+    revokeSessions: true,
+    expect: { passwordHash: staffRecord.passwordHash },
+  });
+  // 差し替えを捨てた場合、コードは既に使用済みになっている。利用者から見ると
+  // 「コードが無効」なので、案内も再発行からやり直してもらう形に揃える。
+  if (replaced === 'stale') return { ok: false, reason: 'invalid_code' };
 
   return { ok: true };
 }

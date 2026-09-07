@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { AuthDeps } from './auth';
 import { login, registerStaff } from './auth';
 import type { PasswordResetDeps } from './passwordReset';
 import { computeResetCodeVerifier, requestPasswordReset, resetPasswordWithCode } from './passwordReset';
@@ -29,33 +30,35 @@ function codeFromMail(mailer: FakeMailer): string {
  */
 describe('パスワード再設定', () => {
   let deps: PasswordResetDeps;
+  /** login/registerStaff用。再設定側はセッションを直接触らないので依存に持たない。 */
+  let authDeps: AuthDeps;
+  let sessions: FakeSessionRepository;
   let mailer: FakeMailer;
   let tenantId: string;
   let staffId: string;
 
   beforeEach(async () => {
     mailer = new FakeMailer();
+    sessions = new FakeSessionRepository();
     deps = {
       tenants: new FakeTenantRepository(),
-      staff: new FakeStaffRepository(),
-      sessions: new FakeSessionRepository(),
+      // 本物の実装と同じく、パスワードの差し替えと同じ操作でセッションを消させる。
+      staff: new FakeStaffRepository(sessions),
       passwordResetCodes: new FakePasswordResetCodeRepository(),
       passwordHasher: new FakePasswordHasherPort(),
       mailer,
       resetCodePepper: 'test-pepper',
     };
+    authDeps = { ...deps, sessions };
     const tenant = await deps.tenants.create({ name: 'テスト法人', slug: TENANT_SLUG });
     tenantId = tenant.id;
-    const created = await registerStaff(
-      { ...deps },
-      {
-        tenantId,
-        name: '佐藤 花子',
-        email: EMAIL,
-        password: 'original-password',
-        isAdmin: false,
-      },
-    );
+    const created = await registerStaff(authDeps, {
+      tenantId,
+      name: '佐藤 花子',
+      email: EMAIL,
+      password: 'original-password',
+      isAdmin: false,
+    });
     staffId = created.id;
   });
 
@@ -75,7 +78,7 @@ describe('パスワード再設定', () => {
     });
     expect(result).toEqual({ ok: true });
 
-    const after = await login({ ...deps }, { tenantSlug: TENANT_SLUG, email: EMAIL, password: NEW_PASSWORD });
+    const after = await login(authDeps, { tenantSlug: TENANT_SLUG, email: EMAIL, password: NEW_PASSWORD });
     expect(after.ok).toBe(true);
   });
 
@@ -196,10 +199,52 @@ describe('パスワード再設定', () => {
     expect(result).toEqual({ ok: false, reason: 'weak_password' });
   });
 
+  /**
+   * コードの消費とパスワードの書き込みを1つのトランザクションにまとめられない
+   * (別リポジトリなので)ため、書き込み側に楽観ロックを置いている。その効きを固定する。
+   *
+   * ここが抜けると、端末を紛失したスタッフを管理者が締め出しても、生きている
+   * 再設定コードを持っている側があとから自分のパスワードへ巻き戻せてしまう。
+   */
+  it('コードを使ってから書き込むまでに別経路がパスワードを差し替えていたら、再設定を捨てる', async () => {
+    await requestPasswordReset(deps, { tenantSlug: TENANT_SLUG, email: EMAIL });
+    const code = codeFromMail(mailer);
+
+    // コードの消費直後に管理者が初期パスワードを再発行した、という割り込みを再現する。
+    const codes = deps.passwordResetCodes;
+    const consume = codes.verifyAndConsume.bind(codes);
+    codes.verifyAndConsume = async (input) => {
+      const outcome = await consume(input);
+      await deps.staff.replacePassword({
+        tenantId,
+        staffId,
+        passwordHash: 'HASH:admin-reissued',
+        mustChangePassword: true,
+        revokeSessions: true,
+      });
+      return outcome;
+    };
+
+    const result = await resetPasswordWithCode(deps, {
+      tenantSlug: TENANT_SLUG,
+      email: EMAIL,
+      code,
+      newPassword: NEW_PASSWORD,
+    });
+    expect(result).toEqual({ ok: false, reason: 'invalid_code' });
+
+    // 管理者が発行したほうが残る(再設定に上書きされていない)。
+    const record = await deps.staff.findById(tenantId, staffId);
+    expect(record?.passwordHash).toBe('HASH:admin-reissued');
+    expect(record?.mustChangePassword).toBe(true);
+
+    const after = await login(authDeps, { tenantSlug: TENANT_SLUG, email: EMAIL, password: NEW_PASSWORD });
+    expect(after.ok).toBe(false);
+  });
+
   it('再設定すると既存のログインを全て切る', async () => {
-    const sessions = deps.sessions as FakeSessionRepository;
-    await login({ ...deps }, { tenantSlug: TENANT_SLUG, email: EMAIL, password: 'original-password' });
-    await login({ ...deps }, { tenantSlug: TENANT_SLUG, email: EMAIL, password: 'original-password' });
+    await login(authDeps, { tenantSlug: TENANT_SLUG, email: EMAIL, password: 'original-password' });
+    await login(authDeps, { tenantSlug: TENANT_SLUG, email: EMAIL, password: 'original-password' });
     expect(sessions.countForStaff(tenantId, staffId)).toBe(2);
 
     await requestPasswordReset(deps, { tenantSlug: TENANT_SLUG, email: EMAIL });
