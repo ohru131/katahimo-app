@@ -23,9 +23,22 @@ process.on('SIGINT', () => {
 async function pollOnce(): Promise<void> {
   const tenants = await container.tenants.listAll();
   for (const tenant of tenants) {
-    const { processed, failed } = await runOutboxBatch(container, tenant.id, env.OUTBOX_BATCH_SIZE);
+    const { processed, failed, deadLettered } = await runOutboxBatch(
+      container,
+      tenant.id,
+      env.OUTBOX_BATCH_SIZE,
+    );
     if (processed > 0 || failed > 0) {
-      console.log(`[mirror] tenant=${tenant.slug} processed=${processed} failed=${failed}`);
+      console.log(
+        `[mirror] tenant=${tenant.slug} processed=${processed} failed=${failed} deadLettered=${deadLettered}`,
+      );
+    }
+    // 再試行の上限に達した分は自動では復旧しない。運用が気づけるよう、通常のログとは
+    // 別にerrorで出す(Cloud Loggingのseverityで拾えるようにするため)。
+    if (deadLettered > 0) {
+      console.error(
+        `[mirror] tenant=${tenant.slug} 再試行の上限に達したミラージョブが${deadLettered}件あります(status=failed)。手当てが必要です。`,
+      );
     }
   }
 }

@@ -6,7 +6,12 @@ import {
   getAttendanceScheduleEvents,
   saveAttendanceDay,
 } from './attendance';
-import { FakeAttendanceDayRepository, FakeCryptoPort, FakeOutboxRepository } from './testDoubles';
+import {
+  FakeAttendanceDayRepository,
+  FakeCryptoPort,
+  FakeOutboxRepository,
+  FakeUnitOfWork,
+} from './testDoubles';
 
 describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
   let deps: AttendanceDeps;
@@ -14,10 +19,13 @@ describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
   const staffId = 'staff-1';
 
   beforeEach(() => {
+    const attendanceDays = new FakeAttendanceDayRepository();
+    const mirror = new FakeOutboxRepository();
     deps = {
-      attendanceDays: new FakeAttendanceDayRepository(),
+      attendanceDays,
       crypto: new FakeCryptoPort(),
-      mirror: new FakeOutboxRepository(),
+      mirror,
+      unitOfWork: new FakeUnitOfWork([attendanceDays, mirror]),
     };
   });
 

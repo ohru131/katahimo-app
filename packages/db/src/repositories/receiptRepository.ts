@@ -3,6 +3,7 @@ import type {
   NewReceiptInput,
   ReceiptRecord,
   ReceiptRepositoryPort,
+  TransactionScope,
 } from '@katahimo/core/ports';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { receipts } from '../schema';
@@ -27,36 +28,42 @@ function toRecord(row: ReceiptRow): ReceiptRecord {
     handoffText: encField(row.handoffTextCiphertext, row.handoffTextKeyVersion),
     fileKey: row.fileKey,
     contentType: row.contentType,
+    createdAt: row.createdAt,
   };
 }
 
 export class DrizzleReceiptRepository implements ReceiptRepositoryPort {
   constructor(private readonly db: Database) {}
 
-  async create(input: NewReceiptInput): Promise<ReceiptRecord> {
-    return withTenant(this.db, input.tenantId, async (tx) => {
-      const rows = await tx
-        .insert(receipts)
-        .values({
-          tenantId: input.tenantId,
-          staffId: input.staffId,
-          customerId: input.customerId,
-          receiptTimestamp: input.receiptTimestamp,
-          dedupeBlindIndex: input.dedupeBlindIndex,
-          amountCiphertext: input.amount?.ciphertext ?? null,
-          amountKeyVersion: input.amount?.keyVersion ?? null,
-          storeNameCiphertext: input.storeName?.ciphertext ?? null,
-          storeNameKeyVersion: input.storeName?.keyVersion ?? null,
-          handoffTextCiphertext: input.handoffText?.ciphertext ?? null,
-          handoffTextKeyVersion: input.handoffText?.keyVersion ?? null,
-          fileKey: input.fileKey,
-          contentType: input.contentType,
-        })
-        .returning();
-      const row = rows[0];
-      if (!row) throw new Error('領収書の保存に失敗しました');
-      return toRecord(row);
-    });
+  async create(input: NewReceiptInput, scope?: TransactionScope): Promise<ReceiptRecord> {
+    return withTenant(
+      this.db,
+      input.tenantId,
+      async (tx) => {
+        const rows = await tx
+          .insert(receipts)
+          .values({
+            tenantId: input.tenantId,
+            staffId: input.staffId,
+            customerId: input.customerId,
+            receiptTimestamp: input.receiptTimestamp,
+            dedupeBlindIndex: input.dedupeBlindIndex,
+            amountCiphertext: input.amount?.ciphertext ?? null,
+            amountKeyVersion: input.amount?.keyVersion ?? null,
+            storeNameCiphertext: input.storeName?.ciphertext ?? null,
+            storeNameKeyVersion: input.storeName?.keyVersion ?? null,
+            handoffTextCiphertext: input.handoffText?.ciphertext ?? null,
+            handoffTextKeyVersion: input.handoffText?.keyVersion ?? null,
+            fileKey: input.fileKey,
+            contentType: input.contentType,
+          })
+          .returning();
+        const row = rows[0];
+        if (!row) throw new Error('領収書の保存に失敗しました');
+        return toRecord(row);
+      },
+      scope,
+    );
   }
 
   async findById(tenantId: string, id: string): Promise<ReceiptRecord | null> {

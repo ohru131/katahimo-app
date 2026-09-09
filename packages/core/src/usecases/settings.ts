@@ -11,17 +11,40 @@ const DEFAULT_GEMINI_REPORT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_GEMINI_OCR_MODEL = 'gemini-2.5-flash-lite';
 
 export interface AdminSettingsView {
-  geminiApiKey: string;
+  /** Gemini APIキーが保存済みかどうか。平文は画面に返さない(書き込み専用の扱い)。 */
+  hasGeminiApiKey: boolean;
+  /**
+   * 「どのキーが入っているか」を管理者が見分けるためだけの末尾数文字。
+   * 短いキーで大部分が見えてしまうのを避けるため、条件を満たさない場合はnullにする。
+   */
+  geminiApiKeyPreview: string | null;
   geminiReportModel: string;
   geminiOcrModel: string;
   gchatReportWebhookUrl: string;
   gchatReceiptWebhookUrl: string;
 }
 
+/** マスク表示で見せる末尾の文字数。 */
+const GEMINI_API_KEY_PREVIEW_LENGTH = 4;
 /**
- * 管理者設定画面用の現在値を復号して返す。GAS版のgetGeminiApiKeyForAdmin/
+ * この長さ未満のキーは末尾4文字でもキー全体の1/3以上が露出してしまうため、
+ * プレビュー自体を出さない(実際のGemini APIキーは39文字程度なので通常は影響しない)。
+ */
+const GEMINI_API_KEY_PREVIEW_MIN_LENGTH = GEMINI_API_KEY_PREVIEW_LENGTH * 3;
+
+/** 平文キーから画面表示用の末尾数文字を作る。マスクとして意味をなさない長さならnull。 */
+function buildApiKeyPreview(apiKey: string): string | null {
+  if (apiKey.length < GEMINI_API_KEY_PREVIEW_MIN_LENGTH) return null;
+  return apiKey.slice(-GEMINI_API_KEY_PREVIEW_LENGTH);
+}
+
+/**
+ * 管理者設定画面用の現在値を返す。GAS版のgetGeminiApiKeyForAdmin/
  * getGeminiModelSettingsForAdmin/getGoogleChatWebhookSettingsForAdminをまとめたもの
  * (呼び出し元のAPIルートで管理者権限チェックを行う)。
+ *
+ * Gemini APIキーだけは平文を返さない。管理者アカウントが1つ乗っ取られただけで
+ * テナントのAPIキーが平文で流出するのを防ぐため、書き込み専用+マスク表示にしている。
  */
 export async function getAdminSettings(deps: SettingsDeps, tenantId: string): Promise<AdminSettingsView> {
   const row = await deps.appSettings.find(tenantId);
@@ -35,12 +58,25 @@ export async function getAdminSettings(deps: SettingsDeps, tenantId: string): Pr
       : Promise.resolve(''),
   ]);
   return {
-    geminiApiKey,
+    hasGeminiApiKey: !!geminiApiKey,
+    geminiApiKeyPreview: geminiApiKey ? buildApiKeyPreview(geminiApiKey) : null,
     geminiReportModel: row?.geminiReportModel || DEFAULT_GEMINI_REPORT_MODEL,
     geminiOcrModel: row?.geminiOcrModel || DEFAULT_GEMINI_OCR_MODEL,
     gchatReportWebhookUrl,
     gchatReceiptWebhookUrl,
   };
+}
+
+/**
+ * 保存済みのGemini APIキーを復号して返す(未設定なら空文字)。
+ * サーバー内部でGemini APIを呼ぶためだけのもので、**戻り値をレスポンスに含めてはいけない**。
+ * 画面から平文キーが読めなくなった代わりに、モデル一覧取得のようなサーバー側の処理が
+ * 保存済みキーを使えるようにするために用意している。
+ */
+export async function resolveGeminiApiKey(deps: SettingsDeps, tenantId: string): Promise<string> {
+  const row = await deps.appSettings.find(tenantId);
+  if (!row?.geminiApiKey) return '';
+  return deps.crypto.decrypt(tenantId, row.geminiApiKey);
 }
 
 export type SaveSettingsResult = { ok: true; message: string } | { ok: false; message: string };

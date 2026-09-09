@@ -1,4 +1,9 @@
-import type { AttendanceDayRecord, AttendanceDayRepositoryPort, EncryptedField } from '@katahimo/core/ports';
+import type {
+  AttendanceDayRecord,
+  AttendanceDayRepositoryPort,
+  EncryptedField,
+  TransactionScope,
+} from '@katahimo/core/ports';
 import { and, eq, gte, lt, lte } from 'drizzle-orm';
 import { attendanceDays } from '../schema';
 import type { Database } from '../tenantScope';
@@ -13,6 +18,7 @@ function toRecord(row: AttendanceDayRow): AttendanceDayRecord {
     staffId: row.staffId,
     businessDate: row.businessDate,
     rowData: { ciphertext: row.rowDataCiphertext, keyVersion: row.rowDataKeyVersion },
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -60,30 +66,36 @@ export class DrizzleAttendanceDayRepository implements AttendanceDayRepositoryPo
     staffId: string,
     businessDate: string,
     rowData: EncryptedField,
+    scope?: TransactionScope,
   ): Promise<AttendanceDayRecord> {
-    return withTenant(this.db, tenantId, async (tx) => {
-      const rows = await tx
-        .insert(attendanceDays)
-        .values({
-          tenantId,
-          staffId,
-          businessDate,
-          rowDataCiphertext: rowData.ciphertext,
-          rowDataKeyVersion: rowData.keyVersion,
-        })
-        .onConflictDoUpdate({
-          target: [attendanceDays.tenantId, attendanceDays.staffId, attendanceDays.businessDate],
-          set: {
+    return withTenant(
+      this.db,
+      tenantId,
+      async (tx) => {
+        const rows = await tx
+          .insert(attendanceDays)
+          .values({
+            tenantId,
+            staffId,
+            businessDate,
             rowDataCiphertext: rowData.ciphertext,
             rowDataKeyVersion: rowData.keyVersion,
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
-      const row = rows[0];
-      if (!row) throw new Error('勤怠データの保存に失敗しました');
-      return toRecord(row);
-    });
+          })
+          .onConflictDoUpdate({
+            target: [attendanceDays.tenantId, attendanceDays.staffId, attendanceDays.businessDate],
+            set: {
+              rowDataCiphertext: rowData.ciphertext,
+              rowDataKeyVersion: rowData.keyVersion,
+              updatedAt: new Date(),
+            },
+          })
+          .returning();
+        const row = rows[0];
+        if (!row) throw new Error('勤怠データの保存に失敗しました');
+        return toRecord(row);
+      },
+      scope,
+    );
   }
 
   async listByStaffAndMonth(

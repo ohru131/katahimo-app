@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { SettingsDeps } from './settings';
 import {
   getAdminSettings,
+  resolveGeminiApiKey,
   saveGeminiApiKey,
   saveGeminiModelSettings,
   saveGoogleChatWebhookSettings,
@@ -16,10 +17,11 @@ describe('管理者設定(app_settings)', () => {
     deps = { appSettings: new FakeAppSettingsRepository(), crypto: new FakeCryptoPort() };
   });
 
-  it('未設定時はGemini APIキー/Webhook URLが空文字、モデルはデフォルト値を返す', async () => {
+  it('未設定時はGemini APIキーが未設定扱い/Webhook URLが空文字、モデルはデフォルト値を返す', async () => {
     const settings = await getAdminSettings(deps, tenantId);
     expect(settings).toEqual({
-      geminiApiKey: '',
+      hasGeminiApiKey: false,
+      geminiApiKeyPreview: null,
       geminiReportModel: 'gemini-2.5-flash',
       geminiOcrModel: 'gemini-2.5-flash-lite',
       gchatReportWebhookUrl: '',
@@ -27,19 +29,46 @@ describe('管理者設定(app_settings)', () => {
     });
   });
 
-  it('Gemini APIキーを保存すると復号して取得できる', async () => {
-    const result = await saveGeminiApiKey(deps, tenantId, 'sk-test-key');
+  it('Gemini APIキーを保存しても平文は返らず、設定済みフラグと末尾4文字だけが返る', async () => {
+    const apiKey = 'AIzaSy-secret-value-1234';
+    const result = await saveGeminiApiKey(deps, tenantId, apiKey);
     expect(result.ok).toBe(true);
+
     const settings = await getAdminSettings(deps, tenantId);
-    expect(settings.geminiApiKey).toBe('sk-test-key');
+    expect(settings.hasGeminiApiKey).toBe(true);
+    expect(settings.geminiApiKeyPreview).toBe('1234');
+    // レスポンスのどこにも平文(や暗号文)が混ざっていないことを、JSON全体で固定する。
+    const serialized = JSON.stringify(settings);
+    expect(serialized).not.toContain(apiKey);
+    expect(serialized).not.toContain('AIzaSy');
+    expect(serialized).not.toContain('ENC:');
+    // 末尾4文字より手前の部分が1文字も漏れていないこと。
+    expect(serialized).not.toContain(apiKey.slice(0, -4));
+    expect(Object.keys(settings)).not.toContain('geminiApiKey');
+  });
+
+  it('短すぎるキーはマスクの意味がないため末尾を出さない(設定済みだけを返す)', async () => {
+    await saveGeminiApiKey(deps, tenantId, 'short123');
+    const settings = await getAdminSettings(deps, tenantId);
+    expect(settings.hasGeminiApiKey).toBe(true);
+    expect(settings.geminiApiKeyPreview).toBeNull();
+    expect(JSON.stringify(settings)).not.toContain('short123');
   });
 
   it('空文字でのGemini APIキー保存は拒否され、既存の値が保持される', async () => {
-    await saveGeminiApiKey(deps, tenantId, 'sk-existing');
+    await saveGeminiApiKey(deps, tenantId, 'sk-existing-key-abcd');
     const result = await saveGeminiApiKey(deps, tenantId, '   ');
     expect(result.ok).toBe(false);
     const settings = await getAdminSettings(deps, tenantId);
-    expect(settings.geminiApiKey).toBe('sk-existing');
+    expect(settings.hasGeminiApiKey).toBe(true);
+    expect(settings.geminiApiKeyPreview).toBe('abcd');
+    expect(await resolveGeminiApiKey(deps, tenantId)).toBe('sk-existing-key-abcd');
+  });
+
+  it('resolveGeminiApiKeyはサーバー内部用に平文を返す(未設定なら空文字)', async () => {
+    expect(await resolveGeminiApiKey(deps, tenantId)).toBe('');
+    await saveGeminiApiKey(deps, tenantId, 'sk-server-side-key');
+    expect(await resolveGeminiApiKey(deps, tenantId)).toBe('sk-server-side-key');
   });
 
   it('モデル設定を保存できる。どちらか一方でも空なら拒否される', async () => {
@@ -76,9 +105,11 @@ describe('管理者設定(app_settings)', () => {
   });
 
   it('別テナントの設定は互いに影響しない', async () => {
-    await saveGeminiApiKey(deps, 'tenant-1', 'key-1');
-    await saveGeminiApiKey(deps, 'tenant-2', 'key-2');
-    expect((await getAdminSettings(deps, 'tenant-1')).geminiApiKey).toBe('key-1');
-    expect((await getAdminSettings(deps, 'tenant-2')).geminiApiKey).toBe('key-2');
+    await saveGeminiApiKey(deps, 'tenant-1', 'tenant-1-api-key-aaaa');
+    await saveGeminiApiKey(deps, 'tenant-2', 'tenant-2-api-key-bbbb');
+    expect((await getAdminSettings(deps, 'tenant-1')).geminiApiKeyPreview).toBe('aaaa');
+    expect((await getAdminSettings(deps, 'tenant-2')).geminiApiKeyPreview).toBe('bbbb');
+    expect(await resolveGeminiApiKey(deps, 'tenant-1')).toBe('tenant-1-api-key-aaaa');
+    expect(await resolveGeminiApiKey(deps, 'tenant-2')).toBe('tenant-2-api-key-bbbb');
   });
 });

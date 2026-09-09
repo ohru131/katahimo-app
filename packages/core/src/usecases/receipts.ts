@@ -7,6 +7,7 @@ import {
   normalizeText,
   parseJstTimestampString,
 } from '../domain';
+import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
 import type { BlindIndexPort, CryptoPort } from '../ports/crypto';
 import type { MirrorPort } from '../ports/mirror';
 import type { NotifierPort } from '../ports/notifier';
@@ -16,6 +17,7 @@ import type {
   StaffRepositoryPort,
 } from '../ports/repositories';
 import type { StoragePort } from '../ports/storage';
+import type { UnitOfWorkPort } from '../ports/unitOfWork';
 
 export interface ReceiptDeps {
   receipts: ReceiptRepositoryPort;
@@ -27,6 +29,8 @@ export interface ReceiptDeps {
   notifier: NotifierPort;
   /** 領収書ログシート+Driveフォルダへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
   mirror: MirrorPort;
+  /** 領収書レコードの作成とミラー要求のenqueueを、1つのトランザクションにまとめるために使う。 */
+  unitOfWork: UnitOfWorkPort;
 }
 
 export interface ReceiptImageInput {
@@ -151,24 +155,40 @@ export async function uploadReceipts(
         : Promise.resolve(null),
     ]);
 
-    const receiptRecord = await deps.receipts.create({
-      tenantId,
-      staffId: input.staffId,
-      customerId: input.customerId,
-      receiptTimestamp: parseJstTimestampString(p.timestamp),
-      dedupeBlindIndex: p.dedupeBlindIndex,
-      amount: amountEnc,
-      storeName: storeNameEnc,
-      handoffText: handoffEnc,
-      fileKey,
-      contentType: decoded.contentType,
-    });
-    await deps.mirror.enqueue({
-      tenantId,
-      kind: 'receipt',
-      targetId: receiptRecord.id,
-      idempotencyKey: randomUUID(),
-    });
+    // 行の作成とミラー要求のenqueueは1つのトランザクションで確定させる(片方だけ確定すると
+    // 領収書がスプレッドシートに永久に現れない)。画像はオブジェクトストレージ側なので
+    // トランザクションには入らない。ロールバックした場合は置いたファイルを消して揃える。
+    try {
+      await deps.unitOfWork.run(tenantId, async (scope) => {
+        const receiptRecord = await deps.receipts.create(
+          {
+            tenantId,
+            staffId: input.staffId,
+            customerId: input.customerId,
+            receiptTimestamp: parseJstTimestampString(p.timestamp),
+            dedupeBlindIndex: p.dedupeBlindIndex,
+            amount: amountEnc,
+            storeName: storeNameEnc,
+            handoffText: handoffEnc,
+            fileKey,
+            contentType: decoded.contentType,
+          },
+          scope,
+        );
+        await deps.mirror.enqueue(
+          {
+            tenantId,
+            kind: 'receipt',
+            targetId: receiptRecord.id,
+            idempotencyKey: buildMirrorIdempotencyKey('receipt', receiptRecord.id, receiptRecord.createdAt),
+          },
+          scope,
+        );
+      });
+    } catch (error) {
+      await deps.storage.delete(fileKey).catch(() => undefined);
+      throw error;
+    }
 
     // バッチ内の後続画像が同じ内容なら重複として検出できるよう、今回登録した分もexistingに加える。
     if (p.dedupeBlindIndex) existing.add(p.dedupeBlindIndex);

@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * ワーカー(outboxミラー・夜間同期・CSV取込ポーリング)用の環境変数検証。
  * APIサーバー(packages/api/src/env.ts)と役割が異なるため、必要な変数だけを最小限持つ
- * (SESSION_SECRET・LOCAL_DEV_MASTER_KEY等、認証・ブラインドインデックス関連はワーカーには不要)。
+ * (LOCAL_DEV_MASTER_KEY等、認証・ブラインドインデックス関連はワーカーには不要)。
  */
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   date,
+  integer,
   pgPolicy,
   pgTable,
   text,
@@ -56,6 +57,13 @@ export const staff = pgTable(
      * 本人がパスワードを変更した時点でfalseに戻る。
      */
     mustChangePassword: boolean().notNull().default(false),
+    /**
+     * 連続でのログイン失敗回数。上限に達するとlockedUntilを立てて一時的に受け付けなくする
+     * (packages/core/src/domain/auth/loginThrottle.ts)。成功したら0に戻す。
+     */
+    failedLoginAttempts: integer().notNull().default(0),
+    /** この時刻まではログインを受け付けない。恒久ロックにはしない(締め出しによる業務停止を避けるため)。 */
+    lockedUntil: timestamp({ withTimezone: true }),
 
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

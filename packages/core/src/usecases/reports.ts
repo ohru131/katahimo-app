@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import {
   buildAccidentHistoryInternalText,
   buildAccidentReportNotificationText,
@@ -6,6 +5,7 @@ import {
   formatJstDateTimeShort,
   parseJstDateTime,
 } from '../domain';
+import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
 import type { AccidentReportContent, DailyReportContent } from '../domain/reports/types';
 import type { CryptoPort } from '../ports/crypto';
 import type { MirrorPort } from '../ports/mirror';
@@ -16,6 +16,7 @@ import type {
   DailyReportRepositoryPort,
   StaffRepositoryPort,
 } from '../ports/repositories';
+import type { UnitOfWorkPort } from '../ports/unitOfWork';
 
 export interface ReportDeps {
   dailyReports: DailyReportRepositoryPort;
@@ -26,6 +27,8 @@ export interface ReportDeps {
   notifier: NotifierPort;
   /** GAS版「日報」「事故報告」シートへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
   mirror: MirrorPort;
+  /** 日報/事故報告の保存とミラー要求のenqueueを、1つのトランザクションにまとめるために使う。 */
+  unitOfWork: UnitOfWorkPort;
 }
 
 async function resolveNames(
@@ -99,16 +102,24 @@ export async function saveDailyReport(
     content: encryptedContent,
   };
 
-  const record = input.reportId
-    ? ((await deps.dailyReports.update(tenantId, input.reportId, newInput)) ??
-      (await deps.dailyReports.create(newInput)))
-    : await deps.dailyReports.create(newInput);
-
-  await deps.mirror.enqueue({
-    tenantId,
-    kind: 'daily_report',
-    targetId: record.id,
-    idempotencyKey: randomUUID(),
+  // 保存とミラー要求のenqueueは1つのトランザクションで確定させる。分けると、日報は
+  // 保存できたのにスプレッドシートへ永久に反映されない行が、誰にも気づかれずに残る。
+  // 暗号化(tenant_keysの読み取り)や通知は、この外側で済ませておくこと(unitOfWork.ts参照)。
+  const record = await deps.unitOfWork.run(tenantId, async (scope) => {
+    const saved = input.reportId
+      ? ((await deps.dailyReports.update(tenantId, input.reportId, newInput, scope)) ??
+        (await deps.dailyReports.create(newInput, scope)))
+      : await deps.dailyReports.create(newInput, scope);
+    await deps.mirror.enqueue(
+      {
+        tenantId,
+        kind: 'daily_report',
+        targetId: saved.id,
+        idempotencyKey: buildMirrorIdempotencyKey('daily_report', saved.id, saved.updatedAt),
+      },
+      scope,
+    );
+    return saved;
   });
 
   const { staffName, customerName } = await resolveNames(deps, tenantId, input.staffId, input.customerId);
@@ -194,16 +205,21 @@ export async function saveAccidentReport(
     content: encryptedContent,
   };
 
-  const record = input.reportId
-    ? ((await deps.accidentReports.update(tenantId, input.reportId, newInput)) ??
-      (await deps.accidentReports.create(newInput)))
-    : await deps.accidentReports.create(newInput);
-
-  await deps.mirror.enqueue({
-    tenantId,
-    kind: 'accident_report',
-    targetId: record.id,
-    idempotencyKey: randomUUID(),
+  const record = await deps.unitOfWork.run(tenantId, async (scope) => {
+    const saved = input.reportId
+      ? ((await deps.accidentReports.update(tenantId, input.reportId, newInput, scope)) ??
+        (await deps.accidentReports.create(newInput, scope)))
+      : await deps.accidentReports.create(newInput, scope);
+    await deps.mirror.enqueue(
+      {
+        tenantId,
+        kind: 'accident_report',
+        targetId: saved.id,
+        idempotencyKey: buildMirrorIdempotencyKey('accident_report', saved.id, saved.updatedAt),
+      },
+      scope,
+    );
+    return saved;
   });
 
   const { staffName, customerName } = await resolveNames(deps, tenantId, input.staffId, input.customerId);

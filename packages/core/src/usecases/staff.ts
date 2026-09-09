@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { generateInitialPassword, normalizeEmailForIndex } from '../domain';
+import type { AuditLogPort } from '../ports/audit';
 import type { MailerPort } from '../ports/mailer';
 import type {
   PasswordResetCodeRepositoryPort,
@@ -20,6 +21,8 @@ export interface StaffAdminDeps extends StaffDeps {
   passwordResetCodes: PasswordResetCodeRepositoryPort;
   passwordHasher: PasswordHasherPort;
   mailer: MailerPort;
+  /** 管理者によるスタッフ操作(作成・変更・パスワード再発行)の監査ログ。 */
+  audit?: AuditLogPort;
 }
 
 export interface ActiveStaffView {
@@ -103,6 +106,8 @@ export async function createStaffWithInitialPassword(
   deps: StaffAdminDeps,
   tenantId: string,
   input: CreateStaffInput,
+  /** 操作した管理者。監査ログにのみ使う(呼び出し側のAPIルートがセッションから渡す)。 */
+  actorStaffId?: string,
 ): Promise<CreateStaffResult> {
   const name = input.name.trim();
   const email = normalizeEmailForIndex(input.email);
@@ -123,6 +128,13 @@ export async function createStaffWithInitialPassword(
   });
 
   // 作成済みなので、メール送信の失敗を作成の失敗として返さない(上の mailDelivered 参照)。
+  deps.audit?.record({
+    type: 'staff_created',
+    tenantId,
+    actorStaffId,
+    targetStaffId: created.id,
+    context: input.isAdmin ? 'admin' : 'staff',
+  });
   const mailDelivered = await sendInitialPasswordMail(deps, { name, email, initialPassword });
   return { ok: true, staffId: created.id, mailDelivered };
 }
@@ -142,6 +154,8 @@ export async function resetStaffPasswordByAdmin(
   deps: StaffAdminDeps,
   tenantId: string,
   staffId: string,
+  /** 操作した管理者。監査ログにのみ使う(呼び出し側のAPIルートがセッションから渡す)。 */
+  actorStaffId?: string,
 ): Promise<ResetStaffPasswordResult> {
   const staffRecord = await deps.staff.findById(tenantId, staffId);
   if (!staffRecord) return { ok: false, reason: 'not_found' };
@@ -161,6 +175,12 @@ export async function resetStaffPasswordByAdmin(
   // 未使用の再設定コードが残っていると、再発行した初期パスワードをそれで上書きできてしまう。
   await deps.passwordResetCodes.consumeAllForStaff(tenantId, staffId);
 
+  deps.audit?.record({
+    type: 'staff_password_reset_by_admin',
+    tenantId,
+    actorStaffId,
+    targetStaffId: staffId,
+  });
   const mailDelivered = await sendInitialPasswordMail(deps, {
     name: staffRecord.name,
     email: staffRecord.email,
@@ -204,6 +224,12 @@ export async function updateStaffByAdmin(
   if (input.retirementDate !== undefined && isRetiredOn(input.retirementDate, new Date())) {
     await deps.sessions.deleteAllForStaff(tenantId, staffId);
   }
+  deps.audit?.record({
+    type: 'staff_updated',
+    tenantId,
+    actorStaffId,
+    targetStaffId: staffId,
+  });
   return { ok: true };
 }
 

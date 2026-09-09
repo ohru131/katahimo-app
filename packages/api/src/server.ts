@@ -10,6 +10,7 @@ loadDotenv();
 const env = loadEnv();
 const db = getDatabase();
 const app = createApp(createContainer(env, db), {
+  allowedOrigins: env.ALLOWED_ORIGINS,
   secureCookies: env.NODE_ENV === 'production',
   async pingDataStore() {
     const rows = await db.execute<{ now: string }>(sql`SELECT now() AS now`);

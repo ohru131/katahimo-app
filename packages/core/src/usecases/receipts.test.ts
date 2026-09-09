@@ -18,6 +18,7 @@ import {
   FakeStaffRepository,
   FakeStoragePort,
   FakeTenantRepository,
+  FakeUnitOfWork,
 } from './testDoubles';
 
 describe('uploadReceipts', () => {
@@ -55,8 +56,10 @@ describe('uploadReceipts', () => {
     const createdCustomer = await createCustomer(customerDeps, { tenantId, name: '田中 一郎' });
     customerId = createdCustomer.id;
 
+    const receiptRepository = new FakeReceiptRepository();
+    const mirror = new FakeOutboxRepository();
     deps = {
-      receipts: new FakeReceiptRepository(),
+      receipts: receiptRepository,
       staff,
       customers,
       crypto,
@@ -67,7 +70,8 @@ describe('uploadReceipts', () => {
       },
       storage: new FakeStoragePort(),
       notifier: new FakeNotifierPort(),
-      mirror: new FakeOutboxRepository(),
+      mirror,
+      unitOfWork: new FakeUnitOfWork([receiptRepository, mirror]),
     };
   });
 

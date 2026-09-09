@@ -2,6 +2,7 @@ import type {
   AccidentReportRecord,
   AccidentReportRepositoryPort,
   NewAccidentReportInput,
+  TransactionScope,
 } from '@katahimo/core/ports';
 import { and, desc, eq, lt } from 'drizzle-orm';
 import { accidentReports } from '../schema';
@@ -19,52 +20,64 @@ function toRecord(row: AccidentReportRow): AccidentReportRecord {
     occurredAt: row.occurredAt,
     reportType: row.reportType,
     content: { ciphertext: row.contentCiphertext, keyVersion: row.contentKeyVersion },
+    updatedAt: row.updatedAt,
   };
 }
 
 export class DrizzleAccidentReportRepository implements AccidentReportRepositoryPort {
   constructor(private readonly db: Database) {}
 
-  async create(input: NewAccidentReportInput): Promise<AccidentReportRecord> {
-    return withTenant(this.db, input.tenantId, async (tx) => {
-      const rows = await tx
-        .insert(accidentReports)
-        .values({
-          tenantId: input.tenantId,
-          staffId: input.staffId,
-          customerId: input.customerId,
-          occurredAt: input.occurredAt,
-          reportType: input.reportType,
-          contentCiphertext: input.content.ciphertext,
-          contentKeyVersion: input.content.keyVersion,
-        })
-        .returning();
-      const row = rows[0];
-      if (!row) throw new Error('事故報告の保存に失敗しました');
-      return toRecord(row);
-    });
+  async create(input: NewAccidentReportInput, scope?: TransactionScope): Promise<AccidentReportRecord> {
+    return withTenant(
+      this.db,
+      input.tenantId,
+      async (tx) => {
+        const rows = await tx
+          .insert(accidentReports)
+          .values({
+            tenantId: input.tenantId,
+            staffId: input.staffId,
+            customerId: input.customerId,
+            occurredAt: input.occurredAt,
+            reportType: input.reportType,
+            contentCiphertext: input.content.ciphertext,
+            contentKeyVersion: input.content.keyVersion,
+          })
+          .returning();
+        const row = rows[0];
+        if (!row) throw new Error('事故報告の保存に失敗しました');
+        return toRecord(row);
+      },
+      scope,
+    );
   }
 
   async update(
     tenantId: string,
     id: string,
     input: NewAccidentReportInput,
+    scope?: TransactionScope,
   ): Promise<AccidentReportRecord | null> {
-    return withTenant(this.db, tenantId, async (tx) => {
-      const rows = await tx
-        .update(accidentReports)
-        .set({
-          occurredAt: input.occurredAt,
-          reportType: input.reportType,
-          contentCiphertext: input.content.ciphertext,
-          contentKeyVersion: input.content.keyVersion,
-          updatedAt: new Date(),
-        })
-        .where(eq(accidentReports.id, id))
-        .returning();
-      const row = rows[0];
-      return row ? toRecord(row) : null;
-    });
+    return withTenant(
+      this.db,
+      tenantId,
+      async (tx) => {
+        const rows = await tx
+          .update(accidentReports)
+          .set({
+            occurredAt: input.occurredAt,
+            reportType: input.reportType,
+            contentCiphertext: input.content.ciphertext,
+            contentKeyVersion: input.content.keyVersion,
+            updatedAt: new Date(),
+          })
+          .where(eq(accidentReports.id, id))
+          .returning();
+        const row = rows[0];
+        return row ? toRecord(row) : null;
+      },
+      scope,
+    );
   }
 
   async findById(tenantId: string, id: string): Promise<AccidentReportRecord | null> {

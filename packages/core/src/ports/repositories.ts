@@ -3,6 +3,8 @@
  * (このパッケージはDBクライアントに依存しないという境界を守るため、インターフェースだけ持つ)。
  */
 
+import type { TransactionScope } from './unitOfWork';
+
 export interface EncryptedField {
   ciphertext: string;
   keyVersion: number;
@@ -28,7 +30,10 @@ export interface StaffRecord {
   isAdmin: boolean;
   retirementDate: string | null;
   /** 初期パスワードのまま。trueの間は本人がパスワードを変更するまで他の操作をさせない。 */
-  mustChangePassword: boolean;
+  mustChangePassword: boolean /** 連続ログイン失敗回数。ログイン成功で0に戻る(domain/auth/loginThrottle.ts)。 */;
+  failedLoginAttempts: number;
+  /** この時刻まではログインを受け付けない。過ぎていれば通常どおり。 */
+  lockedUntil: Date | null;
 }
 
 export interface NewStaffInput {
@@ -112,7 +117,18 @@ export interface StaffRepositoryPort {
    * パスワードを設定し直す(本人による変更・コードによる再設定・管理者による初期パスワード発行)。
    * レガシーハッシュは常にクリアし、`mustChangePassword` は呼び出し側が明示的に指定する。
    */
-  replacePassword(input: ReplacePasswordInput): Promise<ReplacePasswordResult>;
+  replacePassword(input: ReplacePasswordInput, scope?: TransactionScope): Promise<ReplacePasswordResult>;
+  /**
+   * ログイン失敗を記録する。上限に達したかどうか(=ロックするか)は呼び出し側の
+   * ポリシーが決める(packages/core/src/domain/auth/loginThrottle.ts)。
+   */
+  recordFailedLogin(
+    tenantId: string,
+    staffId: string,
+    state: { failedLoginAttempts: number; lockedUntil: Date | null },
+  ): Promise<void>;
+  /** ログイン成功時に失敗回数とロックを消す。 */
+  clearLoginFailures(tenantId: string, staffId: string): Promise<void>;
   /** 管理者のスタッフ管理画面用。退職済みも含む全件を返す。 */
   listAll(tenantId: string): Promise<StaffAdminRecord[]>;
   update(tenantId: string, staffId: string, input: UpdateStaffInput): Promise<void>;
@@ -201,7 +217,10 @@ export interface PasswordResetCodeRepositoryPort {
    * 有効なコードを行ロックしたうえで検証子を突き合わせ、一致すればその場で使用済みにする。
    * 一致しなければ試行回数を加算する。判定と更新が同じロックの中で完結する。
    */
-  verifyAndConsume(input: VerifyPasswordResetCodeInput): Promise<ConsumeResetCodeResult>;
+  verifyAndConsume(
+    input: VerifyPasswordResetCodeInput,
+    scope?: TransactionScope,
+  ): Promise<ConsumeResetCodeResult>;
   /** そのスタッフの未使用コードを全て使用済みにする。パスワードが別経路で変わったときに呼ぶ。 */
   consumeAllForStaff(tenantId: string, staffId: string): Promise<void>;
 }
@@ -352,6 +371,8 @@ export interface AttendanceDayRecord {
   /** 'YYYY-MM-DD' */
   businessDate: string;
   rowData: EncryptedField;
+  /** ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。 */
+  updatedAt: Date;
 }
 
 export interface AttendanceDayRepositoryPort {
@@ -366,6 +387,7 @@ export interface AttendanceDayRepositoryPort {
     staffId: string,
     businessDate: string,
     rowData: EncryptedField,
+    scope?: TransactionScope,
   ): Promise<AttendanceDayRecord>;
   /** ミラーワーカー(packages/worker)がoutbox_jobs.targetIdから対象レコードを読み直すために使う。 */
   findById(tenantId: string, id: string): Promise<AttendanceDayRecord | null>;
@@ -394,6 +416,8 @@ export interface DailyReportRecord {
   riskRating: number | null;
   esRating: number | null;
   content: EncryptedField;
+  /** ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。 */
+  updatedAt: Date;
 }
 
 export interface NewDailyReportInput {
@@ -407,9 +431,14 @@ export interface NewDailyReportInput {
 }
 
 export interface DailyReportRepositoryPort {
-  create(input: NewDailyReportInput): Promise<DailyReportRecord>;
+  create(input: NewDailyReportInput, scope?: TransactionScope): Promise<DailyReportRecord>;
   /** 既存行の上書き保存(GAS版saveReportのrowIndex指定更新に相当)。存在しない/他テナントのIDならnullを返す。 */
-  update(tenantId: string, id: string, input: NewDailyReportInput): Promise<DailyReportRecord | null>;
+  update(
+    tenantId: string,
+    id: string,
+    input: NewDailyReportInput,
+    scope?: TransactionScope,
+  ): Promise<DailyReportRecord | null>;
   findById(tenantId: string, id: string): Promise<DailyReportRecord | null>;
   /**
    * 指定顧客の日報を occurredAt 降順で取得する。beforeを渡した場合は occurredAt < before のみ
@@ -434,6 +463,8 @@ export interface AccidentReportRecord {
   occurredAt: Date;
   reportType: string;
   content: EncryptedField;
+  /** ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。 */
+  updatedAt: Date;
 }
 
 export interface NewAccidentReportInput {
@@ -446,8 +477,13 @@ export interface NewAccidentReportInput {
 }
 
 export interface AccidentReportRepositoryPort {
-  create(input: NewAccidentReportInput): Promise<AccidentReportRecord>;
-  update(tenantId: string, id: string, input: NewAccidentReportInput): Promise<AccidentReportRecord | null>;
+  create(input: NewAccidentReportInput, scope?: TransactionScope): Promise<AccidentReportRecord>;
+  update(
+    tenantId: string,
+    id: string,
+    input: NewAccidentReportInput,
+    scope?: TransactionScope,
+  ): Promise<AccidentReportRecord | null>;
   findById(tenantId: string, id: string): Promise<AccidentReportRecord | null>;
   listByCustomer(
     tenantId: string,
@@ -471,6 +507,11 @@ export interface ReceiptRecord {
   handoffText: EncryptedField | null;
   fileKey: string;
   contentType: string;
+  /**
+   * ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。
+   * 領収書は追記しかしないため作成時刻。
+   */
+  createdAt: Date;
 }
 
 export interface NewReceiptInput {
@@ -487,7 +528,7 @@ export interface NewReceiptInput {
 }
 
 export interface ReceiptRepositoryPort {
-  create(input: NewReceiptInput): Promise<ReceiptRecord>;
+  create(input: NewReceiptInput, scope?: TransactionScope): Promise<ReceiptRecord>;
   /** ミラーワーカー(packages/worker)がoutbox_jobs.targetIdから対象レコードを読み直すために使う。 */
   findById(tenantId: string, id: string): Promise<ReceiptRecord | null>;
   /**
@@ -534,13 +575,32 @@ export interface TenantKeyRecord {
 }
 
 export interface TenantKeyRepositoryPort {
-  find(tenantId: string): Promise<TenantKeyRecord | null>;
-  /** 初回暗号化時、まだDEKが無いテナントのために新規作成する。 */
-  create(tenantId: string, wrappedDek: string, kekVersion: number): Promise<TenantKeyRecord>;
-  /** KEKローテーション時、DEK自体は変えずラップだけ新KEKバージョンで更新する(軽量操作)。 */
-  updateWrappedDek(tenantId: string, wrappedDek: string, kekVersion: number): Promise<void>;
+  /** 現行世代(最新のdekVersion)を返す。新しい暗号化はこの鍵で行う。 */
+  findCurrent(tenantId: string): Promise<TenantKeyRecord | null>;
   /**
-   * テナント解約時の暗号学的削除。DEKのレコードそのものを破棄し、以後
+   * 指定世代の鍵を返す。既存の暗号文は`*_key_version`にその世代を記録しているため、
+   * ローテーション後もこの経路で復号できる。
+   */
+  findByVersion(tenantId: string, dekVersion: number): Promise<TenantKeyRecord | null>;
+  /**
+   * 新しい世代のDEKを追加する。初回(dekVersion=1)の生成と、ローテーションの両方に使う。
+   * 既存の世代は残す(残さないと、その世代で暗号化した既存データが読めなくなる)。
+   */
+  create(
+    tenantId: string,
+    dekVersion: number,
+    wrappedDek: string,
+    kekVersion: number,
+  ): Promise<TenantKeyRecord>;
+  /** KEKローテーション時、DEK自体は変えずラップだけ新KEKバージョンで更新する(軽量操作)。 */
+  updateWrappedDek(
+    tenantId: string,
+    dekVersion: number,
+    wrappedDek: string,
+    kekVersion: number,
+  ): Promise<void>;
+  /**
+   * テナント解約時の暗号学的削除。全世代のDEKを失効させ、以後
    * (バックアップに残った暗号文も含め)復号を永久に不可能にする。
    */
   revoke(tenantId: string): Promise<void>;

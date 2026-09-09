@@ -37,13 +37,13 @@
   .slide li::marker{color:var(--accent)}
   .lead{font-size:1.15em;color:var(--muted)}
   .cols{display:grid;grid-template-columns:1fr 1fr;gap:1.5em;flex:1;min-height:0;align-items:stretch}
-  .cols>.fig{min-height:0}
   .slide.roomy{font-size:clamp(15px,2.4vmin,28px)}
   .slide.mid{font-size:clamp(14.5px,2.2vmin,26px)}
   .cols.w-3-2{grid-template-columns:3fr 2fr}
   .cols.w-2-3{grid-template-columns:2fr 3fr}
   .fig{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
   .fig svg{width:100%;height:100%;max-height:100%}
+  .cols>.fig{min-height:0}
   .card{background:var(--card);border:1px solid var(--line);border-radius:.6em;padding:.7em .9em}
   .card h3{margin:0 0 .3em;font-size:1em;color:var(--accent)}
   .tag{display:inline-block;font-size:.72em;padding:.05em .55em;border-radius:1em;border:1px solid var(--line);color:var(--muted);vertical-align:middle;margin-left:.4em}
@@ -76,8 +76,10 @@
   @media print{
     html,body{background:#fff;color:#000}
     #deck{position:static;display:block}
+    /* biome-ignore-start lint/complexity/noImportantStyles: 画面表示では .slide{display:none} で1枚だけ出しているため、印刷時に全枚数を出すには上書きが要る */
     .slide{display:flex !important;page-break-after:always;width:100%;height:auto;aspect-ratio:16/9;border:1px solid #ccc;margin:0 0 8mm}
     #hud,#help,.notes{display:none !important}
+    /* biome-ignore-end lint/complexity/noImportantStyles: 印刷用の上書きはここまで */
   }
 </style>
 </head>
@@ -88,7 +90,7 @@
   <p class="muted" style="letter-spacing:.1em">ARCHITECTURE REVIEW</p>
   <h1>katahimo-app<br>アーキテクチャ説明</h1>
   <p class="lead">訪問保育(ベビーシッター法人)向け業務SaaS — GAS版からの移行基盤</p>
-  <p class="muted" style="margin-top:1.5em">目的: この設計で進めてよいか、有識者の判断をいただく<br>所要 10分 / 対象コミット <span class="mono">46b92bc</span>(2026-09-07)</p>
+  <p class="muted" style="margin-top:1.5em">目的: この設計で進めてよいか、有識者の判断をいただく<br>所要 10分 / 2026-09</p>
   <div class="notes">
     今日の目的は「褒めてもらう」ことではなく「進めていいか判断してもらう」こと。前半6分で構造を説明し、後半4分は判断していただきたい論点と、現状で「できていないこと」に使います。
   </div>
@@ -117,18 +119,18 @@
       <div class="card">
         <h3>いまどこにいるか</h3>
         <dl class="kv">
-          <dt>実装済み</dt><dd>認証・顧客・日報/事故報告・領収書・勤怠・スタッフ管理・RESERVA取込・公開デモ</dd>
-          <dt>コード有・未検証</dt><dd>Sheetsミラー、メール送信(GASブリッジが<span class="warn">未デプロイ</span>)</dd>
-          <dt>未着手</dt><dd>本番デプロイ(Cloud Run)、予約・請求・カルテ、Cloud KMS、並行運用照合</dd>
+          <dt class="ok">実装済み</dt><dd>認証・顧客・日報/事故報告・領収書・勤怠・スタッフ管理・RESERVA取込・公開デモ</dd>
+          <dt class="warn">コード有・未検証</dt><dd>Sheetsミラー、メール送信(GASブリッジが<span class="warn">未デプロイ</span>)</dd>
+          <dt class="bad">未着手</dt><dd>本番デプロイ(Cloud Run)、予約・請求・カルテ、Cloud KMS、再暗号化バッチ、並行運用照合</dd>
         </dl>
       </div>
       <div class="card" style="margin-top:.8em">
         <h3>規模</h3>
         <dl class="kv">
           <dt>パッケージ</dt><dd>9(pnpm workspace)</dd>
-          <dt>TypeScript</dt><dd>200ファイル / 約19,000行(テスト除く)</dd>
-          <dt>テスト</dt><dd>32ファイル / 217件、CIで毎回実行</dd>
-          <dt>DB</dt><dd>13テーブル、マイグレーション2本</dd>
+          <dt>TypeScript</dt><dd>205ファイル / 約20,400行(テスト除く)</dd>
+          <dt>テスト</dt><dd>43ファイル / 327件、CIで毎回実行</dd>
+          <dt>DB</dt><dd>13テーブル、マイグレーション5本</dd>
         </dl>
       </div>
     </div>
@@ -167,7 +169,7 @@
     <rect class="box" x="275" y="240" width="250" height="110" style="stroke:var(--c-api)"/>
     <text class="h" x="400" y="268" text-anchor="middle">Worker(ポーリング)</text>
     <text class="sm" x="400" y="290" text-anchor="middle">outbox_jobs を claim(SKIP LOCKED)</text>
-    <text class="sm" x="400" y="307" text-anchor="middle">復号 → GASブリッジへ送信</text>
+    <text class="sm" x="400" y="307" text-anchor="middle">復号 → 送信 → 失敗はバックオフ再試行</text>
     <text class="sm" x="400" y="335" text-anchor="middle" style="fill:var(--c-api)">packages/worker</text>
     <!-- postgres -->
     <rect class="box" x="600" y="240" width="160" height="140" style="stroke:var(--c-db)"/>
@@ -260,8 +262,8 @@
         <li><b>demo</b> が api を依存に持つのは、ブラウザ内で同じ Hono アプリを動かすため</li>
       </ul>
       <div class="card" style="margin-top:.6em">
-        <h3>判断してほしい点</h3>
-        <p><code>web → demo</code> が <b>dependencies</b>(devではない)。本番ビルドへの混入は Vite プラグイン + CI の成果物検査の<b>二重ガード</b>で防いでいるが、構造としては脆い。</p>
+        <h3>デモ用コードの隔離</h3>
+        <p><code>web → demo</code> は <b>devDependencies</b>。本番ビルドでは Vite プラグインが入口をスタブ化し、CI が<b>成果物そのもの</b>を検査する(<code>.wasm</code> の有無と禁止文字列)。設定を読むのではなく出力を見るので、設定ミスでも素通りしない。</p>
       </div>
     </div>
   </div>
@@ -293,8 +295,8 @@
       <text class="lbl" x="300" y="86" text-anchor="middle">usecases(12モジュール)</text>
       <text class="sm" x="300" y="104" text-anchor="middle">XxxDeps = 必要なポートの部分集合</text>
       <rect class="box" x="200" y="140" width="200" height="60"/>
-      <text class="lbl" x="300" y="164" text-anchor="middle">ports(17 IF)</text>
-      <text class="sm" x="300" y="182" text-anchor="middle">Repository×13 / Crypto / KMS / Mailer …</text>
+      <text class="lbl" x="300" y="164" text-anchor="middle">ports</text>
+      <text class="sm" x="300" y="182" text-anchor="middle">Repository×13 / UnitOfWork / Crypto …</text>
       <rect class="box" x="200" y="218" width="200" height="140" style="stroke:var(--c-core)"/>
       <text class="lbl" x="300" y="244" text-anchor="middle">domain(純関数・I/Oなし)</text>
       <text class="sm" x="300" y="266" text-anchor="middle">勤怠計算 / 日報履歴 / 重複判定</text>
@@ -333,6 +335,7 @@
         <li>usecase は <code>XxxDeps</code>(必要なポートだけの構造的部分集合)を受け取る。<code>Container</code> をそのまま渡せる</li>
         <li><b>Container</b> = 全ポートの束。Node用 <code>createContainer(env, db)</code> と ブラウザ用 <code>createDemoContainer()</code> が同じ型を返す</li>
         <li>外部が無いときは <b>Noop 実装</b>に落ちる(Maps / Schedule / AI / Mirror)。黙って壊れない</li>
+        <li><b>UnitOfWorkPort</b> だけは横断的で、複数リポジトリの書き込みを1つのトランザクションにまとめる(9枚目)</li>
       </ul>
       <div class="card" style="margin-top:.6em">
         <h3>例外を1つ正直に</h3>
@@ -353,7 +356,7 @@
     <svg viewBox="0 0 600 380" role="img" aria-label="RLSの流れ">
       <rect class="box" x="10" y="20" width="580" height="60" style="stroke:var(--c-api)"/>
       <text class="lbl" x="24" y="45">① Cookie <tspan class="mono">katahimo_session = tenantId.rawToken</tspan></text>
-      <text class="sm" x="24" y="66">tenantId を先に知らないと RLS 対象の sessions を引けない(鶏と卵)→ Cookie に同梱。トークンはDBで SHA-256 照合</text>
+      <text class="sm" x="24" y="66">tenantId を先に知らないと RLS 対象の sessions を引けない(鶏と卵)。トークンはDB側でハッシュ照合</text>
       <path class="arrow" d="M300 80 V100"/>
       <rect class="box" x="10" y="102" width="580" height="60" style="stroke:var(--c-api)"/>
       <text class="lbl" x="24" y="127">② resolveSession → 以後ルートは session.tenantId / staffId のみ信用</text>
@@ -377,12 +380,16 @@
         <li><b>FKはRLSをバイパスする</b>(PG仕様)→ 参照は <code>(tenant_id, id)</code> の複合FKに統一。参照先に <code>UNIQUE(tenant_id, id)</code></li>
         <li>アプリ側(withTenant)と DB側(RLS)の<b>二重防御</b>。片方が抜けても他方が止める</li>
       </ul>
-      <div class="card q" style="margin-top:.6em">
-        <h3 class="warn">論点</h3>
+      <div class="card" style="margin-top:.6em">
+        <h3 class="ok">効いていることをCIで確かめている</h3>
         <ul style="margin:0">
-          <li><b>FORCE は drizzle-kit が出力しない</b>ため、マイグレーション生成後に手で追記している。新テーブル追加時に忘れると所有者接続でRLSが素通り。CIで検出する仕組みは無い</li>
-          <li><code>tenants</code> は唯一RLS対象外(ログイン前にslugで特定するため)。アプリロールが全テナント一覧を読める</li>
+          <li><b>静的検査</b>: スキーマから全テーブルを動的に集め、SQLに <code>ENABLE</code> と <code>FORCE</code> の両方、ポリシーの <code>USING</code>/<code>WITH CHECK</code> が揃っているかを検査。<b>新テーブルで FORCE を書き忘れると落ちる</b></li>
+          <li><b>実DB検証</b>: PGlite上に非特権ロールを作り、他テナントの行が見えないこと・<code>WITH CHECK</code> で弾かれることを確認。FORCE 無しの比較用テーブルと挙動が変わることまで固定</li>
         </ul>
+      </div>
+      <div class="card q" style="margin-top:.5em">
+        <h3 class="warn">残るトレードオフ</h3>
+        <p><code>tenants</code> は唯一RLS対象外(ログイン前にslugで特定するため)。アプリロールが全テナント一覧を読める。</p>
       </div>
     </div>
   </div>
@@ -404,17 +411,17 @@
       <text class="sm" x="125" y="79" text-anchor="middle" style="fill:var(--warn)">将来: Cloud KMS(未実装)</text>
       <rect class="box" x="310" y="20" width="240" height="70" style="stroke:var(--c-db)"/>
       <text class="h" x="430" y="45" text-anchor="middle">tenant_keys</text>
-      <text class="sm" x="430" y="63" text-anchor="middle">テナントごとの DEK(ラップ済)</text>
-      <text class="sm" x="430" y="79" text-anchor="middle">dek_version / kek_version / revoked_at</text>
+      <text class="sm" x="430" y="63" text-anchor="middle">PK = (tenant_id, dek_version)</text>
+      <text class="sm" x="430" y="79" text-anchor="middle">世代が並存する(ラップ済のみ保存)</text>
       <path class="arrow" d="M240 55 H308"/>
       <text class="sm" x="274" y="47" text-anchor="middle">wrap / unwrap</text>
       <rect class="box" x="150" y="140" width="260" height="60" style="stroke:var(--c-core)"/>
-      <text class="h" x="280" y="165" text-anchor="middle">DEK(32B, テナント別)</text>
-      <text class="sm" x="280" y="185" text-anchor="middle">randomBytes → プロセス内キャッシュ</text>
+      <text class="h" x="280" y="165" text-anchor="middle">DEK(32B, テナント別・世代別)</text>
+      <text class="sm" x="280" y="185" text-anchor="middle">暗号化=最新世代 / 復号=記録された世代</text>
       <path class="arrow" d="M430 90 L330 138"/>
       <rect class="box" x="10" y="250" width="540" height="90" style="stroke:var(--c-db)"/>
       <text class="h" x="280" y="275" text-anchor="middle">AES-256-GCM(毎回ランダム nonce)</text>
-      <text class="sm" x="280" y="296" text-anchor="middle">xxx_ciphertext + xxx_key_version の列ペア</text>
+      <text class="sm" x="280" y="296" text-anchor="middle">xxx_ciphertext + xxx_key_version(=世代)の列ペア</text>
       <text class="sm" x="280" y="314" text-anchor="middle">復号ごとに AuditLogPort.recordDecrypt(tenantId)</text>
       <text class="sm" x="280" y="331" text-anchor="middle">解約時 revoke() で暗号学的削除(バックアップも復号不能)</text>
       <path class="arrow" d="M280 200 V248"/>
@@ -433,8 +440,8 @@
         <h3 class="warn">論点</h3>
         <ul style="margin:0">
           <li><b>Cloud KMS 実装は存在しない</b>。KEK が環境変数1本のままなので、封筒暗号化の主要な便益(鍵の物理分離・KMS側監査)は未実現</li>
-          <li><b>DEK は1世代しか扱えない</b>(version 不一致で例外)。列は用意済みだがローテーション不能</li>
-          <li>復号監査は「誰が」を含まない。平文列へのアクセスは監査対象外</li>
+          <li>世代が並存するのでローテーションで既存データは壊れないが、<b>再暗号化バッチが未実装</b>。古い世代の鍵を捨てられない</li>
+          <li>監査は認証イベントには「誰が」が入るが、<b>復号は「どのテナント」まで</b>。平文列(氏名・住所)へのアクセスはそもそもこの網に入らない</li>
         </ul>
       </div>
     </div>
@@ -445,21 +452,23 @@
   </div>
 </section>
 <!-- 8 auth -->
-<section class="slide mid">
+<section class="slide">
   <h2>認証・認可 <small>自前実装(提案書の Firebase Auth からは変更)</small></h2>
   <div class="cols">
     <div>
-      <div class="card"><h3>パスワード</h3>
+      <div class="card"><h3>パスワードとログイン試行</h3>
         <ul style="margin:0">
-          <li>argon2id(<code>@node-rs/argon2</code>、パラメータは<span class="warn">既定値のまま</span>)</li>
+          <li>argon2id。コストは明示指定(<code>m=19MiB, t=2, p=1</code>)。既定任せにすると、どのコストで運用しているかがコードから読めない</li>
           <li>GAS版の共有ソルト SHA-256 は、ログイン成功時に<b>サイレント再ハッシュ</b>して移行(再設定を強いない)</li>
-          <li>最低8文字のみ。記号・大文字の必須化はしない(付箋に書く動機を作らない)</li>
+          <li>連続10回の失敗で<b>15分ロック</b>、成功でリセット。恒久ロックにしないのは、狙って失敗させれば人を締め出せてしまうため</li>
+          <li>ロック中かどうかで<b>応答を変えない</b>。変えると10回試すだけでアカウントの有無が分かる</li>
         </ul>
       </div>
       <div class="card" style="margin-top:.6em"><h3>セッション</h3>
         <ul style="margin:0">
           <li>32B乱数トークン、DBには SHA-256 のみ。httpOnly / SameSite=Lax / 本番 Secure。TTL 7日(絶対期限)</li>
-          <li><code>getAuthenticatedSession</code> が唯一の解決入口。<code>WeakMap&lt;Context&gt;</code> でリクエスト内キャッシュ</li>
+          <li>Cookieに署名鍵は使わない。値は高エントロピーの乱数で、検証はDB側の照合。署名しても増える保証がない</li>
+          <li>書き込み系は <b>Origin 照合</b>でクロスサイトを弾く(SameSite に加えたサーバー側の1枚)</li>
           <li><code>requirePasswordChangeGuard</code>: 初期パスワードのまま他APIを叩くと403(ミドルウェア1箇所)</li>
         </ul>
       </div>
@@ -473,12 +482,14 @@
           <li>書き込みは <code>replacePassword</code> 1本: 行ロック → 差し替え → セッション破棄を同一tx。楽観ロック <code>expect</code> で「認証後に別経路が差し替えた」を弾く</li>
         </ul>
       </div>
-      <div class="card q" style="margin-top:.6em"><h3 class="warn">論点</h3>
+      <div class="card"><h3>監査</h3>
+        <p style="margin:0">ログインの成否・パスワード変更・再設定・管理者によるスタッフ操作を、<b>誰が・誰を</b>付きで構造化ログに残す。ログイン失敗だけ severity を上げ、総当たりの兆候をフィルタで拾えるようにしている。</p>
+      </div>
+      <div class="card q" style="margin-top:.5em"><h3 class="warn">論点</h3>
         <ul style="margin:0">
-          <li><b>ログイン試行のレート制限が無い</b>(再設定コードには5回制限があるのに非対称)</li>
-          <li>CSRF対策は SameSite=Lax のみ。CSRFトークン・Originチェック無し</li>
-          <li><code>SESSION_SECRET</code> が必須なのに<b>どこからも参照されていない</b>(Cookieは署名していない。乱数トークン+DB照合なので設計上は不要という整理は可能)</li>
-          <li>再設定コード消費とパスワード書き込みは別リポジトリ=別tx。残る失敗は「コード1枚が無駄になる」のみ</li>
+          <li>絞り込みは<b>アカウント単位のみ</b>。IPや端末単位のレート制限は前段(WAF/Cloud Armor)が要る</li>
+          <li>レガシーの共有ソルト SHA-256 経路が残る。ログインしないスタッフのハッシュは<b>期限なく残り続ける</b></li>
+          <li>セッションは絶対期限7日のみ。アイドルタイムアウト・同時セッション数の制限は無い</li>
         </ul>
       </div>
     </div>
@@ -509,30 +520,32 @@
       <line x1="480" y1="32" x2="480" y2="380"/><line x1="620" y1="32" x2="620" y2="380"/><line x1="760" y1="32" x2="760" y2="380"/><line x1="900" y1="32" x2="900" y2="380"/>
     </g>
     <!-- sync part -->
-    <path class="arrow hi" d="M60 60 H198"/><text class="sm" x="130" y="52" text-anchor="middle">POST /api/reports/daily</text>
-    <path class="arrow" d="M200 90 H338"/><text class="sm" x="270" y="82" text-anchor="middle">guard → session → staffId強制</text>
-    <path class="arrow" d="M340 120 H478"/><text class="sm" x="410" y="112" text-anchor="middle">encrypt(本文)</text>
-    <path class="arrow" d="M480 140 H618"/><text class="sm" x="550" y="132" text-anchor="middle">DEK unwrap</text>
-    <path class="arrow" d="M340 175 H618"/><text class="sm" x="480" y="167" text-anchor="middle">daily_reports INSERT(withTenant tx①)</text>
-    <path class="arrow" d="M340 215 H618"/><text class="sm" x="480" y="207" text-anchor="middle">outbox_jobs INSERT(withTenant tx②)</text>
-    <path class="arrow" d="M340 245 H198"/><text class="sm" x="270" y="237" text-anchor="middle">Chat通知 → { success, report }</text>
-    <path class="arrow hi" d="M200 265 H62"/>
+    <path class="arrow hi" d="M60 58 H198"/><text class="sm" x="130" y="50" text-anchor="middle">POST /api/reports/daily</text>
+    <path class="arrow" d="M200 86 H338"/><text class="sm" x="270" y="78" text-anchor="middle">Origin照合 → guard → session → staffId強制</text>
+    <path class="arrow" d="M340 114 H478"/><text class="sm" x="410" y="106" text-anchor="middle">encrypt(本文)</text>
+    <path class="arrow" d="M480 134 H618"/><text class="sm" x="550" y="126" text-anchor="middle">最新世代のDEKをunwrap</text>
+    <!-- single transaction box -->
+    <rect x="330" y="152" width="300" height="76" rx="8" fill="var(--c-core)" opacity=".10"/>
+    <rect x="330" y="152" width="300" height="76" rx="8" fill="none" stroke="var(--c-core)" stroke-width="2"/>
+    <text class="sm" x="340" y="168" style="fill:var(--c-core);font-weight:600">unitOfWork.run — 1つのトランザクション</text>
+    <path class="arrow" d="M345 190 H618"/><text class="sm" x="485" y="184" text-anchor="middle">daily_reports INSERT</text>
+    <path class="arrow" d="M345 218 H618"/><text class="sm" x="485" y="212" text-anchor="middle">outbox_jobs INSERT(冪等キー = 種別:ID:版)</text>
+    <path class="arrow" d="M340 252 H198"/><text class="sm" x="270" y="244" text-anchor="middle">Chat通知 → { success, report }</text>
+    <path class="arrow hi" d="M200 272 H62"/>
     <!-- boundary -->
-    <line x1="20" y1="290" x2="940" y2="290" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="8 6"/>
-    <text class="sm" x="30" y="284" style="fill:var(--warn)">ここまで同期(ユーザーが待つ)／ここから非同期(ポーリング 5秒)</text>
+    <line x1="20" y1="292" x2="940" y2="292" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="8 6"/>
+    <text class="sm" x="30" y="286" style="fill:var(--warn)">ここまで同期(ユーザーが待つ)／ここから非同期(ポーリング 5秒)</text>
     <!-- async -->
-    <path class="arrow dash" d="M760 320 H622"/><text class="sm" x="690" y="312" text-anchor="middle">claim(FOR UPDATE SKIP LOCKED)</text>
-    <path class="arrow dash" d="M760 345 H482"/><text class="sm" x="620" y="337" text-anchor="middle">再読込 → decrypt → 名前解決</text>
-    <path class="arrow dash" d="M760 372 H898"/><text class="sm" x="830" y="364" text-anchor="middle">writeDailyReport</text>
-    <!-- tx annotations -->
-    <rect x="628" y="160" width="72" height="20" rx="10" fill="var(--bad)" opacity=".18"/><text class="sm" x="664" y="174" text-anchor="middle" style="fill:var(--bad)">別tx</text>
-    <rect x="628" y="200" width="72" height="20" rx="10" fill="var(--bad)" opacity=".18"/><text class="sm" x="664" y="214" text-anchor="middle" style="fill:var(--bad)">別tx</text>
+    <path class="arrow dash" d="M760 318 H622"/><text class="sm" x="690" y="311" text-anchor="middle">claim(SKIP LOCKED / 再試行待ちは飛ばす)</text>
+    <path class="arrow dash" d="M760 344 H482"/><text class="sm" x="620" y="337" text-anchor="middle">再読込 → 記録された世代の鍵で decrypt</text>
+    <path class="arrow dash" d="M760 368 H898"/><text class="sm" x="830" y="361" text-anchor="middle">writeDailyReport</text>
+    <text class="sm" x="760" y="390" text-anchor="middle" style="fill:var(--warn)">失敗したら終端させず、バックオフして pending へ戻す(8回で打ち切り)</text>
   </svg>
   </div>
-  <div class="q" style="font-size:.9em"><b>論点:</b> ポートの契約(<code>MirrorPort.enqueue</code> の doc)は「ドメイン書き込みと同一トランザクションで呼ぶこと」と書いてあるが、<b>実装は別トランザクション</b>(各リポジトリが自前で withTenant を開く)。①成功→②失敗でミラーが永久に欠落し、検知手段が無い。理由の記述はどこにも無い。</div>
-  <div class="foot"><span>packages/core/src/usecases/reports.ts:77-112 / packages/db/src/repositories/outboxRepository.ts</span><span>katahimo-app</span></div>
+  <div class="q" style="font-size:.9em"><b>要点:</b> ドメインの行と <code>outbox_jobs</code> は<b>同じトランザクションで確定する</b>。片方だけ通ると、保存はできたのにスプレッドシートへ永久に反映されない行が、誰にも気づかれずに残る。暗号化・通知・名前解決はトランザクションの外に出してある(単一接続のPGliteで内側から別トランザクションを開くと止まるため)。</div>
+  <div class="foot"><span>packages/core/src/usecases/reports.ts / ports/unitOfWork.ts / packages/db/src/unitOfWork.ts</span><span>katahimo-app</span></div>
   <div class="notes">
-    1本追うとこうなります。黄色の線より上が同期、下がWorkerの非同期。赤いバッジが今日いちばん指摘されるであろう箇所で、Outboxパターンの本来の保証、つまり「ドメイン書き込みとジョブ登録の原子性」が実装では失われています。ポートのdocコメント自身が「同一トランザクションで」と書いているのに、実装が守っていない。直すには、リポジトリ横断でトランザクションを共有する仕組み(unit of work)が要ります。これは再設定コードの件でも同じ壁に当たりました。
+    1本追うとこうなります。緑の枠が1つのトランザクションで、日報の行とoutboxへの積み込みが揃って確定します。片方だけ成立する状態を作らないのが要点です。黄色の線から下がWorkerの非同期処理で、送信に失敗しても終端させず、バックオフして戻します。トランザクションの外に出してあるもの(暗号化・通知)には理由があって、単一接続のPGliteで内側から別のトランザクションを開くと自分の完了を待って止まるためです。テストでは、outboxへの書き込みだけを失敗させて日報の行が残らないことを固定しています。
   </div>
 </section>
 <!-- 10 GAS coexistence -->
@@ -544,7 +557,7 @@
       <rect class="box" x="10" y="30" width="200" height="70" style="stroke:var(--c-db)"/>
       <text class="h" x="110" y="58" text-anchor="middle">PostgreSQL</text><text class="sm" x="110" y="80" text-anchor="middle">唯一の正データ</text>
       <rect class="box" x="10" y="150" width="200" height="70" style="stroke:var(--c-db)"/>
-      <text class="h" x="110" y="178" text-anchor="middle">outbox_jobs</text><text class="sm" x="110" y="200" text-anchor="middle">pending / processing / done / failed</text>
+      <text class="h" x="110" y="176" text-anchor="middle">outbox_jobs</text><text class="sm" x="110" y="196" text-anchor="middle">pending / processing / done / failed</text><text class="sm" x="110" y="212" text-anchor="middle">next_attempt_at で再試行を待たせる</text>
       <rect class="box" x="255" y="150" width="115" height="70" style="stroke:var(--c-api)"/>
       <text class="h" x="312" y="178" text-anchor="middle">Worker</text><text class="sm" x="312" y="200" text-anchor="middle">テナント順に batch</text>
       <rect class="box" x="390" y="30" width="165" height="260" style="stroke:var(--c-ext)"/>
@@ -561,26 +574,28 @@
       </g>
       <rect x="414" y="250" width="116" height="24" rx="12" fill="var(--warn)" opacity=".18"/>
       <text class="sm" x="472" y="267" text-anchor="middle" style="fill:var(--warn)">一度も未デプロイ</text>
-      <path class="arrow" d="M110 100 V148"/><text class="sm" x="135" y="128">enqueue</text>
+      <path class="arrow" d="M110 100 V148"/><text class="sm" x="135" y="122">enqueue</text><text class="sm" x="135" y="138" style="fill:var(--c-core)">(同一tx)</text>
       <path class="arrow" d="M210 185 H253"/><text class="sm" x="231" y="177" text-anchor="middle">claim</text>
       <path class="arrow" d="M370 185 H388"/>
-      <path class="arrow dash" d="M312 220 C312 262 200 262 110 222"/>
-      <text class="sm" x="230" y="278" text-anchor="middle">markDone / markFailed</text>
+      <path class="arrow dash" d="M312 220 C312 268 200 268 110 222"/>
+      <text class="sm" x="228" y="284" text-anchor="middle">成功=done / 失敗=バックオフしてpendingへ</text>
+      <text class="sm" x="228" y="300" text-anchor="middle">8回で failed(デッドレター)</text>
     </svg>
     </div>
     <div>
       <ul>
         <li><b>方針(doc/10)</b>: 新規GCP API より既存GASブリッジを優先。理由は ①新規課金・認証情報の準備を避ける ②GAS側の実証済みロジック(イベント分類・タグ解析・スタッフ名マッチ)を再実装しない</li>
         <li>Sheets を止めるときは「ミラーのアダプタを止めるだけ」でドメインは無変更</li>
-        <li>多重ワーカー安全(<code>SKIP LOCKED</code>)。未知の kind は例外 → failed</li>
+        <li>多重ワーカー安全(<code>SKIP LOCKED</code>)。<code>processing</code> のまま5分放置された行は再びclaim対象になる(ワーカーが落ちた場合の回収)</li>
+        <li>失敗は終端にしない。5秒から倍々・上限1時間で再試行し、8回で <code>failed</code>。ワーカーはその件数を error ログに出す</li>
       </ul>
       <div class="card q" style="margin-top:.6em">
         <h3 class="warn">論点</h3>
         <ul style="margin:0">
-          <li>Mail / Maps / Calendar / Sheets の<b>4系統が1本のGAS Web App</b>に集中。SLA・クォータ・6分実行制限。タイムアウト20秒固定、リトライ無し</li>
-          <li><b>secret が URL クエリ</b>に載る(GASはヘッダーを読めない)。実行ログ・プロキシに残る。ローテーション手順なし</li>
-          <li><b>failed は終端</b>。自動リトライ・バックオフ・DLQ 無し。<code>attempts</code> 列は未使用。processing で落ちた孤児の回収も無い</li>
-          <li><code>idempotencyKey</code> が <code>randomUUID()</code> なので、UNIQUE 制約による冪等性はリトライ時に効かない</li>
+          <li>Mail / Maps / Calendar / Sheets の<b>4系統が1本のGAS Web App</b>に集中。SLA・クォータ・6分実行制限。単一障害点であることは変わらない</li>
+          <li><b>secret が URL クエリ</b>に載る(GASはカスタムヘッダーを読めない)。実行ログ・プロキシに残る。ローテーション手順は未整備</li>
+          <li>そのGAS Web App が<b>まだ一度もデプロイされていない</b>。<code>sendEmail</code> アクションはGAS側に存在しない</li>
+          <li>デッドレターに落ちた分の<b>再投入は手作業</b>。管理画面からの操作は用意していない</li>
         </ul>
       </div>
     </div>
@@ -635,7 +650,7 @@
       <div class="card q" style="margin-top:.6em">
         <h3 class="warn">論点</h3>
         <ul style="margin:0">
-          <li>PGlite は 1.0 未満(<code>^0.2.17</code>)。書き出し完了を待つために<b>内部FSを直接呼んでいる</b>。将来のバージョンで壊れうる</li>
+          <li>PGlite は 1.0 未満。書き出し完了を待つために<b>内部FSを直接呼んでいる</b>ため、バージョンは <code>0.2.17</code> に完全固定してある(それでも公開APIの外に依存していることに変わりはない)</li>
           <li>単一接続のためトランザクションを直列化しているが、<b>tx外の単発クエリは対象外</b></li>
           <li>多タブ排他は未実装(doc/07 は対策を挙げているが、画面上の案内も無い)</li>
         </ul>
@@ -652,46 +667,50 @@
   <h2>品質の担保 <small>何をテストし、何をしていないか</small></h2>
   <div class="cols">
     <div>
-      <div class="card"><h3>やっていること</h3>
+      <div class="card"><h3>やっていること <span class="tag">43ファイル / 327件</span></h3>
         <ul style="margin:0">
           <li><b>ドメイン純関数の回帰</b>: 勤怠計算は GAS版をNodeで実行した結果を正解に、合成データ19ケース+月次集計で<b>完全一致</b>。CSV解析は実サンプル398行で一致</li>
-          <li><b>usecase 単体</b>: インメモリfake(787行)で9モジュール。「失敗すべきときに失敗する」を中心に(列挙防止・試行上限・割り込み・部分更新なし)</li>
-          <li><b>実Postgres(PGlite)</b>: マイグレーション台帳の5経路。「修正を外すと落ちる」ことを確認したテストのみ残した</li>
-          <li><b>CI(毎push)</b>: Biome → tsc strict(<code>noUncheckedIndexedAccess</code>)→ Vitest → 本番ビルド → 混入検査 → デモビルド</li>
+          <li><b>usecase 単体</b>: インメモリfakeで、失敗すべきときに失敗することを中心に(列挙防止・試行上限・割り込み・部分更新なし)</li>
+          <li><b>トランザクション境界</b>: outboxへの書き込みだけを失敗させ、日報の行が残らないことを固定。フェイクのUnitOfWorkが実際にロールバックする</li>
+          <li><b>RLS</b>: 静的検査(全テーブルの ENABLE + FORCE + ポリシー)と、PGlite上の非特権ロールでの実挙動</li>
+          <li><b>鍵の世代</b>: ローテーション後も旧世代の暗号文を復号できること、解約後はどの世代も読めないこと</li>
+          <li><b>CI(毎push)</b>: Biome → tsc strict → Vitest → 本番ビルド → 混入検査 → デモビルド</li>
         </ul>
       </div>
     </div>
     <div>
       <div class="card q"><h3 class="warn">やっていないこと</h3>
         <ul style="margin:0">
-          <li><b>E2E / ブラウザテストが無い</b>(Playwright等の依存ゼロ)。React コンポーネントのテストも0本</li>
-          <li>API ルート層の統合テスト無し。実PostgreSQL(postgres-js)に対するリポジトリ層テスト無し — RLSが実際に効くことは<b>手動確認のみ</b></li>
+          <li><b>E2E / ブラウザテストが無い</b>。React コンポーネントのテストも0本</li>
+          <li>API ルート層の統合テストが無い。実PostgreSQL(postgres-js)に対するリポジトリ層テストも無い</li>
           <li>勤怠は<b>実データでの照合が未実施</b>(Phase 7 予定)。給与直結領域</li>
           <li>Gemini 実API呼び出し、GASブリッジ経由の全経路が未検証</li>
-          <li>実行環境から Tailwind CDN に届かないため、本物のスタイルでの見た目は毎回未確認</li>
+          <li>負荷試験・障害注入は未実施。outbox の滞留や再試行の挙動を、実運用の量で見たことがない</li>
         </ul>
       </div>
-      <p class="muted" style="font-size:.85em;margin-top:.6em">レビュー対応中に「修正を外しても通るテスト」を1本書いてしまい、書き直した。テストの<b>判別力</b>を確認する手順は、今後の規約にしたい。</p>
+      <div class="card" style="margin-top:.6em"><h3>テストの書き方の方針</h3>
+        <p style="margin:0">新しく足したテストは、<b>直した箇所を元に戻すと落ちること</b>を一つずつ確認してから残している。通るだけのテストは、あとから読む人に「守られている」という誤解だけを与えるため。</p>
+      </div>
     </div>
   </div>
   <div class="foot"><span>vitest.config.ts / .github/workflows/ci.yml / packages/core/src/usecases/testDoubles.ts</span><span>katahimo-app</span></div>
   <div class="notes">
-    テストは217件ありますが、分布が偏っています。ドメインとusecaseは厚く、それより外側(ルート、実DB、画面)は薄い。特に「RLSが本当に効いているか」を自動で確かめるテストが無いのは、このアーキテクチャの根幹に対して弱い。ここに投資すべきか、ご意見をいただきたい。
+    テストは327件。分布は依然として偏っていて、ドメインとusecaseは厚く、画面と実DBは薄いままです。ただしRLSについては、静的検査と実挙動の両方をCIに入れました。右下は自分たちの規約で、判別力を確認しないテストは足さない、としています。
   </div>
 </section>
 
 <!-- 13 reality check -->
 <section class="slide mid">
-  <h2>主張と実装のずれ <small>誤解を招きやすい点を先に</small></h2>
+  <h2>主張と実装の対応 <small>誤解を招きやすい点を先に</small></h2>
   <table>
     <thead><tr><th style="width:34%">ドキュメントが語っていること</th><th style="width:14%">実装</th><th>実際の状態</th></tr></thead>
     <tbody>
-      <tr><td>PostgreSQL + RLS のマルチテナント</td><td class="ok">実装済み</td><td>13テーブル、複合FK、FORCE(手動追記)。実DBでの自動テストは無し</td></tr>
+      <tr><td>PostgreSQL + RLS のマルチテナント</td><td class="ok">実装済み</td><td>13テーブル、複合FK、FORCE。静的検査と実DB検証をCIで実行</td></tr>
+      <tr><td>Outbox によるスプレッドシートへの書き戻し</td><td class="ok">実装済み</td><td>ドメインの書き込みと同一トランザクション。バックオフ再試行とデッドレターあり</td></tr>
       <tr><td>Cloud Run 本番デプロイ</td><td class="bad">未着手</td><td>Dockerfile / IaC が存在しない。自動化されているのは GitHub Pages のデモだけ</td></tr>
       <tr><td>予約(EXCLUDE gist)・請求・カルテ・機能フラグ</td><td class="bad">未着手</td><td>提案書の差別化要因。<b>スキーマにテーブルすら無い</b></td></tr>
-      <tr><td>Sheets ミラー(outbox)</td><td class="warn">コード有</td><td>GAS Bridge 未デプロイのため一度も動いていない。既定 <code>MIRROR_TO_GOOGLE_SHEETS=false</code></td></tr>
-      <tr><td>メールによるパスワード再設定</td><td class="warn">コード有</td><td><code>sendEmail</code> アクションが GAS 側に存在しない。未設定時は件名だけログに出る</td></tr>
-      <tr><td>Cloud KMS による鍵管理</td><td class="bad">未着手</td><td>KEK は環境変数。DEK は1世代のみ</td></tr>
+      <tr><td>Sheetsミラーの実送信・メール送信</td><td class="warn">未検証</td><td>GAS Bridge が未デプロイのため一度も動いていない。既定 <code>MIRROR_TO_GOOGLE_SHEETS=false</code></td></tr>
+      <tr><td>Cloud KMS による鍵管理</td><td class="bad">未着手</td><td>KEK は環境変数。世代管理はできるが、再暗号化バッチは無い</td></tr>
       <tr><td>認証は Firebase Auth / Identity Platform</td><td class="muted">方針変更</td><td>自前 argon2id + Cookie。レガシーパスワードを移行できるようにするため</td></tr>
       <tr><td>勤怠計算は GAS版と一致</td><td class="warn">合成データ</td><td>実際の出勤簿での照合は Phase 7</td></tr>
       <tr><td>公開デモ</td><td class="ok">稼働中</td><td>本番と同一のスキーマ / usecases / ルートがブラウザ内で動く</td></tr>
@@ -699,38 +718,37 @@
   </table>
   <div class="foot"><span>README 「フェーズ状況」 / doc/07 / packages/db/src/schema</span><span>katahimo-app</span></div>
   <div class="notes">
-    このスライドが一番大事かもしれません。提案書を読むと立派に見えますが、赤の行は着手すらしていません。今日判断していただきたいのは「この土台(緑と黄色)の上に、赤を積んでいってよいか」です。土台に構造的な問題があるなら、赤を積む前に直したい。
+    このスライドが一番大事かもしれません。提案書を読むと立派に見えますが、赤の行は着手すらしていません。今日判断していただきたいのは「この土台の上に、赤を積んでいってよいか」です。土台に構造的な問題があるなら、赤を積む前に直したい。
   </div>
 </section>
 <!-- 14 questions -->
-<section class="slide roomy">
+<section class="slide mid">
   <h2>判断していただきたいこと <small>優先度順</small></h2>
   <div class="cols">
     <div>
-      <div class="card q"><h3 class="warn">1. トランザクション境界(構造の問題)</h3>
-        <p>リポジトリが各自で <code>withTenant</code>(=tx)を開くため、<b>複数リポジトリを跨ぐ書き込みが原子的にならない</b>。Outbox の積み損ね、再設定コード消費とパスワード書き込みの分離、の2箇所で既に顕在化。</p>
-        <p class="muted">選択肢: (a) unit-of-work を導入し tx を usecase 側で開く (b) 「同一tx契約」を諦めて outbox を DB トリガ/CDC に寄せる (c) 現状を受容し監視で補う</p>
+      <div class="card q"><h3 class="warn">1. GAS ブリッジ 1本への依存</h3>
+        <p>メール・地図・予定・スプレッドシートの4系統を、1つの GAS Web App に集約している。実行時間制限とクォータを持ち、SLA は無く、secret は URL クエリに載る。しかも<b>まだ一度もデプロイしていない</b>。</p>
+        <p class="muted">選択肢: (a) この依存のまま早期にデプロイして運用設計を詰める (b) メールだけ別経路(SES/SendGrid等)に逃がす (c) Sheets 連携そのものを移行の対象から外す</p>
       </div>
-      <div class="card q" style="margin-top:.6em"><h3 class="warn">2. GAS ブリッジ 1本への依存(運用の問題)</h3>
-        <p>Mail / Maps / Calendar / Sheets を未デプロイの GAS Web App に集約。secret は URL クエリ、リトライ無し、failed は終端。</p>
-        <p class="muted">選択肢: この依存を許容し早期にデプロイ+運用設計するか、少なくともメールだけは別経路(SES/SendGrid等)にするか</p>
+      <div class="card q" style="margin-top:.6em"><h3 class="warn">2. 鍵管理を本番相当にする時期</h3>
+        <p>封筒暗号化の形はできていて世代も並存するが、KEK は環境変数のまま。<b>Cloud KMS を入れる前に本番データを溜め始めてよいか</b>。再暗号化バッチも未実装で、古い世代の鍵をまだ捨てられない。</p>
       </div>
     </div>
     <div>
-      <div class="card q"><h3 class="warn">3. 鍵管理の順序(いつ本番相当にするか)</h3>
-        <p>Cloud KMS 未実装、DEK 1世代。インターフェースは差し替え可能な形だが、<b>ローテーション不能な状態でデータを溜め始めてよいか</b>。</p>
+      <div class="card q"><h3 class="warn">3. 予約・請求・カルテをどう積むか</h3>
+        <p>提案書の差別化要因は、まだスキーマにも無い。二重予約防止(<code>EXCLUDE USING gist</code>)や請求の整合性は、後から足すと既存データの移行が要る。<b>いま土台に入れるか、後回しにするか</b>。</p>
       </div>
-      <div class="card q" style="margin-top:.6em"><h3 class="warn">4. RLS の担保をどこまで自動化するか</h3>
-        <p>FORCE の手動追記、実DBでの RLS テスト無し。マイグレーションSQLの静的検査、または postgres-js での分離テストを CI に入れるべきか。</p>
+      <div class="card q" style="margin-top:.6em"><h3 class="warn">4. テストの薄い層をどこまで埋めるか</h3>
+        <p>ドメインとusecaseは厚いが、APIルート・実PostgreSQL・画面は手動確認のまま。<b>どれをローンチ前提条件にするか</b>。特に勤怠は給与に直結する。</p>
       </div>
-      <div class="card q" style="margin-top:.6em"><h3 class="warn">5. 認証のハードニング</h3>
-        <p>ログインのレート制限、CSRF、argon2 パラメータ明示、未使用の <code>SESSION_SECRET</code> 整理、監査ログの「誰が」。<b>どれをローンチ前提条件にするか</b>。</p>
+      <div class="card q" style="margin-top:.6em"><h3 class="warn">5. 単一障害点と運用の受け皿</h3>
+        <p>デッドレターの再投入、outbox の滞留、鍵のローテーション。<b>いずれも今は手作業</b>。運用画面を作るか、手順書で足りるか。</p>
       </div>
     </div>
   </div>
-  <div class="foot"><span>いずれも「直せない」ものではなく「今直すべきか、いつ直すか」の判断</span><span>katahimo-app</span></div>
+  <div class="foot"><span>いずれも「直せない」ものではなく「今やるか、いつやるか」の判断</span><span>katahimo-app</span></div>
   <div class="notes">
-    5つに絞りました。1番は構造の問題で、放置すると2箇所から3箇所、4箇所と増えるので、いま判断したい。2番は設計の是非より「この依存を許容するか」。3〜5は順序の問題です。私の推奨は、1番の unit-of-work を次に着手し、2番はメールだけ別経路に逃がすこと。ただしこれは意見なので、ご判断をいただきたい。
+    5つに絞りました。1番は設計の是非というより「この依存を許容するか」。2番は順序の問題です。3番が一番大きくて、予約や請求は後から足すとデータ移行が伴うので、土台のうちに入れるべきかを聞きたい。4番と5番は、どこまでをローンチの条件にするかという線引きです。私の推奨は、メールだけ別経路に逃がしたうえで、予約のスキーマを先に入れることです。ただしこれは意見なので、ご判断をいただきたい。
   </div>
 </section>
 
@@ -742,24 +760,25 @@
       <h3 class="ok" style="margin:.2em 0">この設計で守れていると考えているもの</h3>
       <ul>
         <li>core が外部SDKを知らない → Node とブラウザで同一コードが動く(デモで実証)</li>
-        <li>テナント分離の二重防御(withTenant + RLS/FORCE + 複合FK)</li>
-        <li>要配慮データの列暗号化と、暗号学的削除の導線</li>
-        <li>認証の失敗経路(列挙・総当たり・割り込み・部分更新)を塞いだ</li>
+        <li>テナント分離の二重防御。効いていることを静的検査と実DBの両方で検証している</li>
+        <li>揃って成立すべき書き込みが1つのトランザクションで確定する</li>
+        <li>要配慮データの列暗号化、鍵の世代管理、暗号学的削除の導線</li>
+        <li>認証の失敗経路(列挙・総当たり・割り込み・部分更新・クロスサイト)を塞いだ</li>
       </ul>
     </div>
     <div>
       <h3 class="warn" style="margin:.2em 0">判断をいただきたいもの</h3>
       <ul>
-        <li>リポジトリ横断のトランザクション境界(unit-of-work)</li>
         <li>GAS ブリッジ1本への依存と、その運用設計</li>
         <li>鍵管理を本番相当にする時期</li>
-        <li>RLS の自動検証 / 認証ハードニングの優先度</li>
+        <li>予約・請求・カルテを土台に入れる順番</li>
+        <li>テストの薄い層と、運用の受け皿をどこまで作るか</li>
       </ul>
     </div>
   </div>
   <p class="muted center" style="margin-top:1.2em">デモ: <span class="mono">https://ohru131.github.io/katahimo-app/</span>(admin@demo.example.com / demo1234)<br>詳細: doc/07 技術構成提案書 ・ doc/09 データベース構造解説 ・ doc/10 開発メモ</p>
   <div class="notes">
-    左は自信を持って言えること、右は判断してほしいこと。質疑では特に、unit-of-work を入れるか、GASブリッジの依存を許容するか、の2点についてご意見をいただければと思います。
+    左は自信を持って言えること、右は判断してほしいこと。質疑では特に、GASブリッジの依存を許容するかと、予約・請求をいつ土台に入れるか、の2点についてご意見をいただければと思います。
   </div>
 </section>
 

@@ -1,4 +1,4 @@
-import { integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { integer, pgPolicy, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { tenants } from './tenants';
 
@@ -22,15 +22,20 @@ import { tenants } from './tenants';
  *   形式(base64)自体は変えずに済む)
  * が実現できる。
  *
- * dekVersion: DEKそのものをローテーションした回数(実データの再暗号化を伴う、重い操作)。
- * 各暗号化列の`*_key_version`はこの値を指す。
+ * dekVersion: DEKそのものをローテーションした回数。各暗号化列の`*_key_version`はこの値を指す。
  * kekVersion: DEKを再ラップした回数(KEKだけを差し替える、軽い操作。データの再暗号化は不要)。
+ *
+ * 主キーが (tenantId, dekVersion) の複合になっているのは、**世代を並存させる**ため。
+ * 1テナント1行にすると、DEKをローテーションした瞬間に古い世代で暗号化された既存の
+ * 暗号文がすべて読めなくなる(=ローテーションが実質不可能になる)。世代を残しておけば、
+ * 新しい書き込みは最新世代で暗号化しつつ、既存の値は記録された世代の鍵で復号できる。
+ * 再暗号化のバッチは、その状態のまま後から流せばよい。
  */
 export const tenantKeys = pgTable(
   'tenant_keys',
   {
     tenantId: uuid()
-      .primaryKey()
+      .notNull()
       .references(() => tenants.id),
     dekVersion: integer().notNull().default(1),
     wrappedDek: text().notNull(),
@@ -40,5 +45,8 @@ export const tenantKeys = pgTable(
     /** 暗号学的削除の実行日時。設定後はunwrapできない(=そのテナントの全PIIが永久に復号不能)。 */
     revokedAt: timestamp({ withTimezone: true }),
   },
-  () => [pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING })],
+  (t) => [
+    primaryKey({ columns: [t.tenantId, t.dekVersion] }),
+    pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING }),
+  ],
 ).enableRLS();

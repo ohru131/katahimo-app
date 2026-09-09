@@ -8,6 +8,8 @@
  * スプレッドシート脱却時は、ミラーワーカー側でアダプタを無効化するだけでよい。
  */
 
+import type { TransactionScope } from './unitOfWork';
+
 /** ミラー対象の種類。outbox_jobs.kind に対応する。 */
 export type MirrorKind =
   /** 個別出勤簿スプレッドシートの1日分の行(入力列のみ・値のみ。数式セルには触れない) */
@@ -28,16 +30,24 @@ export interface MirrorJob {
   kind: MirrorKind;
   /** ミラー対象のドメインレコードID。ワーカーはこれを元にDBから最新値を読み直す。 */
   targetId: string;
-  /** 冪等キー。同じキーのジョブは1回だけ適用されればよい。 */
+  /**
+   * 冪等キー。同じキーのジョブは1回だけ適用されればよい。
+   * `buildMirrorIdempotencyKey`(domain/mirror)で「レコードIDとその版」から組み立てる。
+   */
   idempotencyKey: string;
 }
 
 export interface MirrorPort {
   /**
-   * ミラー要求をoutboxに積む。ドメインの書き込みと同一トランザクションで呼ぶこと
-   * (積み損ね・二重積みを防ぐため)。実際の送信は非同期のワーカーが行う。
+   * ミラー要求をoutboxに積む。
+   *
+   * ドメインの書き込みと**同一トランザクションで**呼ぶこと。片方だけが確定すると、
+   * 保存はできたのにスプレッドシートへ永久に反映されない(しかも取り残されたことに
+   * 気づけない)行が生まれる。そのため `scope` は省略可能ではあるが、ドメインの
+   * 書き込みと対で呼ぶ通常の経路では必ず渡す(呼び出し側は UnitOfWorkPort.run の中で
+   * 書き込みとenqueueを揃える)。実際の送信は非同期のワーカーが行う。
    */
-  enqueue(job: MirrorJob): Promise<void>;
+  enqueue(job: MirrorJob, scope?: TransactionScope): Promise<void>;
 }
 
 /** ミラーワーカー(packages/worker)がoutbox_jobsから取り出す1件分。 */
@@ -46,7 +56,10 @@ export interface OutboxJobRecord {
   tenantId: string;
   kind: MirrorKind;
   targetId: string;
-  /** 取得(claim)のたびに1増える。無限リトライを避ける将来の上限判定に使う想定(現時点では未使用)。 */
+  /**
+   * 取得(claim)のたびに1増える。再試行の待ち時間と、デッドレターに落とす上限の判定に使う
+   * (packages/core/src/domain/mirror/retry.ts)。
+   */
   attempts: number;
 }
 
@@ -62,5 +75,10 @@ export interface OutboxRepositoryPort extends MirrorPort {
    */
   claimPending(tenantId: string, limit: number): Promise<OutboxJobRecord[]>;
   markDone(tenantId: string, id: string): Promise<void>;
-  markFailed(tenantId: string, id: string, error: string): Promise<void>;
+  /**
+   * 失敗を記録する。`nextAttemptAt` を渡すとその時刻以降に再度claimされる(pendingへ戻す)。
+   * nullを渡すと `failed`(デッドレター)で終端させ、以後は自動では拾わない。
+   * どちらにするかは再試行ポリシー(domain/mirror/retry.ts)が決める。
+   */
+  markFailed(tenantId: string, id: string, error: string, nextAttemptAt: Date | null): Promise<void>;
 }

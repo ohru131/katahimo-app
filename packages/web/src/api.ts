@@ -222,7 +222,10 @@ export async function fetchActiveStaffForAdmin(): Promise<ActiveStaffView[]> {
 // ── 管理者設定(GAS版の設定モーダル「管理者設定」に対応) ──
 
 export interface AdminSettingsView {
-  geminiApiKey: string;
+  /** Gemini APIキーが保存済みかどうか。平文はサーバーから返らない(書き込み専用)。 */
+  hasGeminiApiKey: boolean;
+  /** どのキーが入っているか見分けるための末尾数文字。短すぎるキーの場合はnull。 */
+  geminiApiKeyPreview: string | null;
   geminiReportModel: string;
   geminiOcrModel: string;
   gchatReportWebhookUrl: string;
@@ -270,12 +273,16 @@ export interface GeminiModelInfo {
   displayName: string;
 }
 
-export async function listAvailableGeminiModels(apiKey: string): Promise<GeminiModelInfo[]> {
+/**
+ * 利用可能なモデル一覧を取得する。apiKeyを渡すと入力途中の(未保存の)キーで試せる。
+ * 省略した場合はサーバー側が保存済みのキーを使う(画面は保存済みキーの平文を持たないため)。
+ */
+export async function listAvailableGeminiModels(apiKey?: string): Promise<GeminiModelInfo[]> {
   const res = await fetch('/api/settings/admin/gemini-models/available', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ apiKey }),
+    body: JSON.stringify(apiKey ? { apiKey } : {}),
   });
   const body = await parseJsonOrThrow<{ success: boolean; models?: GeminiModelInfo[]; message?: string }>(
     res,

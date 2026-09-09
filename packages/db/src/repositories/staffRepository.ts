@@ -6,6 +6,7 @@ import type {
   StaffAdminRecord,
   StaffRecord,
   StaffRepositoryPort,
+  TransactionScope,
   UpdateStaffInput,
 } from '@katahimo/core/ports';
 import { and, eq } from 'drizzle-orm';
@@ -25,6 +26,8 @@ function toRecord(row: typeof staff.$inferSelect): StaffRecord {
     isAdmin: row.isAdmin,
     retirementDate: row.retirementDate,
     mustChangePassword: row.mustChangePassword,
+    failedLoginAttempts: row.failedLoginAttempts,
+    lockedUntil: row.lockedUntil,
   };
 }
 
@@ -74,37 +77,64 @@ export class DrizzleStaffRepository implements StaffRepositoryPort {
     });
   }
 
-  async replacePassword(input: ReplacePasswordInput): Promise<ReplacePasswordResult> {
-    return withTenant(this.db, input.tenantId, async (tx) => {
-      // 先に行ロックを取る。認証済みの書き込み同士が混ざって「後から来たほうが勝つ」
-      // 状態になるのを防ぐ(管理者の再発行と、コードによる再設定が同時に走る場合)。
-      const rows = await tx
-        .select({ passwordHash: staff.passwordHash })
-        .from(staff)
-        .where(eq(staff.id, input.staffId))
-        .for('update')
-        .limit(1);
-      const row = rows[0];
-      if (!row) return 'stale';
-      if (input.expect && row.passwordHash !== input.expect.passwordHash) return 'stale';
+  async replacePassword(
+    input: ReplacePasswordInput,
+    scope?: TransactionScope,
+  ): Promise<ReplacePasswordResult> {
+    return withTenant(
+      this.db,
+      input.tenantId,
+      async (tx) => {
+        // 先に行ロックを取る。認証済みの書き込み同士が混ざって「後から来たほうが勝つ」
+        // 状態になるのを防ぐ(管理者の再発行と、コードによる再設定が同時に走る場合)。
+        const rows = await tx
+          .select({ passwordHash: staff.passwordHash })
+          .from(staff)
+          .where(eq(staff.id, input.staffId))
+          .for('update')
+          .limit(1);
+        const row = rows[0];
+        if (!row) return 'stale';
+        if (input.expect && row.passwordHash !== input.expect.passwordHash) return 'stale';
 
+        await tx
+          .update(staff)
+          .set({
+            passwordHash: input.passwordHash,
+            legacyPasswordHash: null,
+            mustChangePassword: input.mustChangePassword,
+            updatedAt: new Date(),
+          })
+          .where(eq(staff.id, input.staffId));
+
+        if (input.revokeSessions) {
+          await tx
+            .delete(sessions)
+            .where(and(eq(sessions.tenantId, input.tenantId), eq(sessions.staffId, input.staffId)));
+        }
+
+        return 'applied';
+      },
+      scope,
+    );
+  }
+
+  async recordFailedLogin(
+    tenantId: string,
+    staffId: string,
+    state: { failedLoginAttempts: number; lockedUntil: Date | null },
+  ): Promise<void> {
+    await withTenant(this.db, tenantId, async (tx) => {
       await tx
         .update(staff)
-        .set({
-          passwordHash: input.passwordHash,
-          legacyPasswordHash: null,
-          mustChangePassword: input.mustChangePassword,
-          updatedAt: new Date(),
-        })
-        .where(eq(staff.id, input.staffId));
+        .set({ failedLoginAttempts: state.failedLoginAttempts, lockedUntil: state.lockedUntil })
+        .where(eq(staff.id, staffId));
+    });
+  }
 
-      if (input.revokeSessions) {
-        await tx
-          .delete(sessions)
-          .where(and(eq(sessions.tenantId, input.tenantId), eq(sessions.staffId, input.staffId)));
-      }
-
-      return 'applied';
+  async clearLoginFailures(tenantId: string, staffId: string): Promise<void> {
+    await withTenant(this.db, tenantId, async (tx) => {
+      await tx.update(staff).set({ failedLoginAttempts: 0, lockedUntil: null }).where(eq(staff.id, staffId));
     });
   }
 

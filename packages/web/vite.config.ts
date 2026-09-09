@@ -65,6 +65,11 @@ export default defineConfig({
           stripDemoEntry(),
           VitePWA({
             registerType: 'autoUpdate',
+            workbox: {
+              // 既定のglobPatternsはフォントを含まない。Tailwind同様フォントも自前配信に
+              // 変えたので、オフラインでも本来の書体で表示できるようwoff2を先読みに含める。
+              globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+            },
             manifest: {
               name: 'katahimo 訪問管理',
               short_name: 'katahimo',

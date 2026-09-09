@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type {
   AttendanceDayDerived,
   AttendanceMonthlyTotals,
@@ -10,15 +9,19 @@ import {
   computeDayDerived,
   computeMonthlyTotals,
 } from '../domain/attendance';
+import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
 import type { CryptoPort } from '../ports/crypto';
 import type { MirrorPort } from '../ports/mirror';
 import type { AttendanceDayRepositoryPort } from '../ports/repositories';
+import type { UnitOfWorkPort } from '../ports/unitOfWork';
 
 export interface AttendanceDeps {
   attendanceDays: AttendanceDayRepositoryPort;
   crypto: CryptoPort;
   /** 出勤簿スプレッドシートへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
   mirror: MirrorPort;
+  /** 勤怠の保存とミラー要求のenqueueを、1つのトランザクションにまとめるために使う。 */
+  unitOfWork: UnitOfWorkPort;
 }
 
 export interface AttendanceDayView {
@@ -65,13 +68,20 @@ export async function saveAttendanceDay(
   businessDate: string,
   rowData: AttendanceRowData,
 ): Promise<AttendanceDayView> {
+  // 暗号化はトランザクションの外で済ませる(tenant_keysの読み取りが別トランザクションを
+  // 開くため。unitOfWork.ts参照)。
   const encrypted = await deps.crypto.encrypt(tenantId, JSON.stringify(rowData));
-  const record = await deps.attendanceDays.upsert(tenantId, staffId, businessDate, encrypted);
-  await deps.mirror.enqueue({
-    tenantId,
-    kind: 'attendance_day',
-    targetId: record.id,
-    idempotencyKey: randomUUID(),
+  await deps.unitOfWork.run(tenantId, async (scope) => {
+    const record = await deps.attendanceDays.upsert(tenantId, staffId, businessDate, encrypted, scope);
+    await deps.mirror.enqueue(
+      {
+        tenantId,
+        kind: 'attendance_day',
+        targetId: record.id,
+        idempotencyKey: buildMirrorIdempotencyKey('attendance_day', record.id, record.updatedAt),
+      },
+      scope,
+    );
   });
   return { businessDate, rowData, derived: computeDayDerived(rowData) };
 }

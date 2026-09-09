@@ -109,7 +109,17 @@ export function createAuthRoutes(container: Container, isProduction: boolean) {
     return c.json({ staff: session });
   });
 
-  app.post('/logout', (c) => {
+  app.post('/logout', async (c) => {
+    // Cookieを消す前にセッションを解決して、誰のログアウトかを監査に残す。
+    // 未ログインでも黙って成功させる(押した側から見た結果は同じであるべき)。
+    const session = await getAuthenticatedSession(c, container);
+    if (session) {
+      container.audit.record({
+        type: 'logout',
+        tenantId: session.tenantId,
+        actorStaffId: session.staffId,
+      });
+    }
     deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
     return c.json({ ok: true });
   });
