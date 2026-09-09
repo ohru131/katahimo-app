@@ -1,3 +1,5 @@
+import type { LoginThrottlePolicy } from '@katahimo/core';
+import { applyFailedLogin } from '@katahimo/core';
 import type {
   ActiveStaffRecord,
   NewStaffInput,
@@ -119,15 +121,23 @@ export class DrizzleStaffRepository implements StaffRepositoryPort {
     );
   }
 
-  async recordFailedLogin(
-    tenantId: string,
-    staffId: string,
-    state: { failedLoginAttempts: number; lockedUntil: Date | null },
-  ): Promise<void> {
+  async recordFailedLogin(tenantId: string, staffId: string, policy: LoginThrottlePolicy): Promise<void> {
     await withTenant(this.db, tenantId, async (tx) => {
+      // 行ロックを取ってから読む。同時に届いた失敗が揃って加算前の値を読むと、
+      // どちらも同じ値を書いて加算が消え、上限に達しないまま並列に試せてしまう。
+      const rows = await tx
+        .select({ failedLoginAttempts: staff.failedLoginAttempts, lockedUntil: staff.lockedUntil })
+        .from(staff)
+        .where(eq(staff.id, staffId))
+        .for('update')
+        .limit(1);
+      const row = rows[0];
+      if (!row) return;
+
+      const next = applyFailedLogin(row, new Date(), policy);
       await tx
         .update(staff)
-        .set({ failedLoginAttempts: state.failedLoginAttempts, lockedUntil: state.lockedUntil })
+        .set({ failedLoginAttempts: next.failedLoginAttempts, lockedUntil: next.lockedUntil })
         .where(eq(staff.id, staffId));
     });
   }

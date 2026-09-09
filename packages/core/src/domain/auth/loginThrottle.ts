@@ -14,6 +14,17 @@ export const MAX_FAILED_LOGIN_ATTEMPTS = 10;
 /** ロックの継続時間。 */
 export const LOGIN_LOCKOUT_MS = 15 * 60 * 1000;
 
+export interface LoginThrottlePolicy {
+  maxFailedAttempts: number;
+  lockoutMs: number;
+}
+
+/** 既定のポリシー。usecaseがリポジトリへ渡し、リポジトリが行ロックの中で適用する。 */
+export const LOGIN_THROTTLE_POLICY: LoginThrottlePolicy = {
+  maxFailedAttempts: MAX_FAILED_LOGIN_ATTEMPTS,
+  lockoutMs: LOGIN_LOCKOUT_MS,
+};
+
 export interface LoginThrottleState {
   failedLoginAttempts: number;
   lockedUntil: Date | null;
@@ -34,11 +45,19 @@ export interface FailedLoginOutcome {
  * (ロックが明けたら、また上限までは試せる = 1回失敗するたびに即ロック、にはしない)。
  *
  * ロック中の状態は呼び出し前に弾かれている前提なので、ここでは考えない。
+ *
+ * この関数は**リポジトリが行ロックの中で**呼ぶ。usecase側で読み取ってから書き戻すと、
+ * 同時に届いた失敗が揃って加算前の値を読み、どちらも同じ値を書いて加算が消える。
+ * その隙間を突けば、上限に達しないまま並列に何度でも試せてしまう。
  */
-export function applyFailedLogin(state: LoginThrottleState, now: Date): FailedLoginOutcome {
+export function applyFailedLogin(
+  state: LoginThrottleState,
+  now: Date,
+  policy: LoginThrottlePolicy = LOGIN_THROTTLE_POLICY,
+): FailedLoginOutcome {
   const attempts = state.failedLoginAttempts + 1;
-  if (attempts < MAX_FAILED_LOGIN_ATTEMPTS) {
+  if (attempts < policy.maxFailedAttempts) {
     return { failedLoginAttempts: attempts, lockedUntil: null };
   }
-  return { failedLoginAttempts: 0, lockedUntil: new Date(now.getTime() + LOGIN_LOCKOUT_MS) };
+  return { failedLoginAttempts: 0, lockedUntil: new Date(now.getTime() + policy.lockoutMs) };
 }

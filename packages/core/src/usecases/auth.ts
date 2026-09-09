@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import {
-  applyFailedLogin,
   computeLegacyHash,
   isAcceptablePassword,
   isLoginLocked,
+  LOGIN_THROTTLE_POLICY,
   MIN_PASSWORD_LENGTH,
   normalizeEmailForIndex,
 } from '../domain';
@@ -137,7 +137,9 @@ export async function login(deps: AuthDeps, input: LoginInput): Promise<LoginRes
   }
 
   if (!matched) {
-    await deps.staff.recordFailedLogin(tenant.id, staff.id, applyFailedLogin(staff, now));
+    // 加算とロック判定はリポジトリが行ロックの中で行う(ここで現在値を読んで書き戻すと、
+    // 同時に届いた失敗が互いの加算を打ち消し、上限をすり抜けられる)。
+    await deps.staff.recordFailedLogin(tenant.id, staff.id, LOGIN_THROTTLE_POLICY);
     deps.audit?.record({
       type: 'login_failed',
       tenantId: tenant.id,

@@ -173,7 +173,10 @@ export interface RunOutboxBatchResult {
   processed: number;
   /** 今回の試行で失敗した件数(再試行待ちに戻したものと、デッドレターに落としたものの合計)。 */
   failed: number;
-  /** そのうち、再試行の上限に達して `failed` で終端したもの。運用が気づくべき件数。 */
+  /**
+   * そのうち `failed` で終端したもの。再試行の上限に達した分と、再試行しても結果が
+   * 変わらない失敗(PermanentMirrorError)で即座に打ち切った分の合計。運用が気づくべき件数。
+   */
   deadLettered: number;
 }
 

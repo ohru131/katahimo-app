@@ -40,6 +40,26 @@ describe('クロスサイトからの書き込みの拒否', () => {
     ).toBe(false);
   });
 
+  it('TLSを手前で終端する構成でも、同一オリジンの書き込みを弾かない', () => {
+    // Cloud Run等ではアプリに届くのは平文HTTPなので c.req.url は http:// になる。
+    // ブラウザが送る Origin は https:// なので、転送元のスキームを見ないと誤って403になる。
+    const behindProxy = 'http://app.example.com/api/reports/daily';
+    expect(shouldRejectAsCrossSite('POST', 'https://app.example.com', behindProxy)).toBe(true);
+    expect(shouldRejectAsCrossSite('POST', 'https://app.example.com', behindProxy, [], 'https')).toBe(false);
+  });
+
+  it('プロキシを重ねた場合は最も外側のスキームを使う', () => {
+    const behindProxy = 'http://app.example.com/api/reports/daily';
+    expect(shouldRejectAsCrossSite('POST', 'https://app.example.com', behindProxy, [], 'https, http')).toBe(
+      false,
+    );
+  });
+
+  it('転送元のスキームを見ても、別オリジンは弾いたままにする', () => {
+    const behindProxy = 'http://app.example.com/api/reports/daily';
+    expect(shouldRejectAsCrossSite('POST', 'https://evil.example.net', behindProxy, [], 'https')).toBe(true);
+  });
+
   it('リクエストURLが解釈できない場合は通さない', () => {
     expect(shouldRejectAsCrossSite('POST', 'https://app.example.com', 'not-a-url')).toBe(true);
   });

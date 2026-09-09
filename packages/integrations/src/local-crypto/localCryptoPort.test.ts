@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { TenantKeyRecord, TenantKeyRepositoryPort } from '@katahimo/core/ports';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { LocalKmsPort } from '../local-kms/localKmsPort';
@@ -124,6 +125,34 @@ describe('LocalCryptoPort のDEK世代管理', () => {
 
     await expect(afterRevoke.decrypt(tenantId, first)).rejects.toThrow(/暗号学的削除/);
     await expect(afterRevoke.decrypt(tenantId, second)).rejects.toThrow(/暗号学的削除/);
+  });
+
+  it('同じ世代番号でrotateが競合したら、実際に永続化された鍵を使う', async () => {
+    await crypto.encrypt(tenantId, '初期');
+
+    // findCurrent と create のあいだに、別プロセスが同じ世代を先に作った状況を再現する。
+    // createは先勝ちで既存行を返すので、こちらが生成した鍵は永続化されない。
+    const realCreate = tenantKeys.create.bind(tenantKeys);
+    const competitorKey = randomBytes(32);
+    let raced = false;
+    tenantKeys.create = async (t, version, wrappedDek, kekVersion) => {
+      if (!raced) {
+        raced = true;
+        const competitor = await new LocalKmsPort(KEK).wrap(competitorKey);
+        await realCreate(t, version, competitor.ciphertext, competitor.kekVersion);
+      }
+      return realCreate(t, version, wrappedDek, kekVersion);
+    };
+
+    expect(await crypto.rotate(tenantId)).toBe(2);
+    expect(tenantKeys.rows.filter((r) => r.dekVersion === 2)).toHaveLength(1);
+
+    const encrypted = await crypto.encrypt(tenantId, '競合後');
+    expect(encrypted.keyVersion).toBe(2);
+
+    // 永続化された鍵しか知らない別インスタンスで復号できる = 先に入った行の鍵を使えている。
+    const restarted = new LocalCryptoPort(tenantKeys, new LocalKmsPort(KEK));
+    expect(await restarted.decrypt(tenantId, encrypted)).toBe('競合後');
   });
 
   it('同じ平文でも毎回異なる暗号文になる(決定的暗号化ではない)', async () => {

@@ -108,6 +108,17 @@ describe('ログイン試行の制限', () => {
     expect(lockedAccount).toEqual(unknownAccount);
   });
 
+  it('失敗の加算は保存されている値から計算する(呼び出し側が読んだ値ではない)', async () => {
+    // 同時に届いた失敗が互いの加算を打ち消さないことの要。usecaseが現在値を読んで
+    // 絶対値を書き戻す作りだと、この「途中で他の経路が進めた」状況で加算が消える。
+    staffRepository.setLockForTest(staffId, null, MAX_FAILED_LOGIN_ATTEMPTS - 1);
+
+    await login(deps, badLogin);
+
+    // 保存値(上限-1)からの加算なので、この1回で上限に達してロックされる。
+    expect((await login(deps, goodLogin)).ok).toBe(false);
+  });
+
   it('ログインの成否を監査ログに残す', async () => {
     await login(deps, badLogin);
     await login(deps, goodLogin);

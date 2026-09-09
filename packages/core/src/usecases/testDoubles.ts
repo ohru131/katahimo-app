@@ -1,4 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
+import type { LoginThrottlePolicy } from '../domain/auth/loginThrottle';
+import { applyFailedLogin } from '../domain/auth/loginThrottle';
 import type { BlindIndexPort, CryptoPort, EncryptedValue } from '../ports/crypto';
 import type { MailerPort, MailMessage } from '../ports/mailer';
 import type { MirrorJob, OutboxJobRecord, OutboxRepositoryPort } from '../ports/mirror';
@@ -253,15 +255,14 @@ export class FakeStaffRepository implements StaffRepositoryPort, FakeTransaction
     if (record) record.retirementDate = retirementDate;
   }
 
-  async recordFailedLogin(
-    tenantId: string,
-    staffId: string,
-    state: { failedLoginAttempts: number; lockedUntil: Date | null },
-  ): Promise<void> {
+  async recordFailedLogin(tenantId: string, staffId: string, policy: LoginThrottlePolicy): Promise<void> {
     const row = this.rows.find((r) => r.tenantId === tenantId && r.id === staffId);
     if (!row) return;
-    row.failedLoginAttempts = state.failedLoginAttempts;
-    row.lockedUntil = state.lockedUntil;
+    // 本物の実装と同じく、保存されている現在値から遷移を計算する
+    // (呼び出し側が読んだ値ではない。staffRepository.ts の行ロック参照)。
+    const next = applyFailedLogin(row, new Date(), policy);
+    row.failedLoginAttempts = next.failedLoginAttempts;
+    row.lockedUntil = next.lockedUntil;
   }
 
   async clearLoginFailures(tenantId: string, staffId: string): Promise<void> {

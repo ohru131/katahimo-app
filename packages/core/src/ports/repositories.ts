@@ -3,6 +3,7 @@
  * (このパッケージはDBクライアントに依存しないという境界を守るため、インターフェースだけ持つ)。
  */
 
+import type { LoginThrottlePolicy } from '../domain/auth/loginThrottle';
 import type { TransactionScope } from './unitOfWork';
 
 export interface EncryptedField {
@@ -119,14 +120,14 @@ export interface StaffRepositoryPort {
    */
   replacePassword(input: ReplacePasswordInput, scope?: TransactionScope): Promise<ReplacePasswordResult>;
   /**
-   * ログイン失敗を記録する。上限に達したかどうか(=ロックするか)は呼び出し側の
-   * ポリシーが決める(packages/core/src/domain/auth/loginThrottle.ts)。
+   * ログイン失敗を1回記録する。**加算とロック判定を行ロックの中でまとめて行うこと**。
+   * 呼び出し側が現在値を読んでから絶対値を書き戻す形にすると、同時に届いた失敗が
+   * 揃って加算前の値を読み、加算が消えて上限を回避できてしまう。
+   *
+   * 実際の遷移は `applyFailedLogin`(domain/auth/loginThrottle.ts)が決める。
+   * ここにはその判断材料としてポリシーだけを渡す。
    */
-  recordFailedLogin(
-    tenantId: string,
-    staffId: string,
-    state: { failedLoginAttempts: number; lockedUntil: Date | null },
-  ): Promise<void>;
+  recordFailedLogin(tenantId: string, staffId: string, policy: LoginThrottlePolicy): Promise<void>;
   /** ログイン成功時に失敗回数とロックを消す。 */
   clearLoginFailures(tenantId: string, staffId: string): Promise<void>;
   /** 管理者のスタッフ管理画面用。退職済みも含む全件を返す。 */

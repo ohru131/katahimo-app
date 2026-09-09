@@ -33,11 +33,13 @@ async function pollOnce(): Promise<void> {
         `[mirror] tenant=${tenant.slug} processed=${processed} failed=${failed} deadLettered=${deadLettered}`,
       );
     }
-    // 再試行の上限に達した分は自動では復旧しない。運用が気づけるよう、通常のログとは
+    // デッドレターに落ちた分は自動では復旧しない。運用が気づけるよう、通常のログとは
     // 別にerrorで出す(Cloud Loggingのseverityで拾えるようにするため)。
+    // 内訳は「再試行の上限に達したもの」と「再試行しても変わらない失敗(未対応の種別など)」。
     if (deadLettered > 0) {
       console.error(
-        `[mirror] tenant=${tenant.slug} 再試行の上限に達したミラージョブが${deadLettered}件あります(status=failed)。手当てが必要です。`,
+        `[mirror] tenant=${tenant.slug} 打ち切ったミラージョブが${deadLettered}件あります(status=failed)。` +
+          '再試行の上限に達したか、再試行しても解消しない失敗です。last_errorを確認してください。',
       );
     }
   }

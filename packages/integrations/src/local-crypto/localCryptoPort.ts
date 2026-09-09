@@ -115,8 +115,7 @@ export class LocalCryptoPort implements CryptoPort {
     if (current) this.assertUsable(tenantId, current);
     const nextVersion = (current?.dekVersion ?? 0) + 1;
 
-    const dek = randomBytes(32);
-    const wrapped = await this.kms.wrap(dek);
+    const wrapped = await this.kms.wrap(randomBytes(32));
     const created = await this.tenantKeys.create(
       tenantId,
       nextVersion,
@@ -124,6 +123,14 @@ export class LocalCryptoPort implements CryptoPort {
       wrapped.kekVersion,
     );
 
+    // 必ず「実際に永続化された行」の鍵をキャッシュする。同じ世代番号で同時にrotateが
+    // 走ると、createは先に入った行をそのまま返す(先勝ち)。そのとき自分が生成した鍵を
+    // 覚えてしまうと、このプロセスだけが別の鍵で暗号化し、他のプロセスや再起動後は
+    // その暗号文を復号できなくなる(AES-GCMの認証が通らない)。
+    const dek = await this.kms.unwrap({
+      ciphertext: created.wrappedDek,
+      kekVersion: created.kekVersion,
+    });
     this.currentDekCache.set(tenantId, { dek, dekVersion: created.dekVersion });
     this.dekByVersionCache.set(cacheKey(tenantId, created.dekVersion), dek);
     return created.dekVersion;

@@ -269,7 +269,7 @@
   </div>
   <div class="foot"><span>packages/*/package.json</span><span>katahimo-app</span></div>
   <div class="notes">
-    ヘキサゴナルを、パッケージ境界で強制している構成です。core は外部SDKを一切importしないので、ブラウザでもNodeでも同じコードが動きます。これがデモを可能にしている根拠でもあります。右下は自分から挙げる弱点で、web が demo を通常依存に持っている点です。
+    ヘキサゴナルを、パッケージ境界で強制している構成です。core は外部SDKを一切importしないので、ブラウザでもNodeでも同じコードが動きます。これがデモを可能にしている根拠でもあります。右下はデモ用コードの隔離で、web から demo への依存は devDependencies に置いたうえで、ビルド成果物そのものをCIで検査しています。設定を読むのではなく出力を見るので、設定ミスでも素通りしません。
   </div>
 </section>
 
@@ -345,7 +345,7 @@
   </div>
   <div class="foot"><span>packages/core/src/{ports,usecases,domain} / packages/api/src/container.ts</span><span>katahimo-app</span></div>
   <div class="notes">
-    教科書どおりのポート&アダプタです。強調したいのは「同じ Container 型を、Node とブラウザで別々に組み立てている」こと。デモはリポジトリも暗号化もusecasesも本番と同一コードで動きます。差し替えているのは、Node専用の実装と、鍵を置けない外部APIだけです。
+    教科書どおりのポート&アダプタです。強調したいのは「同じ Container 型を、Node とブラウザで別々に組み立てている」こと。デモはリポジトリも暗号化もusecasesも本番と同一コードで動きます。差し替えているのは、Node専用の実装と、鍵を置けない外部APIだけです。ポートの中で UnitOfWork だけは横断的で、複数リポジトリの書き込みを1つのトランザクションにまとめます。9枚目で詳しく話します。
   </div>
 </section>
 <!-- 6 multitenancy -->
@@ -395,7 +395,7 @@
   </div>
   <div class="foot"><span>packages/db/src/tenantScope.ts / schema/_rls.ts / drizzle/*.sql / infra/initdb</span><span>katahimo-app</span></div>
   <div class="notes">
-    分離は shared schema + RLS。アプリ側とDB側の二重防御です。判断してほしいのは右下の2点。FORCE の手動追記はプロセスリスクなので、たとえばマイグレーションSQLを検査するテストを足すべきか。tenants がRLS対象外である点は、ワーカーが全テナントを列挙する設計とも絡みます。
+    分離は shared schema + RLS。アプリ側とDB側の二重防御です。FORCE は drizzle-kit が出力しないので手で追記していますが、書き忘れをCIで検出します。スキーマから全テーブルを動的に集めてマイグレーションSQLを検査するので、新しいテーブルを足して FORCE を忘れると落ちます。加えて PGlite 上に非特権ロールを作り、実際に他テナントの行が見えないことも確かめています。残るトレードオフは tenants がRLS対象外である点で、ワーカーが全テナントを列挙する設計とも絡みます。
   </div>
 </section>
 
@@ -448,7 +448,7 @@
   </div>
   <div class="foot"><span>packages/integrations/src/local-crypto, local-kms / doc/09 3章</span><span>katahimo-app</span></div>
   <div class="notes">
-    封筒暗号化の形は本番相当ですが、KEKがまだ環境変数です。「インターフェースを変えずにCloud KMSへ差し替える」設計なので構造は問題ないと考えていますが、現時点では本番相当の鍵管理が存在しない、とはっきり言っておきます。DEKローテーションが1世代しか扱えない点は、今のうちに直すべきか、ご意見をいただきたい。
+    封筒暗号化の形は本番相当ですが、KEKがまだ環境変数です。「インターフェースを変えずにCloud KMSへ差し替える」設計なので構造は問題ないと考えていますが、現時点では本番相当の鍵管理が存在しない、とはっきり言っておきます。DEKは世代を並存させるので、鍵を差し替えても既存の暗号文は記録された世代の鍵でそのまま読めます。ただし再暗号化バッチが無いため、古い世代の鍵はまだ捨てられません。
   </div>
 </section>
 <!-- 8 auth -->
@@ -496,7 +496,7 @@
   </div>
   <div class="foot"><span>packages/core/src/usecases/{auth,passwordReset,staff}.ts / packages/api/src/session.ts</span><span>katahimo-app</span></div>
   <div class="notes">
-    提案書では Firebase Auth でしたが、実装は自前です。GAS版のパスワードをそのまま移行できるようにしたかったのが理由です。右下の論点、特にログインのレート制限が無い点と、SESSION_SECRET が使われていない点は、レビュー前に自分で見つけたものです。どちらも直す方針ですが、優先度の判断をいただきたい。
+    提案書では Firebase Auth でしたが、実装は自前です。GAS版のパスワードをそのまま移行できるようにしたかったのが理由です。ログインはアカウント単位で10回失敗すると15分ロックし、時間で自動的に解けます。ロック中かどうかで応答を変えないのは、変えると10回試すだけでアカウントの有無が分かるからです。セッションCookieに署名鍵を使わないのは設計判断で、値が32バイトの乱数トークンで、検証はDB側のハッシュ照合だからです。残る論点は右下の3点、特にIP単位の制限が前段のWAF任せになっている点です。
   </div>
 </section>
 
@@ -602,7 +602,7 @@
   </div>
   <div class="foot"><span>packages/core/src/ports/mirror.ts / usecases/mirrorWorker.ts / packages/integrations/src/gas-bridge</span><span>katahimo-app</span></div>
   <div class="notes">
-    GASブリッジを既定にしたのは、新規GCP課金を避けつつ、現場で動いているロジックを捨てないためです。ただしこのブリッジは、実はまだ一度もデプロイされておらず、メール送信アクションは存在すらしません。つまりSheetsミラーとメールは「コードはあるが本番で動いたことがない」。加えてリトライが無い、secretがURLに載る、と運用面の穴が並びます。ここは設計の是非というより「この依存のしかたを許容するか」の判断です。
+    GASブリッジを既定にしたのは、新規GCP課金を避けつつ、現場で動いているロジックを捨てないためです。送信の失敗は終端させず、5秒から倍々・上限1時間で再試行し、8回で failed に落として運用が気づけるようにしています。ただしこのブリッジは、実はまだ一度もデプロイされておらず、メール送信アクションは存在すらしません。つまりSheetsミラーとメールは「コードはあるが本番で動いたことがない」。secretがURLに載る点も残ります。ここは設計の是非というより「この依存のしかたを許容するか」の判断です。
   </div>
 </section>
 
