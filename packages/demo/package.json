@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.2.17",
+    "@electric-sql/pglite": "0.2.17",
     "@katahimo/api": "workspace:*",
     "@katahimo/core": "workspace:*",
     "@katahimo/db": "workspace:*",

@@ -23,7 +23,7 @@
 | --- | --- |
 | `@katahimo/shared` | zodスキーマ + API契約型(api/webで共有)。ブラウザでも成立するものだけ置く |
 | `@katahimo/core` | ドメイン・ユースケース・ポート定義。外部SDKに非依存 |
-| `@katahimo/db` | Drizzleスキーマ・マイグレーション・RLS・シード。`withTenant()` でテナントスコープ実行 |
+| `@katahimo/db` | Drizzleスキーマ・マイグレーション・RLS。`withTenant()` でテナントスコープ実行、`DrizzleUnitOfWork` で複数リポジトリにまたがる書き込みを1トランザクションにまとめる |
 | `@katahimo/integrations` | ポートの実装(唯一 googleapis / Maps / Gemini に依存する層) |
 | `@katahimo/ingestion` | 取込パイプライン(取得→パース→マッピング→差分→レビュー→upsert) |
 | `@katahimo/api` | Honoサーバー(Cloud Runのエントリ) |
@@ -61,8 +61,10 @@ psql -U postgres -h localhost -d katahimo_dev -f infra/initdb/01_bootstrap.sql
 
 ```bash
 cp .env.example .env
-# SESSION_SECRET を適当な値に。既存パスワードでのログイン検証には
-# LEGACY_AUTH_SALT に GAS版 Script Properties の AUTH_SALT と同じ値を入れる(Phase 2以降)。
+# LOCAL_DEV_MASTER_KEY / LOCAL_DEV_KEK / PASSWORD_RESET_PEPPER に、それぞれ別の
+# 32バイト(64桁hex)を入れる: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# 既存パスワードでのログイン検証には、LEGACY_AUTH_SALT に GAS版 Script Properties の
+# AUTH_SALT と同じ値を入れる(Phase 2以降)。
 ```
 
 ### 4. 起動
@@ -88,7 +90,7 @@ Phase 1/2の範囲で、実際にブラウザで触れるところまで実装�
 pnpm --filter @katahimo/db exec tsx src/migrate.ts
 
 # 2. デモ用テナント・管理者・顧客データを投入(何度実行しても冪等)
-pnpm --filter @katahimo/api seed
+pnpm db:seed   # = pnpm --filter @katahimo/api seed
 # -> tenantSlug=demo, admin@example.com / admin1234 が作られる
 
 # 3. APIとWebをそれぞれ起動
@@ -98,13 +100,16 @@ pnpm --filter @katahimo/web dev     # http://localhost:5173
 
 `http://localhost:5173` を開き、法人ID `demo` / `admin@example.com` / `admin1234` でログインすると、GAS版
 (`gas-childcare-visit-app/index.html`)と同じ見た目・タブ構成のアプリが表示される(移行時の混乱を減らすため、
-Tailwind CDN・Outfitフォント・配色・ヘッダー/3タブのレイアウトをそのまま踏襲している。詳細は下記「UIをGAS版に
-合わせた範囲」参照)。「🏠 訪問先一覧」タブは有効な顧客を全件取得し(氏名・電話・市区町村は復号済み)、名前欄への
-入力でas-you-type絞り込み・地区セレクトで絞り込みができ、どちらも指定していない既定表示は直近保存/領収書登録した
-顧客順(「最近使った顧客」)になる(GAS版のallCustomers/filterCustomers()と同じ設計)。カードをタップすると
+Tailwindの配色・Outfitフォント・ヘッダー/3タブのレイアウトをそのまま踏襲している。詳細は下記「UIをGAS版に
+合わせた範囲」参照)。「🏠 訪問先一覧」タブは有効な顧客を全件取得し(氏名・電話・市区町村は平文列なので復号は
+挟まない。下記「PII暗号化の方針」参照)、名前欄への入力でas-you-type絞り込み・地区セレクトで絞り込みができ、
+どちらも指定していない既定表示は直近保存/領収書登録した顧客順(「最近使った顧客」)になる
+(GAS版のallCustomers/filterCustomers()と同じ設計)。カードをタップすると
 GAS版と同じボトムシート形式のモーダルでRESERVA CSVの全項目
-(カナ・メール・住所・緊急連絡先・会員情報等)と世帯構成員(子ども等)一覧を復号した状態で確認できる(Phase 4・
-読み取り系)。DBの生カラムを直接見ると(`psql -U katahimo -d katahimo_dev -c "SELECT name_ciphertext FROM customers LIMIT 1"`)、
+(カナ・メール・住所・緊急連絡先・会員情報等)と世帯構成員(子ども等)一覧を確認できる(Phase 4・読み取り系。
+緊急連絡先・避難場所・メモ・Benefit会員ID・緯度経度と世帯構成員は暗号化列なので、表示時に復号している)。
+暗号化されている項目のDBの生カラムを直接見ると
+(`psql -U katahimo -d katahimo_dev -c "SELECT memo_ciphertext FROM customers LIMIT 1"`)、
 暗号文であって平文が保存されていないことを確認できる。
 
 ### UIをGAS版に合わせた範囲
@@ -125,6 +130,9 @@ GAS版と同じボトムシート形式のモーダルでRESERVA CSVの全項目
   パスワード変更・管理者設定)もGAS版のsettingsModalと同じ構成にした。管理者設定(Gemini APIキー・
   日報/OCR用モデル選択・Google Chat Webhook URL)はテナントごとに新テーブル`app_settings`へ暗号化して
   保存し、日報AI生成/OCR/通知の実処理がこの値を優先して使う(未設定なら`.env`のデフォルトにフォールバック)。
+  **保存済みのGemini APIキーは管理者設定APIも平文では返さない**(設定済みかどうかの`hasGeminiApiKey`と
+  末尾4文字の`geminiApiKeyPreview`だけを返す。12文字未満のキーはプレビューもnull。`packages/core/src/usecases/settings.ts`)。
+  モデル一覧の取得は保存済みキーをサーバー側で解決して行い、保存前の入力中のキーで試すこともできる。
   **「🕒 勤怠」タブは管理者だけ「対象スタッフ」セレクタで他スタッフの勤怠を閲覧/編集できる**(GAS版の
   対象スタッフセレクタと同じ、`GET /api/staff`で退職者を除く一覧を取得)。**領収書画像はGAS版
   `resizeAndAddImage`と同じロジック(長辺1200px以内・JPEG品質0.7へCanvas APIでリサイズ/圧縮)で
@@ -141,6 +149,10 @@ GAS版と同じボトムシート形式のモーダルでRESERVA CSVの全項目
   同じ見た目で実装し、予定タップで訪問先一覧タブへ切り替え検索欄に反映する(`jumpToCustomerFromSchedule`)
   動作も再現した**(Google Calendar/Maps連携は下記の通りGAS版Web Appへのブリッジ経由。ブリッジ未設定の
   環境ではNoopSchedulePort/NoopMapsPortにより「この日の予定はありません」の空状態を正直に表示する)。
+- **スタイルの配信方法だけはGAS版と違う**: TailwindはCDNではなくビルド時に生成し(`packages/web/tailwind.config.js`/
+  `postcss.config.js`/`src/index.css`、Tailwind v3)、Outfitフォントも`@fontsource/outfit`で同梱している。
+  見た目はGAS版と同じまま、画面表示にあたって外部ドメインへ出ていくリクエストは無い
+  (顧客情報を扱う画面から第三者のCDNへアクセスが飛ばない)。
 - **意図的に再現していない部分**(対応するバックエンド機能がまだ無いため、見た目だけ真似ると誤解を招く):
   AI生成(日報/事故報告の下書き・領収書OCR)は`GEMINI_API_KEY`未設定かつ管理者設定でもキー未保存の環境では
   常にフォールバック応答(GAS版が同じ状況で返すのと同じ値)になる。
@@ -255,10 +267,18 @@ GAS版のパスワードハッシュ(`sha256(password + AUTH_SALT)`)を持つス
 
 ```bash
 # 1. .env の LEGACY_AUTH_SALT に、GAS版 Script Properties の AUTH_SALT と同じ値を設定する
-# 2. GAS版のハッシュ値(Staffシート列J)をそのまま渡してスタッフを移行する
-cd packages/api
-pnpm exec tsx src/scripts/importLegacyStaff.ts demo "氏名" メールアドレス <GAS版のハッシュ値>
+# 2. GAS版のハッシュ値(Staffシート列J)を「標準入力から」渡してスタッフを移行する
+#    ハッシュは認証情報なので、コマンドライン引数では受け取らない(シェル履歴や `ps` に残るため)
+printf %s '<GAS版のハッシュ値>' \
+  | pnpm --filter @katahimo/api import:legacy-staff demo "氏名" メールアドレス
+
+# ハッシュをファイルに用意してある場合(末尾の改行は自動で除去される)
+pnpm --filter @katahimo/api import:legacy-staff demo "氏名" メールアドレス < legacy-hash.txt
+
+# 管理者として移行する場合は末尾に --admin を付ける
 ```
+
+標準入力が空のときや端末から直接実行したときは、DBに接続せずエラーで終了する。
 
 移行したスタッフは、既存パスワードのままログインでき、成功した瞬間にargon2idへサイレント再ハッシュされる
 (`staff.password_hash`が設定され`staff.legacy_password_hash`はnullに戻る)。2回目以降はargon2idだけで検証される。
@@ -268,7 +288,7 @@ pnpm exec tsx src/scripts/importLegacyStaff.ts demo "氏名" メールアドレ�
 | コマンド | 内容 |
 | --- | --- |
 | `pnpm typecheck` | 全パッケージの `tsc --noEmit` |
-| `pnpm test` | Vitest(純粋関数の回帰テスト。勤怠計算などGAS版との数値一致検証もここ) |
+| `pnpm test` | Vitest(ドメイン/ユースケースの回帰テスト、RLSの静的検査とPGlite上での実挙動検証、公開デモの起動処理まで。勤怠計算などGAS版との数値一致検証もここ) |
 | `pnpm lint` / `pnpm lint:fix` | Biome |
 | `pnpm build` | 全パッケージのビルド |
 | `pnpm --filter @katahimo/web build:demo` | GitHub Pages公開デモのビルド(`preview:demo`でローカル確認) |
@@ -282,16 +302,29 @@ pnpm exec tsx src/scripts/importLegacyStaff.ts demo "氏名" メールアドレ�
 - **氏名・メール・電話・住所・駐車場情報は平文で保存する**。DB/バックアップの透過的暗号化(TDE)・Row Level Security・アクセス制御(IAM)で保護する、通常のSaaSと同水準の扱いにした。氏名は`familyName`/`givenName`を平文の別カラムに持ち(`domain/pii/japaneseName.ts` の `splitJapaneseFullName` で分割・`normalizeStaffName`で正規化)、「苗字だけで検索する」現場運用にはこのカラムへの通常のインデックス検索で対応する(部分一致/前方一致もSQL的には可能だが、現時点では旧方式と挙動を揃えて完全一致のみ)。`staff.email`はログインの検索キーになるため、書き込み時に`normalizeEmailForIndex`で正規化した値を保存する。
 - **引き続きランダム化暗号(AES-256-GCM相当、`CryptoPort`)で保存する項目**: 緊急連絡先(第三者情報)・避難場所(通学先の特定につながりうる)・顧客メモ(自由記述で内容予測不可)・Benefit会員ID(識別子)・緯度経度(自宅の正確な位置情報)、および世帯構成員(`family_members`、児童本人の情報のため氏名・生年月日・自由記述を全て暗号化)・日報/事故報告の本文・領収書の金額/店舗名/申し送り・管理者設定のAPIキー/Webhook URL。
 - 鍵(DEK)はテナントごとに`crypto.randomBytes`で独立に生成し、`KeyManagementPort`(KEK)でラップした状態のみ`tenant_keys`テーブルに保存する(エンベロープ暗号化。平文DEKは`LocalCryptoPort`のプロセス内メモリにしかない)。旧実装(環境変数のマスターキー1本からテナントIDを混ぜてSHA256で鍵を決定的に導出する方式)は「マスターキーが漏れれば全テナントの鍵を誰でも再計算できる、実質1本の鍵を共有しているのと同じ」設計だったと指摘され、この方式に置き換えた。テナント解約時は`tenant_keys`の当該行を削除(revoke)するだけで、バックアップに残った暗号文も含めて復号不能にできる(暗号学的削除)。
-- ローカル開発・PoCの`KeyManagementPort`実装は`LocalKmsPort`(環境変数`LOCAL_DEV_KEK`1本でDEKをAES-256-GCMラップするだけの簡易実装)。本番はCloud KMSでラップする実装に差し替える(Phase 5、実際のGCPプロジェクト・KMSキーリングが用意でき次第。`KeyManagementPort`のインターフェース自体は変えずに済む)。KEKだけのローテーション(DEKは変えずラップし直すだけ)は`TenantKeyRepositoryPort.updateWrappedDek`で軽量に行えるが、DEKそのもののローテーション(実データの再暗号化を伴う)は未実装。
-- 復号(`CryptoPort.decrypt`)のたびに`AuditLogPort`(`ConsoleAuditLogPort`)がテナントIDと時刻を構造化JSONでstdoutへ出力する。Cloud Run上はstdout/stderrがそのままCloud Loggingに取り込まれるため追加のGCP設定は不要。ただし現時点では「どのテナントが」までで、「誰が(どのスタッフが)」までは記録していない(`decrypt(tenantId, value)`のシグネチャに呼び出し元情報が無く、全呼び出し箇所への配線は影響範囲が大きいため見送った。将来必要になれば拡張する)。
+- **DEKは世代を並存させる**。`tenant_keys`の主キーは`(tenant_id, dek_version)`の複合で、暗号化は常に最新世代、復号は暗号文に記録された世代(`*_key_version`)の鍵で行う。`LocalCryptoPort.rotate()`は新しい世代を1つ足すだけなので、DEKをローテーションしても既存データが読めなくなることはない。ただし**既存データを新世代へ移す再暗号化バッチは未実装**で、ローテーション後も古い暗号文は古い世代の鍵のまま残る(読めるが、古い世代の鍵を捨てられない)。
+- ローカル開発・PoCの`KeyManagementPort`実装は`LocalKmsPort`(環境変数`LOCAL_DEV_KEK`1本でDEKをAES-256-GCMラップするだけの簡易実装)。**本番のKEK(Cloud KMS)は未実装で、KEKは環境変数のまま**(Phase 5、実際のGCPプロジェクト・KMSキーリングが用意でき次第。`KeyManagementPort`のインターフェース自体は変えずに済む)。KEKだけのローテーション(DEKは変えずラップし直すだけ)は`TenantKeyRepositoryPort.updateWrappedDek`で軽量に行える。
+- 監査ログ(`AuditLogPort`、実装は`ConsoleAuditLogPort`)は構造化JSONを1行ずつstdoutへ出力する。Cloud Run上はstdout/stderrがそのままCloud Loggingに取り込まれるため追加のGCP設定は不要。記録するのは2種類。復号(`recordDecrypt`)は「どのテナントのデータをいつ復号したか」まで(`decrypt(tenantId, value)`のシグネチャに呼び出し元情報が無いため「誰が」は残らない)。認証・権限まわりのイベント(`record`)は`actorStaffId`(誰が)・`targetStaffId`(誰を)付きで残す(ログイン失敗だけseverity=WARNING)。記録している種別は`login_succeeded`/`login_failed`/`password_changed`/`password_reset_completed`/`staff_created`/`staff_updated`/`staff_password_reset_by_admin`(`AuditEventType`には`logout`/`password_reset_requested`も定義してあるが、記録の呼び出しはまだ置いていない)。**氏名・住所・電話は平文列なので、それらの参照は復号を経由せずこの網には入らない**。網羅的なデータアクセス監査が必要になった場合は、DB側の監査(pgaudit等)と組み合わせる前提。
 - 実装は `packages/integrations` に置く。暗号化対象カラムは`ciphertext`/`key_version`のペアとして最初からスキーマに組み込んでいる。
 
 ## 進捗(フェーズ)
 
 - [x] **Phase 0 — 基盤構築**: モノレポ・TS strict・Biome・Vitest・Docker/ローカルPostgreSQL・Hono空サーバー・Vite PWA雛形・health/DB疎通。
-- [x] **Phase 1 — スキーマとテナント分離(RLS)**: tenants/staff/sessions/customers/outbox_jobsをDrizzleで定義し、tenant_idを持つ全テーブルにRLSポリシーを適用(katahimo=所有者/DDL用、katahimo_app=RLS対象のアプリ用ロールに分離。実際にRLSがブロックすることを確認済み)。**2026-08 データベース構造レビューで、RLSはSELECTしか絞り込まずFK制約自体は常にRLSをバイパスする(PostgreSQL仕様)ため単一列FKのままだとテナントを跨いだ取り違えを防げないと指摘され、`customers`/`staff`に`(tenant_id, id)`のUNIQUE制約を追加し、`daily_reports`/`accident_reports`/`receipts`/`family_members`/`attendance_days`/`sessions`のFKを全て`(tenant_id, xxx_id)`複合FKに置き換えた**(実際にPostgreSQLへ適用する際、`drizzle-kit generate`が出力するステートメント順のままだと複合FKが参照先のUNIQUE制約より先に実行されて失敗することが実機で判明したため、マイグレーションSQLの順序を手動で修正した)。あわせて`outbox_jobs`の冪等キーのUNIQUE制約もテナント跨ぎで衝突し得た点を`(tenant_id, idempotency_key)`にスコープし直した。**続けて有識者レビューで「DB個別の暗号化(氏名・住所等まで含む全面フィールド暗号化)は過剰、バックアップ暗号化(TDE)+RLSで十分」と指摘を受け、`customers`/`staff`の氏名・かな・メール・電話・住所・駐車場情報を平文カラムに戻し、ブラインドインデックス列(`*_blind_index`)を全廃した**(引き続き暗号化するのは緊急連絡先・避難場所・メモ・Benefit会員ID・緯度経度のみ。詳細は本READMEの「PII暗号化の方針」・`doc/09_データベース構造解説.md`参照)。マイグレーション生成時、同一テーブルで列の追加と削除が同時に発生すると`drizzle-kit generate`がリネームか新規かを対話的に確認しようとして自動化できない問題に遭遇したため、「削除のみ」→「追加のみ」の2回に分けてgenerateする回避策を用いた。
+- [x] **Phase 1 — スキーマとテナント分離(RLS)**: tenants/staff/sessions/customers/outbox_jobsをDrizzleで定義し、tenant_idを持つ全テーブルにRLSポリシーを適用(katahimo=所有者/DDL用、katahimo_app=RLS対象のアプリ用ロールに分離。実際にRLSがブロックすることを確認済み)。**2026-08 データベース構造レビューで、RLSはSELECTしか絞り込まずFK制約自体は常にRLSをバイパスする(PostgreSQL仕様)ため単一列FKのままだとテナントを跨いだ取り違えを防げないと指摘され、`customers`/`staff`に`(tenant_id, id)`のUNIQUE制約を追加し、`daily_reports`/`accident_reports`/`receipts`/`family_members`/`attendance_days`/`sessions`のFKを全て`(tenant_id, xxx_id)`複合FKに置き換えた**(実際にPostgreSQLへ適用する際、`drizzle-kit generate`が出力するステートメント順のままだと複合FKが参照先のUNIQUE制約より先に実行されて失敗することが実機で判明したため、マイグレーションSQLの順序を手動で修正した)。あわせて`outbox_jobs`の冪等キーのUNIQUE制約もテナント跨ぎで衝突し得た点を`(tenant_id, idempotency_key)`にスコープし直した。**続けて有識者レビューで「DB個別の暗号化(氏名・住所等まで含む全面フィールド暗号化)は過剰、バックアップ暗号化(TDE)+RLSで十分」と指摘を受け、`customers`/`staff`の氏名・かな・メール・電話・住所・駐車場情報を平文カラムに戻し、ブラインドインデックス列(`*_blind_index`)を全廃した**(引き続き暗号化するのは緊急連絡先・避難場所・メモ・Benefit会員ID・緯度経度のみ。詳細は本READMEの「PII暗号化の方針」・`doc/09_データベース構造解説.md`参照)。マイグレーション生成時、同一テーブルで列の追加と削除が同時に発生すると`drizzle-kit generate`がリネームか新規かを対話的に確認しようとして自動化できない問題に遭遇したため、「削除のみ」→「追加のみ」の2回に分けてgenerateする回避策を用いた。**RLSの網羅性はテストで自動検証している**: `packages/db/src/rlsPolicies.test.ts`がDrizzleスキーマ定義から全テーブルを動的に集め、マイグレーションSQLに`ENABLE`と`FORCE ROW LEVEL SECURITY`の両方、`tenant_isolation`ポリシーの`USING`/`WITH CHECK`が揃っていることを検査する(除外は`tenants`のみ)ため、新しいテーブルを足してFORCEを書き忘れるとCIで落ちる。`packages/demo/src/rlsEnforcement.test.ts`はPGlite上に非特権ロールを作り、クロステナントの読み書きが実際に止まること(FORCEの有無で挙動が変わることまで比較で固定)を検証する。
 - [x] **Phase 2 — 認証(メール)**: argon2idパスワードハッシュ、httpOnly Cookieセッション(tenantId埋め込みでRLSのチキン&エッグ問題を回避)、`POST /api/auth/login`・`GET /api/auth/me`・`POST /api/auth/logout`。**GAS版のSHA-256+saltパスワードハッシュ(Auth.jsのcomputeHash)を、パスワード変更なしで引き継げるようにした**(`computeLegacyHash`。GAS版を実行した結果と一致することを検証済み)。ログイン成功時にargon2idへサイレント再ハッシュされ、実際にAPI経由で移行→ログイン→再ハッシュ確認→2回目ログインまで動作確認済み。Google認証(OAuth)は未着手(実GCPクライアントIDが必要なため)。
-- [x] **パスワード再設定(メール)+ 初期パスワード方式**: GAS版`Auth.js`の`requestPasswordReset`/`resetPasswordWithCode`に対応する、メールの6桁コード(有効期限30分)によるパスワード再設定を実装。あわせて管理者がスタッフを登録すると初期パスワードを自動生成して本人へメールし、本人が変更するまで**サーバー側が他のAPIを403で拒否する**方式(`staff.must_change_password` + `requirePasswordChangeGuard`)にした。画面だけで変更を促してもAPIを直接叩けば通ってしまうため、強制はサーバー側で行う。メール送信は`MailerPort`として切り出し、既定の実装はGAS版と同じ`MailApp.sendEmail`を使う`GasBridgeMailerPort`(doc/10「新規GCP APIより既存GASブリッジを優先」に従い、SMTPアカウントやSendGrid等の新規契約を避けた)。**GASブリッジ側に`sendEmail`アクションの追加とデプロイが必要**で、未設定の間は`LoggingMailerPort`が送信内容をサーバーログに出すだけになる。GAS版から意図的に変えた点が4つある: (1) 宛先が登録済みかどうかで応答を出し分けない(GAS版は「ユーザーIDが見つからない」と返しており、誰でもメールアドレスの登録有無を確かめられた)、(2) コードは平文ではなくSHA-256ハッシュで保存する(GAS版はシートに平文)、(3) 6桁=100万通りしかないため誤入力5回でコードを無効化する(GAS版は無制限)、(4) 再設定の完了時にそのスタッフの全セッションを破棄する(パスワードを忘れる状況には乗っ取られている場合も含まれるため)。パスワードの最低文字数(8文字)も追加した(GAS版は1文字でも設定できた)。
+- [x] **パスワード再設定(メール)+ 初期パスワード方式**: GAS版`Auth.js`の`requestPasswordReset`/`resetPasswordWithCode`に対応する、メールの6桁コード(有効期限30分)によるパスワード再設定を実装。あわせて管理者がスタッフを登録すると初期パスワードを自動生成して本人へメールし、本人が変更するまで**サーバー側が他のAPIを403で拒否する**方式(`staff.must_change_password` + `requirePasswordChangeGuard`)にした。画面だけで変更を促してもAPIを直接叩けば通ってしまうため、強制はサーバー側で行う。メール送信は`MailerPort`として切り出し、既定の実装はGAS版と同じ`MailApp.sendEmail`を使う`GasBridgeMailerPort`(doc/10「新規GCP APIより既存GASブリッジを優先」に従い、SMTPアカウントやSendGrid等の新規契約を避けた)。**GASブリッジ側に`sendEmail`アクションの追加とデプロイが必要**で、未設定の間は`LoggingMailerPort`が送信内容をサーバーログに出すだけになる。GAS版から意図的に変えた点が4つある: (1) 宛先が登録済みかどうかで応答を出し分けない(GAS版は「ユーザーIDが見つからない」と返しており、誰でもメールアドレスの登録有無を確かめられた)、(2) コードは平文ではなく、DBに置かないペッパー(環境変数`PASSWORD_RESET_PEPPER`)を鍵にしたHMAC-SHA256の検証子として保存する(GAS版はシートに平文。単純なハッシュでは6桁=100万通りしかないため、DBダンプが漏れた時点でオフラインの総当たりで有効なコードを復元できてしまう)、(3) 6桁=100万通りしかないため誤入力5回でコードを無効化する(GAS版は無制限)、(4) 再設定の完了時にそのスタッフの全セッションを破棄する(パスワードを忘れる状況には乗っ取られている場合も含まれるため)。パスワードの最低文字数(8文字)も追加した(GAS版は1文字でも設定できた)。
+- [x] **認証まわりの堅牢化**: ログイン試行は連続10回の失敗で15分ロックし、成功でカウンタを0に戻す
+  (`packages/core/src/domain/auth/loginThrottle.ts`、`staff.failed_login_attempts`/`locked_until`)。
+  恒久ロックにしないのは、特定のアカウントを狙って失敗させ続ければその人を締め出せてしまうため。時間で
+  自動的に解け、攻撃の速度だけが落ちる。**ロック中かどうかで応答は変えない**(反応の違いからアカウントの
+  有無や状態を探られないため)。argon2idのコストパラメータは`memoryCost: 19456, timeCost: 2, parallelism: 1`と
+  明示している(`packages/api/src/authAdapters.ts`。OWASPが挙げる設定のひとつ。ライブラリ既定値に任せると
+  バージョン更新で黙って変わり、どのコストで運用しているかがコードから読めない)。書き込み系のAPIはOrigin
+  ヘッダを照合するミドルウェア(`packages/api/src/csrf.ts`)で別オリジンからの要求を403で止める(Cookieの
+  `SameSite=Lax`に加えるサーバー側の防御。正当に別オリジンから叩く必要がある場合だけ、環境変数
+  `ALLOWED_ORIGINS`にカンマ区切りで列挙する。通常は空)。セッションCookieに署名鍵は使わない(Cookieに
+  入るのは32バイトの乱数トークンで、検証はDB側のSHA-256ハッシュとの照合で行うため)。認証・権限まわりの
+  イベントは監査ログに「誰が・誰を」まで残す(上記「PII暗号化の方針」参照)。
 - [x] **Phase 3 — 取込・アップサート基盤(RESERVA CSV)**: `parseFamilyInfo`/`normalizeDateStr`(GAS版`CsvImport.js`から完全移植、実サンプル398行でGAS実行結果と1件残らず一致することを検証済み)・Excelシリアル日時変換を追加し、RESERVA顧客CSV(UTF-16LE・タブ区切り・30列、パスワード列を除く全項目)のデコード/パース/外部ID突合による差分計算(作成/更新/ソフトデリート)/適用を実装。世帯構成員(子ども等)は`family_members`テーブルに全件保存し、詳細取得で復号して確認できる。消失率(取込データから消えた顧客の割合)が閾値を超えると適用を拒否する安全装置つき。実データ(`fixtures/Kokyaku_202601191958_1_dummy.csv`、398件)を実際にPostgreSQLへ取り込み、冪等性(再取込で重複しないこと)も確認済み。**地区(city)はGAS版`Main.js`の住所パーサーを移植した`extractCityFromAddress`で住所文字列から自動抽出する**(当初は「信頼できるパーサーが無い」として未設定にしていたが、GAS版自身がこのパーサーを実務で使っていたと判明したため2026-08-28に追加)。
 - [x] **Phase 4 — 顧客詳細画面(読み取り系の一部)+ UIをGAS版に合わせて再構築**: `GET /api/customers/:id`(セッションのtenantIdのみを使用)を追加。RESERVA CSV由来の全項目・世帯構成員一覧を復号して表示する。当初はreact-router-domでページ遷移させていたが、移行時の混乱を減らすためGAS版(`gas-childcare-visit-app/index.html`)と同じ「ヘッダー+3タブ(📅 予定/🏠 訪問先一覧/🕒 勤怠)のURLなし単一ページアプリ」構造・Tailwind配色に作り直した(react-router-domは廃止)。顧客詳細はGAS版と同じボトムシートモーダルに変更。「予定」タブは当時Calendar連携(Phase 5)が無かったため空状態を表示する枠のみだったが、後述のPhase 5進捗で実装した。
 - [x] **日報/事故報告/活動記録/領収書登録**: `daily_reports`/`accident_reports`/`receipts`テーブル(自由記述はattendance_daysと同じくJSON1本にまとめて暗号化)、`POST /api/reports/daily`・`/accident`・`/daily/generate`・`/accident/generate`・`GET /api/reports/history`・`POST /api/receipts`・`/ocr`を実装。GAS版`GeminiReport.js`の`callGemini`(思考パートのスキップ・コードフェンス除去・改行アンエスケープ・HTTPステータス別エラーメッセージ)と`Main.js`の`getCustomerReports`/`saveReport`/`saveAccidentReport`/`uploadReceiptsOnly`をNode実行結果と突き合わせて移植。`GEMINI_API_KEY`未設定時はGAS版と同じフォールバック応答を返す(`NoopReportAiPort`)。領収書画像は`StoragePort`(ローカル開発は`LocalFileStoragePort`、本番はGCS想定)に保存し、Google Chat通知は`WebhookNotifierPort`(Webhook URL未設定時はスキップ)で送る。Web UIは訪問先一覧のカードタップで報告作成モーダル、「顧客情報」「活動記録」ボタンでそれぞれ専用モーダルを開く3導線構成にした(GAS版の`openModal`/`showCustomerDetail`/`showCustomerHistory`と同じ使い分け)。ローカルPostgreSQL+APIで一気通貫の動作確認済み(Gemini実API呼び出し自体はAPIキー未設定のため未検証)。
@@ -326,11 +359,30 @@ pnpm exec tsx src/scripts/importLegacyStaff.ts demo "氏名" メールアドレ�
   outboxへの積み込み自体を行わない(`NoopMirrorPort`)。ローカルAPI+ローカルワーカー+
   ダミーのHTTPサーバー(Bridge.js write actionの代わり)で4種類とも実際にpending→doneまで
   遷移すること、ペイロードの JSON構造がBridge.js側の期待する`payload.xxx`フィールド名と
-  一致すること、ブリッジが到達不能な場合はジョブが例外を投げずに`failed`(`lastError`記録)へ
-  遷移し次のポーリングに影響しないことを確認済み。**Bridge.js側の書き込みaction自体は
+  一致すること、ブリッジが到達不能な場合はジョブが例外を投げずに`lastError`を記録して再試行待ちへ
+  戻り、次のポーリングに影響しないことを確認済み。**Bridge.js側の書き込みaction自体は
   Sheets/Drive連携の中核であるため、読み取り側と同じくデプロイ承認待ち(未デプロイ)**。
   `attendance_aggregate`(「勤怠集計」シート)・`calendar_event`(Googleカレンダー同期)は
-  次のフェーズで追加する。
+  次のフェーズで追加する。ワーカーはこの2種類を未対応として扱い、万一積まれていても再試行せず
+  即デッドレターに落とす(`PermanentMirrorError`。何度試しても成功しないものを再試行しても
+  キューを詰まらせるだけのため)。
+- [x] **書き込みの原子性とミラーの再試行**: 日報/事故報告/勤怠/領収書の保存と`outbox_jobs`への
+  enqueue、パスワード再設定コードの消費と新しいパスワードの書き込みは、それぞれ同一トランザクションで
+  行う(`UnitOfWorkPort`(`packages/core/src/ports/unitOfWork.ts`)と`DrizzleUnitOfWork`
+  (`packages/db/src/unitOfWork.ts`)。リポジトリのメソッドは省略可能な`scope?: TransactionScope`を
+  最後に取り、渡されたときは新しいトランザクションを開かず既存のものに相乗りする
+  (`packages/db/src/tenantScope.ts`の`withTenant`))。「保存はされたがスプレッドシートへ永久に
+  反映されない」「コードだけ焼かれてパスワードが変わらない」という中途半端な状態が残らない。
+  ミラーの冪等キーはランダムUUIDではなく「種別:レコードID:版(更新時刻)」から組み立てるため
+  (`packages/core/src/domain/mirror/idempotencyKey.ts`)、同じ保存操作が二度enqueueされても
+  `UNIQUE(tenant_id, idempotency_key)`が実際に効く(編集して保存し直した場合は版が進むので、
+  別のジョブとして改めて積まれる)。**ジョブの失敗は終端ではなく指数バックオフで再試行する**:
+  5秒から倍々に伸ばし、上限1時間、最大8回まで(`packages/core/src/domain/mirror/retry.ts`、
+  `outbox_jobs.next_attempt_at`/`updated_at`とインデックス`outbox_jobs_tenant_status_next_attempt_idx`は
+  マイグレーション`0002_outbox_retry.sql`で追加)。上限に達したものだけを`failed`(デッドレター)に
+  落とす。`processing`のまま`updated_at`が5分を過ぎた行は再びclaimの対象になるため、ワーカーが
+  異常終了しても取り残されない。デッドレターが発生した回は、ワーカーが通常のログとは別に
+  `console.error`で出す(`packages/worker/src/main.ts`。Cloud Loggingのseverityで拾える)。
 - [x] **Phase 6 — 勤怠計算エンジン+Googleカレンダー風週間予定UI(給与直結。合成データでGAS版との数値一致を検証済み)**: `AttendanceCalc.js`(GAS版)をNode上でそのまま実行した結果を正解として、TypeScript移植版(`packages/core/src/domain/attendance/`)を合成データ19ケース+月次集計で1件残らず突き合わせ、完全一致を確認。`attendance_days`テーブル(入力列のみをJSON化して1本の暗号文として保存、派生値は保存せず都度計算)・`GET/PUT /api/attendance/day`・`GET /api/attendance/month`を実装。**Web UIはGAS版と同じGoogleカレンダー風の週間予定表示(`GET /api/attendance/week`)に作り直した**(`buildScheduleEventsFromRowData`もGAS版と一致検証済み。表示内容は実際のGoogleカレンダーからではなく保存済みの出勤簿の記録をそのまま色分け表示しているだけなので、Phase 5のCalendar連携が無くても動く)。予定(訪問その1〜3・事務作業その1〜2)をタップして個別編集、「移動・距離・その他」パネルで日単位の項目をまとめて編集、という操作フローもGAS版と同じにした。管理者以外は自分の勤怠にしか読み書きできない(PastSchedule.jsと同じアクセス制御パターン)。**実際の出勤簿データでの数値照合はPhase 7で行う(このフェーズでは計算式の正しさのみを保証)**。
 - [ ] Phase 7 — 並行運用と照合
 - [ ] Phase 8 — 切替と旧システム停止

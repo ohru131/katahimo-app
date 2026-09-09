@@ -23,9 +23,24 @@ process.on('SIGINT', () => {
 async function pollOnce(): Promise<void> {
   const tenants = await container.tenants.listAll();
   for (const tenant of tenants) {
-    const { processed, failed } = await runOutboxBatch(container, tenant.id, env.OUTBOX_BATCH_SIZE);
+    const { processed, failed, deadLettered } = await runOutboxBatch(
+      container,
+      tenant.id,
+      env.OUTBOX_BATCH_SIZE,
+    );
     if (processed > 0 || failed > 0) {
-      console.log(`[mirror] tenant=${tenant.slug} processed=${processed} failed=${failed}`);
+      console.log(
+        `[mirror] tenant=${tenant.slug} processed=${processed} failed=${failed} deadLettered=${deadLettered}`,
+      );
+    }
+    // デッドレターに落ちた分は自動では復旧しない。運用が気づけるよう、通常のログとは
+    // 別にerrorで出す(Cloud Loggingのseverityで拾えるようにするため)。
+    // 内訳は「再試行の上限に達したもの」と「再試行しても変わらない失敗(未対応の種別など)」。
+    if (deadLettered > 0) {
+      console.error(
+        `[mirror] tenant=${tenant.slug} 打ち切ったミラージョブが${deadLettered}件あります(status=failed)。` +
+          '再試行の上限に達したか、再試行しても解消しない失敗です。last_errorを確認してください。',
+      );
     }
   }
 }

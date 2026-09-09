@@ -12,6 +12,13 @@ interface CachedDek {
   dekVersion: number;
 }
 
+/** 初回に生成するDEKの世代番号。 */
+const FIRST_DEK_VERSION = 1;
+
+function cacheKey(tenantId: string, dekVersion: number): string {
+  return `${tenantId}/${dekVersion}`;
+}
+
 /**
  * CryptoPortの実装。テナントごとのDEK(データ暗号化鍵)によるエンベロープ暗号化を行う。
  *
@@ -21,18 +28,24 @@ interface CachedDek {
  * `crypto.randomBytes`で独立に生成し、平文のままでは保存せず、常に
  * KeyManagementPort(KEK)でラップした状態のみをTenantKeyRepositoryPort経由でDBへ永続化する。
  *
- * DEKは初回アクセス時に遅延生成し(getOrCreateDek)、アンラップ結果をプロセス内メモリに
- * キャッシュする(GEOCODE_MEMO_CACHE_ 等と同様、プロセス生存期間のみ有効。DEKの実体を
- * リクエストのたびにKMS/DBへ問い合わせるコストを避けるため)。KEKローテーション(rewrap)は
- * DEKの値自体を変えないため、このキャッシュに影響しない。DEKそのもののローテーションは
- * 未実装(実行するとキャッシュ済みの古いDEKで復号できなくなるため、対応する再暗号化
- * バッチと合わせて実装する必要がある。将来の課題)。
+ * DEKは初回アクセス時に遅延生成し(getOrCreateCurrentDek)、アンラップ結果をプロセス内メモリに
+ * キャッシュする(プロセス生存期間のみ有効。DEKの実体をリクエストのたびにKMS/DBへ
+ * 問い合わせるコストを避けるため)。KEKローテーション(rewrap)はDEKの値自体を変えないため、
+ * このキャッシュに影響しない。
+ *
+ * DEKの世代(dekVersion)は並存する。暗号化は常に最新世代で行い、復号は暗号文に記録された
+ * 世代の鍵を引いて行う。こうしておかないと、DEKを差し替えた瞬間に既存の暗号文がすべて
+ * 読めなくなり、ローテーションが実質できない。`rotate()`は新しい世代を1つ足すだけで、
+ * 既存データはそのまま読める(全体の再暗号化は、必要になった時点で別途バッチで行う)。
  *
  * アルゴリズムはAES-256-GCM(認証付き・値ごとにランダムなnonce)。同じ平文でも呼ぶたびに
  * 異なる暗号文になるため、決定的暗号化のような統計的漏洩がない。
  */
 export class LocalCryptoPort implements CryptoPort {
-  private readonly dekCache = new Map<string, CachedDek>();
+  /** テナント → 現行世代のDEK。 */
+  private readonly currentDekCache = new Map<string, CachedDek>();
+  /** `tenantId/dekVersion` → DEK。過去世代の復号に使う。 */
+  private readonly dekByVersionCache = new Map<string, Buffer>();
 
   constructor(
     private readonly tenantKeys: TenantKeyRepositoryPort,
@@ -40,30 +53,93 @@ export class LocalCryptoPort implements CryptoPort {
     private readonly auditLog?: AuditLogPort,
   ) {}
 
-  private async getOrCreateDek(tenantId: string): Promise<CachedDek> {
-    const cached = this.dekCache.get(tenantId);
-    if (cached) return cached;
-
-    let record = await this.tenantKeys.find(tenantId);
-    if (record?.revokedAt) {
+  /** 暗号学的削除(解約処理)済みの鍵を使おうとしていないかを確かめる。 */
+  private assertUsable(tenantId: string, record: { revokedAt: Date | null }): void {
+    if (record.revokedAt) {
       throw new Error(
         `テナント(${tenantId})の鍵は暗号学的削除(解約処理)済みのため、このテナントのデータは復号できません。`,
       );
     }
+  }
+
+  /** 暗号化に使う現行世代。まだ1つも無ければ第1世代を生成する。 */
+  private async getOrCreateCurrentDek(tenantId: string): Promise<CachedDek> {
+    const cached = this.currentDekCache.get(tenantId);
+    if (cached) return cached;
+
+    let record = await this.tenantKeys.findCurrent(tenantId);
+    if (record) this.assertUsable(tenantId, record);
     if (!record) {
       const dek = randomBytes(32);
       const wrapped = await this.kms.wrap(dek);
-      record = await this.tenantKeys.create(tenantId, wrapped.ciphertext, wrapped.kekVersion);
+      record = await this.tenantKeys.create(
+        tenantId,
+        FIRST_DEK_VERSION,
+        wrapped.ciphertext,
+        wrapped.kekVersion,
+      );
     }
 
     const dek = await this.kms.unwrap({ ciphertext: record.wrappedDek, kekVersion: record.kekVersion });
     const entry: CachedDek = { dek, dekVersion: record.dekVersion };
-    this.dekCache.set(tenantId, entry);
+    this.currentDekCache.set(tenantId, entry);
+    this.dekByVersionCache.set(cacheKey(tenantId, record.dekVersion), dek);
     return entry;
   }
 
+  /** 復号に使う、暗号文に記録された世代の鍵。 */
+  private async getDekByVersion(tenantId: string, dekVersion: number): Promise<Buffer> {
+    const cached = this.dekByVersionCache.get(cacheKey(tenantId, dekVersion));
+    if (cached) return cached;
+
+    const record = await this.tenantKeys.findByVersion(tenantId, dekVersion);
+    if (!record) {
+      throw new Error(
+        `暗号文が指す世代のDEKが見つかりません(tenantId=${tenantId}, keyVersion=${dekVersion})。` +
+          '鍵の世代を削除すると、その世代で暗号化した値は復号できなくなります。',
+      );
+    }
+    this.assertUsable(tenantId, record);
+
+    const dek = await this.kms.unwrap({ ciphertext: record.wrappedDek, kekVersion: record.kekVersion });
+    this.dekByVersionCache.set(cacheKey(tenantId, dekVersion), dek);
+    return dek;
+  }
+
+  /**
+   * 新しい世代のDEKを作り、以後の暗号化をそちらへ切り替える。既存の暗号文は
+   * 記録された世代の鍵でそのまま復号できるため、この操作だけで既存データが壊れることはない。
+   * 返すのは新しい世代番号。
+   */
+  async rotate(tenantId: string): Promise<number> {
+    const current = await this.tenantKeys.findCurrent(tenantId);
+    if (current) this.assertUsable(tenantId, current);
+    const nextVersion = (current?.dekVersion ?? 0) + 1;
+
+    const wrapped = await this.kms.wrap(randomBytes(32));
+    const created = await this.tenantKeys.create(
+      tenantId,
+      nextVersion,
+      wrapped.ciphertext,
+      wrapped.kekVersion,
+    );
+
+    // 必ず「実際に永続化された行」の鍵をキャッシュする。同じ世代番号で同時にrotateが
+    // 走ると、createは先に入った行をそのまま返す(先勝ち)。そのとき自分が生成した鍵を
+    // 覚えてしまうと、このプロセスだけが別の鍵で暗号化し、他のプロセスや再起動後は
+    // その暗号文を復号できなくなる(AES-GCMの認証が通らない)。
+    const dek = await this.kms.unwrap({
+      ciphertext: created.wrappedDek,
+      kekVersion: created.kekVersion,
+    });
+    this.currentDekCache.set(tenantId, { dek, dekVersion: created.dekVersion });
+    this.dekByVersionCache.set(cacheKey(tenantId, created.dekVersion), dek);
+    return created.dekVersion;
+  }
+
+  /** 最新世代のDEKで暗号化し、使った世代を戻り値に載せる(復号時にその世代の鍵を引くため)。 */
   async encrypt(tenantId: string, plaintext: string): Promise<EncryptedValue> {
-    const { dek, dekVersion } = await this.getOrCreateDek(tenantId);
+    const { dek, dekVersion } = await this.getOrCreateCurrentDek(tenantId);
     const nonce = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', dek, nonce);
     const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
@@ -73,14 +149,9 @@ export class LocalCryptoPort implements CryptoPort {
   }
 
   async decrypt(tenantId: string, value: EncryptedValue): Promise<string> {
-    const { dek, dekVersion } = await this.getOrCreateDek(tenantId);
-    if (value.keyVersion !== dekVersion) {
-      // 過去バージョンのDEKを保持する仕組みがまだ無いため、現在のDEKと異なるバージョンで
-      // 暗号化された値は復号できない(DEKローテーション実装時に合わせて対応する)。
-      throw new Error(
-        `未対応のDEKバージョンです(tenantId=${tenantId}, keyVersion=${value.keyVersion}, 現在のDEKバージョン=${dekVersion})。`,
-      );
-    }
+    // 暗号文に記録された世代の鍵で復号する。現行世代と一致している必要はない
+    // (ローテーション後も、それ以前に書かれた値をそのまま読めるようにするため)。
+    const dek = await this.getDekByVersion(tenantId, value.keyVersion);
     this.auditLog?.recordDecrypt({ tenantId });
     const payload = Buffer.from(value.ciphertext, 'base64');
     const nonce = payload.subarray(0, 12);

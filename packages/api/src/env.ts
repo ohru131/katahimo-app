@@ -9,7 +9,12 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(8080),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL が必要です'),
-  SESSION_SECRET: z.string().min(16, 'SESSION_SECRET は16文字以上にしてください'),
+
+  // セッションCookieに署名鍵は要らない。Cookieに入るのは32バイトの乱数トークンで、
+  // 検証はDB側のハッシュ照合で行うため、値を偽造しても既存セッションには当たらない
+  // (packages/core/src/usecases/auth.ts の hashSessionToken 参照)。
+  // 以前ここに SESSION_SECRET を必須で置いていたが、どこからも参照していなかった。
+  // 「必須なのに使われていない設定」は、署名しているかのような誤解を招くので置かない。
 
   // BlindIndexPortの開発用実装(LocalBlindIndexPort)が使うマスターキー。32バイト(64桁hex)。
   // CryptoPort(実値の暗号化)とは意図的に鍵を分けている(一方の漏洩だけでは他方に影響しない
@@ -36,11 +41,9 @@ const envSchema = z.object({
   // 未設定でも起動はできるが、既存パスワードでのログインは失敗する。
   LEGACY_AUTH_SALT: z.string().optional(),
 
-  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
-  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
-  GOOGLE_OAUTH_REDIRECT_URI: z.string().optional(),
-
-  GOOGLE_MAPS_API_KEY: z.string().optional(),
+  // Google OAuth(GOOGLE_OAUTH_*)と Google Maps Platform(GOOGLE_MAPS_API_KEY)の設定は
+  // 置いていない。前者は未着手、後者は下のGASブリッジ経由で代替しており、どちらも
+  // コードから参照する箇所が無いため。実装するときに、使う場所と一緒に足す。
 
   // katahimo-app単体ではAPIキー不要のMapsサービス(Maps.newGeocoder/newDirectionFinder)を
   // 直接呼べない(Apps Script実行環境の外からは使えないため)。稼働中のgas-childcare-visit-app
@@ -64,9 +67,24 @@ const envSchema = z.object({
   // 領収書画像の保存先(ローカル開発用ファイルシステムパス)。本番はGCS(Phase 5)に置き換える。
   LOCAL_RECEIPT_STORAGE_DIR: z.string().default('./data/receipts'),
 
-  // スプレッドシート脱却時はここを false にするだけでミラーが止まる
+  // スプレッドシート脱却時はここを false にするだけでミラーが止まる。
+  // カレンダーのミラー(MirrorKind の calendar_event)はワーカー側が未実装のため、
+  // 対応するフラグも置いていない。
   MIRROR_TO_GOOGLE_SHEETS: z.coerce.boolean().default(false),
-  MIRROR_TO_GOOGLE_CALENDAR: z.coerce.boolean().default(false),
+
+  /**
+   * 書き込み系APIを別オリジンから叩くことを許可するオリジン(カンマ区切り)。
+   * 通常は空でよい(同一オリジンのみ許可)。管理画面を別ドメインに置く場合だけ設定する。
+   */
+  ALLOWED_ORIGINS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
+    ),
 });
 
 export type Env = z.infer<typeof envSchema>;

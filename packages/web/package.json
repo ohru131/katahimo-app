@@ -12,16 +12,20 @@
     "preview:demo": "VITE_DEMO=1 vite preview"
   },
   "dependencies": {
-    "@katahimo/demo": "workspace:*",
     "@katahimo/shared": "workspace:*",
     "@tanstack/react-query": "^5.62.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@fontsource/outfit": "^5.3.0",
+    "@katahimo/demo": "workspace:*",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.5.5",
+    "postcss": "^8.5.26",
+    "tailwindcss": "^3.4.19",
     "vite": "^6.0.3",
     "vite-plugin-pwa": "^0.21.1"
   }

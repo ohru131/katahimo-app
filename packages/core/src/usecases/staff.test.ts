@@ -17,6 +17,7 @@ import {
   FakeSessionRepository,
   FakeStaffRepository,
   FakeTenantRepository,
+  FakeUnitOfWork,
 } from './testDoubles';
 
 describe('listActiveStaffForAdmin', () => {
@@ -320,7 +321,13 @@ describe('管理者によるスタッフ管理', () => {
     });
     if (!created.ok) throw new Error('前提の登録に失敗しました');
 
-    const resetDeps = { ...deps, ...authDeps, mailer, resetCodePepper: 'test-pepper' };
+    const resetDeps = {
+      ...deps,
+      ...authDeps,
+      mailer,
+      resetCodePepper: 'test-pepper',
+      unitOfWork: new FakeUnitOfWork([]),
+    };
     await requestPasswordReset(resetDeps, { tenantSlug: 'admin-tenant', email: 'kuro@example.com' });
     const code = mailer.last?.body.match(/認証コード: (\d{6})/)?.[1];
     if (!code) throw new Error('認証コードがメール本文にありません');

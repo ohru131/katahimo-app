@@ -1,4 +1,9 @@
-import type { DailyReportRecord, DailyReportRepositoryPort, NewDailyReportInput } from '@katahimo/core/ports';
+import type {
+  DailyReportRecord,
+  DailyReportRepositoryPort,
+  NewDailyReportInput,
+  TransactionScope,
+} from '@katahimo/core/ports';
 import { and, desc, eq, lt } from 'drizzle-orm';
 import { dailyReports } from '../schema';
 import type { Database } from '../tenantScope';
@@ -16,50 +21,66 @@ function toRecord(row: DailyReportRow): DailyReportRecord {
     riskRating: row.riskRating,
     esRating: row.esRating,
     content: { ciphertext: row.contentCiphertext, keyVersion: row.contentKeyVersion },
+    updatedAt: row.updatedAt,
   };
 }
 
 export class DrizzleDailyReportRepository implements DailyReportRepositoryPort {
   constructor(private readonly db: Database) {}
 
-  async create(input: NewDailyReportInput): Promise<DailyReportRecord> {
-    return withTenant(this.db, input.tenantId, async (tx) => {
-      const rows = await tx
-        .insert(dailyReports)
-        .values({
-          tenantId: input.tenantId,
-          staffId: input.staffId,
-          customerId: input.customerId,
-          occurredAt: input.occurredAt,
-          riskRating: input.riskRating,
-          esRating: input.esRating,
-          contentCiphertext: input.content.ciphertext,
-          contentKeyVersion: input.content.keyVersion,
-        })
-        .returning();
-      const row = rows[0];
-      if (!row) throw new Error('日報の保存に失敗しました');
-      return toRecord(row);
-    });
+  async create(input: NewDailyReportInput, scope?: TransactionScope): Promise<DailyReportRecord> {
+    return withTenant(
+      this.db,
+      input.tenantId,
+      async (tx) => {
+        const rows = await tx
+          .insert(dailyReports)
+          .values({
+            tenantId: input.tenantId,
+            staffId: input.staffId,
+            customerId: input.customerId,
+            occurredAt: input.occurredAt,
+            riskRating: input.riskRating,
+            esRating: input.esRating,
+            contentCiphertext: input.content.ciphertext,
+            contentKeyVersion: input.content.keyVersion,
+          })
+          .returning();
+        const row = rows[0];
+        if (!row) throw new Error('日報の保存に失敗しました');
+        return toRecord(row);
+      },
+      scope,
+    );
   }
 
-  async update(tenantId: string, id: string, input: NewDailyReportInput): Promise<DailyReportRecord | null> {
-    return withTenant(this.db, tenantId, async (tx) => {
-      const rows = await tx
-        .update(dailyReports)
-        .set({
-          occurredAt: input.occurredAt,
-          riskRating: input.riskRating,
-          esRating: input.esRating,
-          contentCiphertext: input.content.ciphertext,
-          contentKeyVersion: input.content.keyVersion,
-          updatedAt: new Date(),
-        })
-        .where(eq(dailyReports.id, id))
-        .returning();
-      const row = rows[0];
-      return row ? toRecord(row) : null;
-    });
+  async update(
+    tenantId: string,
+    id: string,
+    input: NewDailyReportInput,
+    scope?: TransactionScope,
+  ): Promise<DailyReportRecord | null> {
+    return withTenant(
+      this.db,
+      tenantId,
+      async (tx) => {
+        const rows = await tx
+          .update(dailyReports)
+          .set({
+            occurredAt: input.occurredAt,
+            riskRating: input.riskRating,
+            esRating: input.esRating,
+            contentCiphertext: input.content.ciphertext,
+            contentKeyVersion: input.content.keyVersion,
+            updatedAt: new Date(),
+          })
+          .where(eq(dailyReports.id, id))
+          .returning();
+        const row = rows[0];
+        return row ? toRecord(row) : null;
+      },
+      scope,
+    );
   }
 
   async findById(tenantId: string, id: string): Promise<DailyReportRecord | null> {

@@ -14,6 +14,7 @@ import {
   DrizzleTenantKeyRepository,
   DrizzleTenantRepository,
 } from '@katahimo/db/repositories';
+import { DrizzleUnitOfWork } from '@katahimo/db/unit-of-work';
 import {
   ConsoleAuditLogPort,
   GasBridgeMailerPort,
@@ -44,7 +45,8 @@ import type { Env } from './env';
 export function createContainer(env: Env, db: Database): Container {
   const kms = new LocalKmsPort(env.LOCAL_DEV_KEK);
   const tenantKeys = new DrizzleTenantKeyRepository(db);
-  const crypto = new LocalCryptoPort(tenantKeys, kms, new ConsoleAuditLogPort());
+  const audit = new ConsoleAuditLogPort();
+  const crypto = new LocalCryptoPort(tenantKeys, kms, audit);
   const appSettings = new DrizzleAppSettingsRepository(db);
   const gasBridgeOptions =
     env.GAS_BRIDGE_URL && env.GAS_BRIDGE_SECRET
@@ -94,6 +96,8 @@ export function createContainer(env: Env, db: Database): Container {
     maps: gasBridgeOptions ? new GasBridgeMapsPort(gasBridgeOptions) : new NoopMapsPort(),
     schedule: gasBridgeOptions ? new GasBridgeSchedulePort(gasBridgeOptions) : new NoopSchedulePort(),
     mirror: env.MIRROR_TO_GOOGLE_SHEETS ? new DrizzleOutboxRepository(db) : new NoopMirrorPort(),
+    unitOfWork: new DrizzleUnitOfWork(db),
+    audit,
     legacyAuthSalt: env.LEGACY_AUTH_SALT,
   };
 }

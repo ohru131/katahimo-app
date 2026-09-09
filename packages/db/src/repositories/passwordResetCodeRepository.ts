@@ -3,6 +3,7 @@ import type {
   ConsumeResetCodeResult,
   IssuePasswordResetCodeInput,
   PasswordResetCodeRepositoryPort,
+  TransactionScope,
   VerifyPasswordResetCodeInput,
 } from '@katahimo/core/ports';
 import { and, desc, eq, gt, isNull } from 'drizzle-orm';
@@ -48,49 +49,57 @@ export class DrizzlePasswordResetCodeRepository implements PasswordResetCodeRepo
    * 検証子の比較はSQLのWHERE句に混ぜず、取り出してから `constantTimeEquals` で行う
    * (途中で打ち切らない比較にするため)。
    */
-  async verifyAndConsume(input: VerifyPasswordResetCodeInput): Promise<ConsumeResetCodeResult> {
-    return withTenant(this.db, input.tenantId, async (tx) => {
-      const rows = await tx
-        .select()
-        .from(passwordResetCodes)
-        .where(
-          and(
-            eq(passwordResetCodes.tenantId, input.tenantId),
-            eq(passwordResetCodes.staffId, input.staffId),
-            isNull(passwordResetCodes.consumedAt),
-            gt(passwordResetCodes.expiresAt, new Date()),
-          ),
-        )
-        .orderBy(desc(passwordResetCodes.createdAt))
-        .limit(1)
-        .for('update');
+  async verifyAndConsume(
+    input: VerifyPasswordResetCodeInput,
+    scope?: TransactionScope,
+  ): Promise<ConsumeResetCodeResult> {
+    return withTenant(
+      this.db,
+      input.tenantId,
+      async (tx) => {
+        const rows = await tx
+          .select()
+          .from(passwordResetCodes)
+          .where(
+            and(
+              eq(passwordResetCodes.tenantId, input.tenantId),
+              eq(passwordResetCodes.staffId, input.staffId),
+              isNull(passwordResetCodes.consumedAt),
+              gt(passwordResetCodes.expiresAt, new Date()),
+            ),
+          )
+          .orderBy(desc(passwordResetCodes.createdAt))
+          .limit(1)
+          .for('update');
 
-      const row = rows[0];
-      if (!row) return 'unavailable';
+        const row = rows[0];
+        if (!row) return 'unavailable';
 
-      if (row.failedAttempts >= input.maxFailedAttempts) {
-        // 上限に達したコードは期限内でも使わせない。ここで畳んで再発行を促す。
+        if (row.failedAttempts >= input.maxFailedAttempts) {
+          // 上限に達したコードは期限内でも使わせない。ここで畳んで再発行を促す。
+          await tx
+            .update(passwordResetCodes)
+            .set({ consumedAt: new Date() })
+            .where(eq(passwordResetCodes.id, row.id));
+          return 'unavailable';
+        }
+
+        if (!constantTimeEquals(row.codeVerifier, input.codeVerifier)) {
+          await tx
+            .update(passwordResetCodes)
+            .set({ failedAttempts: row.failedAttempts + 1 })
+            .where(eq(passwordResetCodes.id, row.id));
+          return 'mismatch';
+        }
+
         await tx
           .update(passwordResetCodes)
           .set({ consumedAt: new Date() })
           .where(eq(passwordResetCodes.id, row.id));
-        return 'unavailable';
-      }
-
-      if (!constantTimeEquals(row.codeVerifier, input.codeVerifier)) {
-        await tx
-          .update(passwordResetCodes)
-          .set({ failedAttempts: row.failedAttempts + 1 })
-          .where(eq(passwordResetCodes.id, row.id));
-        return 'mismatch';
-      }
-
-      await tx
-        .update(passwordResetCodes)
-        .set({ consumedAt: new Date() })
-        .where(eq(passwordResetCodes.id, row.id));
-      return 'consumed';
-    });
+        return 'consumed';
+      },
+      scope,
+    );
   }
 
   async consumeAllForStaff(tenantId: string, staffId: string): Promise<void> {

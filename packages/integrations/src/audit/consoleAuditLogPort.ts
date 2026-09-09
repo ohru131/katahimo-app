@@ -1,4 +1,4 @@
-import type { AuditLogEntry, AuditLogPort } from '@katahimo/core/ports';
+import type { AuditEvent, AuditLogEntry, AuditLogPort } from '@katahimo/core/ports';
 
 /**
  * AuditLogPortの実装。構造化JSONを1行だけstdoutへ出力する。
@@ -16,6 +16,25 @@ export class ConsoleAuditLogPort implements AuditLogPort {
         auditAction: 'crypto.decrypt',
         tenantId: entry.tenantId,
         context: entry.context ?? null,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  }
+
+  /**
+   * 認証・権限まわりのイベントを記録する。ログイン失敗だけWARNINGにしておく。
+   * 総当たりの兆候を重要度フィルタだけで拾えるようにするため(件数の急増が普通のINFOに埋もれない)。
+   */
+  record(event: AuditEvent): void {
+    const severity = event.type === 'login_failed' ? 'WARNING' : 'INFO';
+    console.log(
+      JSON.stringify({
+        severity,
+        auditAction: `auth.${event.type}`,
+        tenantId: event.tenantId,
+        actorStaffId: event.actorStaffId ?? null,
+        targetStaffId: event.targetStaffId ?? null,
+        context: event.context ?? null,
         timestamp: new Date().toISOString(),
       }),
     );

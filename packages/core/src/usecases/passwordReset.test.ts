@@ -11,6 +11,7 @@ import {
   FakeSessionRepository,
   FakeStaffRepository,
   FakeTenantRepository,
+  FakeUnitOfWork,
 } from './testDoubles';
 
 const TENANT_SLUG = 'test-tenant';
@@ -40,14 +41,17 @@ describe('パスワード再設定', () => {
   beforeEach(async () => {
     mailer = new FakeMailer();
     sessions = new FakeSessionRepository();
+    const staffRepository = new FakeStaffRepository(sessions);
+    const passwordResetCodes = new FakePasswordResetCodeRepository();
     deps = {
       tenants: new FakeTenantRepository(),
       // 本物の実装と同じく、パスワードの差し替えと同じ操作でセッションを消させる。
-      staff: new FakeStaffRepository(sessions),
-      passwordResetCodes: new FakePasswordResetCodeRepository(),
+      staff: staffRepository,
+      passwordResetCodes,
       passwordHasher: new FakePasswordHasherPort(),
       mailer,
       resetCodePepper: 'test-pepper',
+      unitOfWork: new FakeUnitOfWork([staffRepository, passwordResetCodes]),
     };
     authDeps = { ...deps, sessions };
     const tenant = await deps.tenants.create({ name: 'テスト法人', slug: TENANT_SLUG });

@@ -16,6 +16,7 @@ import {
   FakeSessionRepository,
   FakeStaffRepository,
   FakeTenantRepository,
+  FakeUnitOfWork,
 } from './testDoubles';
 
 describe('sendVisitCompleteNotification', () => {
@@ -64,6 +65,7 @@ describe('sendVisitCompleteNotification', () => {
       crypto,
       notifier,
       mirror: new FakeOutboxRepository(),
+      unitOfWork: new FakeUnitOfWork([]),
     };
   });
 

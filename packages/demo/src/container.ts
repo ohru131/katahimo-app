@@ -14,6 +14,7 @@ import {
   DrizzleTenantRepository,
 } from '@katahimo/db/repositories';
 import type { Database } from '@katahimo/db/tenant-scope';
+import { DrizzleUnitOfWork } from '@katahimo/db/unit-of-work';
 // バレル(`@katahimo/integrations`)ではなくサブパスから取ること。バレル経由だと
 // LocalFileStoragePort(node:fs)まで巻き込まれ、ブラウザ向けビルドが通らなくなる。
 import { ConsoleAuditLogPort } from '@katahimo/integrations/audit';
@@ -73,7 +74,8 @@ export interface DemoContainer extends Container {
  */
 export function createDemoContainer(deps: DemoContainerDeps): DemoContainer {
   const kms = new LocalKmsPort(DEMO_KEK);
-  const crypto = new LocalCryptoPort(new DrizzleTenantKeyRepository(deps.db), kms, new ConsoleAuditLogPort());
+  const audit = new ConsoleAuditLogPort();
+  const crypto = new LocalCryptoPort(new DrizzleTenantKeyRepository(deps.db), kms, audit);
   const maps = new DemoMapsPort(deps.addressLatLng);
 
   return {
@@ -108,5 +110,7 @@ export function createDemoContainer(deps: DemoContainerDeps): DemoContainer {
     schedule: new DemoSchedulePort(maps, deps.customerIdByName),
     // ミラー先のGoogleスプレッドシートが存在しないので、outboxには積まない。
     mirror: new NoopMirrorPort(),
+    unitOfWork: new DrizzleUnitOfWork(deps.db),
+    audit,
   };
 }

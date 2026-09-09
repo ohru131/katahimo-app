@@ -62,11 +62,12 @@ export function createStaffRoutes(container: Container) {
       return c.json({ success: false, message: 'name, email が必要です' }, 400);
     }
 
-    const result = await createStaffWithInitialPassword(container, session.tenantId, {
-      name: body.name,
-      email: body.email,
-      isAdmin: body.isAdmin === true,
-    });
+    const result = await createStaffWithInitialPassword(
+      container,
+      session.tenantId,
+      { name: body.name, email: body.email, isAdmin: body.isAdmin === true },
+      session.staffId,
+    );
     if (!result.ok) {
       const message =
         result.reason === 'email_taken'
@@ -136,7 +137,12 @@ export function createStaffRoutes(container: Container) {
     if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
     if (!session.isAdmin) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
 
-    const result = await resetStaffPasswordByAdmin(container, session.tenantId, c.req.param('staffId'));
+    const result = await resetStaffPasswordByAdmin(
+      container,
+      session.tenantId,
+      c.req.param('staffId'),
+      session.staffId,
+    );
     if (!result.ok) return c.json({ success: false, message: 'スタッフが見つかりません' }, 404);
     return c.json({ success: true, mailDelivered: result.mailDelivered });
   });

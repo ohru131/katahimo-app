@@ -28,6 +28,7 @@ import {
   FakeStaffRepository,
   FakeStoragePort,
   FakeTenantRepository,
+  FakeUnitOfWork,
 } from './testDoubles';
 
 describe('runOutboxBatch / processOutboxJob', () => {
@@ -74,14 +75,16 @@ describe('runOutboxBatch / processOutboxJob', () => {
 
   it('日報を保存するとoutboxに積まれ、ワーカーがGAS側へ送るペイロードに変換される', async () => {
     const dailyReports = new FakeDailyReportRepository();
+    const accidentReports = new FakeAccidentReportRepository();
     const reportDeps: ReportDeps = {
       dailyReports,
-      accidentReports: new FakeAccidentReportRepository(),
+      accidentReports,
       customers,
       staff,
       crypto,
       notifier: new FakeNotifierPort(),
       mirror: outbox,
+      unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, outbox]),
     };
 
     const saved = await saveDailyReport(reportDeps, tenantId, {
@@ -110,7 +113,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
     };
     const result = await runOutboxBatch(workerDeps, tenantId);
 
-    expect(result).toEqual({ processed: 1, failed: 0 });
+    expect(result).toEqual({ processed: 1, failed: 0, deadLettered: 0 });
     expect(sender.dailyReports).toEqual([
       {
         reportId: saved.id,
@@ -131,14 +134,16 @@ describe('runOutboxBatch / processOutboxJob', () => {
 
   it('事故報告を保存するとoutboxに積まれ、ワーカーがGAS側へ送るペイロードに変換される', async () => {
     const accidentReports = new FakeAccidentReportRepository();
+    const dailyReports = new FakeDailyReportRepository();
     const reportDeps: ReportDeps = {
-      dailyReports: new FakeDailyReportRepository(),
+      dailyReports,
       accidentReports,
       customers,
       staff,
       crypto,
       notifier: new FakeNotifierPort(),
       mirror: outbox,
+      unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, outbox]),
     };
 
     const saved = await saveAccidentReport(reportDeps, tenantId, {
@@ -171,7 +176,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
     };
     const result = await runOutboxBatch(workerDeps, tenantId);
 
-    expect(result).toEqual({ processed: 1, failed: 0 });
+    expect(result).toEqual({ processed: 1, failed: 0, deadLettered: 0 });
     expect(sender.accidentReports).toHaveLength(1);
     expect(sender.accidentReports[0]).toMatchObject({
       reportId: saved.id,
@@ -198,6 +203,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
       storage,
       notifier: new FakeNotifierPort(),
       mirror: outbox,
+      unitOfWork: new FakeUnitOfWork([receipts, outbox]),
     };
 
     await uploadReceipts(receiptDeps, tenantId, {
@@ -227,7 +233,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
     };
     const result = await runOutboxBatch(workerDeps, tenantId);
 
-    expect(result).toEqual({ processed: 1, failed: 0 });
+    expect(result).toEqual({ processed: 1, failed: 0, deadLettered: 0 });
     expect(sender.receipts).toHaveLength(1);
     expect(sender.receipts[0]).toMatchObject({
       staffName: '佐藤 花子',
@@ -240,7 +246,12 @@ describe('runOutboxBatch / processOutboxJob', () => {
 
   it('勤怠(出勤簿)を保存するとoutboxに積まれ、ワーカーが列記号をキーにした値に変換して送る', async () => {
     const attendanceDays = new FakeAttendanceDayRepository();
-    const attendanceDeps: AttendanceDeps = { attendanceDays, crypto, mirror: outbox };
+    const attendanceDeps: AttendanceDeps = {
+      attendanceDays,
+      crypto,
+      mirror: outbox,
+      unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
+    };
 
     await saveAttendanceDay(attendanceDeps, tenantId, staffId, '2026-08-30', {
       C: '訪問先A',
@@ -262,7 +273,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
     };
     const result = await runOutboxBatch(workerDeps, tenantId);
 
-    expect(result).toEqual({ processed: 1, failed: 0 });
+    expect(result).toEqual({ processed: 1, failed: 0, deadLettered: 0 });
     expect(sender.attendanceDays).toEqual([
       {
         staffName: '佐藤 花子',
@@ -288,6 +299,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
       storage,
       notifier: new FakeNotifierPort(),
       mirror: outbox,
+      unitOfWork: new FakeUnitOfWork([receipts, outbox]),
     };
 
     await uploadReceipts(receiptDeps, tenantId, {
@@ -319,7 +331,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
     };
     const result = await runOutboxBatch(workerDeps, tenantId);
 
-    expect(result).toEqual({ processed: 0, failed: 1 });
+    expect(result).toEqual({ processed: 0, failed: 1, deadLettered: 0 });
     expect(sender.receipts).toEqual([]);
   });
 
@@ -345,7 +357,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
     };
     const result = await runOutboxBatch(workerDeps, tenantId);
 
-    expect(result).toEqual({ processed: 1, failed: 0 });
+    expect(result).toEqual({ processed: 1, failed: 0, deadLettered: 0 });
     expect(sender.dailyReports).toEqual([]);
   });
 });

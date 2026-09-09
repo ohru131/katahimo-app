@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>katahimo-app アーキテクチャ説明</title>
+<style>
+  :root{
+    --bg:#0f172a; --fg:#e2e8f0; --muted:#94a3b8; --line:#334155;
+    --accent:#38bdf8; --accent2:#a78bfa; --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+    --card:#1e293b;
+    --c-web:#38bdf8; --c-api:#a78bfa; --c-core:#34d399; --c-db:#fbbf24; --c-ext:#f472b6; --c-demo:#fb923c;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f8fafc; --fg:#0f172a; --muted:#475569; --line:#cbd5e1; --card:#ffffff; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+    font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI",Meiryo,system-ui,sans-serif;
+    font-feature-settings:"palt"; line-height:1.55}
+  code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK JP",monospace}
+  #deck{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .slide{
+    width:min(100vw, calc(100vh * 16 / 9)); aspect-ratio:16/9;
+    padding:clamp(20px,4vh,48px) clamp(24px,5vw,72px);
+    display:none; flex-direction:column; gap:.6em;
+    font-size:clamp(14px, 2.05vmin, 24px);
+  }
+  .slide.active{display:flex}
+  .slide h1{font-size:2.2em;margin:.1em 0 .2em;line-height:1.2;letter-spacing:-.01em}
+  .slide h2{font-size:1.55em;margin:0 0 .35em;line-height:1.25;letter-spacing:-.01em;
+    padding-bottom:.25em;border-bottom:2px solid var(--line)}
+  .slide h2 small{font-size:.55em;color:var(--muted);font-weight:normal;margin-left:.8em}
+  .slide p,.slide li{font-size:1em;margin:.15em 0}
+  .slide ul{margin:.2em 0;padding-left:1.2em}
+  .slide li{margin:.28em 0}
+  .slide li::marker{color:var(--accent)}
+  .lead{font-size:1.15em;color:var(--muted)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:1.5em;flex:1;min-height:0;align-items:stretch}
+  .slide.roomy{font-size:clamp(15px,2.4vmin,28px)}
+  .slide.mid{font-size:clamp(14.5px,2.2vmin,26px)}
+  .cols.w-3-2{grid-template-columns:3fr 2fr}
+  .cols.w-2-3{grid-template-columns:2fr 3fr}
+  .fig{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+  .fig svg{width:100%;height:100%;max-height:100%}
+  .cols>.fig{min-height:0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:.6em;padding:.7em .9em}
+  .card h3{margin:0 0 .3em;font-size:1em;color:var(--accent)}
+  .tag{display:inline-block;font-size:.72em;padding:.05em .55em;border-radius:1em;border:1px solid var(--line);color:var(--muted);vertical-align:middle;margin-left:.4em}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)} .muted{color:var(--muted)}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:.25em 1em;font-size:.95em}
+  .kv dt{color:var(--muted);white-space:nowrap} .kv dd{margin:0}
+  table{border-collapse:collapse;width:100%;font-size:.92em}
+  th,td{border-bottom:1px solid var(--line);padding:.35em .6em;text-align:left;vertical-align:top}
+  th{color:var(--muted);font-weight:600}
+  .q{border-left:4px solid var(--warn);padding:.3em .8em;background:color-mix(in srgb, var(--warn) 10%, transparent);border-radius:.3em}
+  .foot{margin-top:auto;display:flex;justify-content:space-between;color:var(--muted);font-size:.7em}
+  .title-slide{justify-content:center}
+  .title-slide h1{font-size:2.8em}
+  .center{text-align:center}
+  #hud{position:fixed;right:1rem;bottom:.8rem;color:var(--muted);font-size:13px;opacity:.75;user-select:none}
+  #help{position:fixed;left:1rem;bottom:.8rem;color:var(--muted);font-size:12px;opacity:.6}
+  .notes{display:none}
+  body.show-notes .notes{display:block;position:fixed;left:0;right:0;bottom:0;max-height:38vh;overflow:auto;
+    background:var(--card);border-top:2px solid var(--accent);padding:.8em 1.2em;font-size:15px;color:var(--fg)}
+  body.show-notes #hud, body.show-notes #help{display:none}
+  body.show-notes .notes{z-index:10}
+  body.show-notes .notes::before{content:"発表メモ";display:block;color:var(--accent);font-weight:600;margin-bottom:.3em;font-size:.85em}
+  /* SVG shared */
+  svg text{font-family:inherit;fill:var(--fg)}
+  svg .box{fill:var(--card);stroke:var(--line);stroke-width:1.5;rx:8}
+  svg .lbl{font-size:13px} svg .sm{font-size:11px;fill:var(--muted)} svg .h{font-size:14px;font-weight:600}
+  svg .arrow{stroke:var(--muted);stroke-width:1.6;fill:none;marker-end:url(#ah)}
+  svg .arrow.hi{stroke:var(--accent);stroke-width:2.2;marker-end:url(#ah-hi)}
+  svg .dash{stroke-dasharray:5 4}
+  @media print{
+    html,body{background:#fff;color:#000}
+    #deck{position:static;display:block}
+    /* biome-ignore-start lint/complexity/noImportantStyles: 画面表示では .slide{display:none} で1枚だけ出しているため、印刷時に全枚数を出すには上書きが要る */
+    .slide{display:flex !important;page-break-after:always;width:100%;height:auto;aspect-ratio:16/9;border:1px solid #ccc;margin:0 0 8mm}
+    #hud,#help,.notes{display:none !important}
+    /* biome-ignore-end lint/complexity/noImportantStyles: 印刷用の上書きはここまで */
+  }
+</style>
+</head>
+<body>
+<div id="deck">
+<!-- 1 title -->
+<section class="slide title-slide active">
+  <p class="muted" style="letter-spacing:.1em">ARCHITECTURE REVIEW</p>
+  <h1>katahimo-app<br>アーキテクチャ説明</h1>
+  <p class="lead">訪問保育(ベビーシッター法人)向け業務SaaS — GAS版からの移行基盤</p>
+  <p class="muted" style="margin-top:1.5em">目的: この設計で進めてよいか、有識者の判断をいただく<br>所要 10分 / 2026-09</p>
+  <div class="notes">
+    今日の目的は「褒めてもらう」ことではなく「進めていいか判断してもらう」こと。前半6分で構造を説明し、後半4分は判断していただきたい論点と、現状で「できていないこと」に使います。
+  </div>
+</section>
+
+<!-- 2 background -->
+<section class="slide">
+  <h2>何を、なぜ作り直しているか <small>背景</small></h2>
+  <div class="cols">
+    <div>
+      <h3 class="muted" style="margin:.2em 0">現行: Google Apps Script 版</h3>
+      <ul>
+        <li>データはすべて Sheets / Drive / Calendar。<b>単一法人・単一Googleアカウント</b>に強く依存</li>
+        <li>認証は共有ソルトの SHA-256、セッショントークンをシート列に直書き</li>
+        <li>RESERVA CSV取込が顧客DBを<b>全置換</b>(欠損時に丸ごと消えるリスク)</li>
+        <li>現場で本番稼働中。機能追加は凍結、不具合修正のみ</li>
+      </ul>
+      <h3 class="muted" style="margin:.8em 0 .2em">目指す先</h3>
+      <ul>
+        <li>マルチテナントSaaS化、将来の訪問看護展開</li>
+        <li>PostgreSQL を唯一の正データにし、GAS資産は<b>互換維持のミラー先</b>として残す</li>
+        <li>ビッグバン回避: Phase 0〜8 の段階移行</li>
+      </ul>
+    </div>
+    <div>
+      <div class="card">
+        <h3>いまどこにいるか</h3>
+        <dl class="kv">
+          <dt class="ok">実装済み</dt><dd>認証・顧客・日報/事故報告・領収書・勤怠・スタッフ管理・RESERVA取込・公開デモ</dd>
+          <dt class="warn">コード有・未検証</dt><dd>Sheetsミラー、メール送信(GASブリッジが<span class="warn">未デプロイ</span>)</dd>
+          <dt class="bad">未着手</dt><dd>本番デプロイ(Cloud Run)、予約・請求・カルテ、Cloud KMS、再暗号化バッチ、並行運用照合</dd>
+        </dl>
+      </div>
+      <div class="card" style="margin-top:.8em">
+        <h3>規模</h3>
+        <dl class="kv">
+          <dt>パッケージ</dt><dd>9(pnpm workspace)</dd>
+          <dt>TypeScript</dt><dd>205ファイル / 約20,400行(テスト除く)</dd>
+          <dt>テスト</dt><dd>43ファイル / 327件、CIで毎回実行</dd>
+          <dt>DB</dt><dd>13テーブル、マイグレーション5本</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>doc/07 技術構成提案書 / doc/10 開発メモ</span><span>katahimo-app</span></div>
+  <div class="notes">
+    重要なのは右上のカード。「実装済み」と「コードはあるが未検証」と「未着手」を最初に分けておきます。特に提案書で語っている予約・請求・カルテは、スキーマにもまだ存在しません。今日見ていただくのは「その土台となる基盤部分」です。
+  </div>
+</section>
+
+<!-- 3 topology -->
+<section class="slide">
+  <h2>全体像 <small>実行時トポロジ(本番想定)</small></h2>
+  <div class="fig">
+  <svg viewBox="0 0 960 420" role="img" aria-label="実行時トポロジ">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#94a3b8"/></marker>
+      <marker id="ah-hi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#38bdf8"/></marker>
+    </defs>
+    <!-- browser -->
+    <rect class="box" x="20" y="130" width="170" height="120" style="stroke:var(--c-web)"/>
+    <text class="h" x="105" y="158" text-anchor="middle">ブラウザ(PWA)</text>
+    <text class="sm" x="105" y="180" text-anchor="middle">React 18 + Vite</text>
+    <text class="sm" x="105" y="197" text-anchor="middle">TanStack Query</text>
+    <text class="sm" x="105" y="214" text-anchor="middle">fetch('/api/…', Cookie)</text>
+    <text class="sm" x="105" y="236" text-anchor="middle" style="fill:var(--c-web)">packages/web</text>
+    <!-- cloud run -->
+    <rect x="250" y="40" width="300" height="340" rx="12" fill="none" stroke="var(--line)" stroke-dasharray="6 5"/>
+    <text class="sm" x="262" y="62">Cloud Run(計画。Dockerfile / IaC は未作成)</text>
+    <rect class="box" x="275" y="90" width="250" height="120" style="stroke:var(--c-api)"/>
+    <text class="h" x="400" y="118" text-anchor="middle">API(Hono 4)</text>
+    <text class="sm" x="400" y="140" text-anchor="middle">8ルートファイル / 30エンドポイント</text>
+    <text class="sm" x="400" y="157" text-anchor="middle">Cookieセッション → tenantId 確定</text>
+    <text class="sm" x="400" y="174" text-anchor="middle">usecases(core)を呼ぶだけ</text>
+    <text class="sm" x="400" y="196" text-anchor="middle" style="fill:var(--c-api)">packages/api</text>
+    <rect class="box" x="275" y="240" width="250" height="110" style="stroke:var(--c-api)"/>
+    <text class="h" x="400" y="268" text-anchor="middle">Worker(ポーリング)</text>
+    <text class="sm" x="400" y="290" text-anchor="middle">outbox_jobs を claim(SKIP LOCKED)</text>
+    <text class="sm" x="400" y="307" text-anchor="middle">復号 → 送信 → 失敗はバックオフ再試行</text>
+    <text class="sm" x="400" y="335" text-anchor="middle" style="fill:var(--c-api)">packages/worker</text>
+    <!-- postgres -->
+    <rect class="box" x="600" y="240" width="160" height="140" style="stroke:var(--c-db)"/>
+    <text class="h" x="680" y="268" text-anchor="middle">PostgreSQL</text>
+    <text class="sm" x="680" y="290" text-anchor="middle">13テーブル</text>
+    <text class="sm" x="680" y="307" text-anchor="middle">RLS + FORCE</text>
+    <text class="sm" x="680" y="324" text-anchor="middle">列ごと暗号化 / outbox_jobs</text>
+    <text class="sm" x="680" y="362" text-anchor="middle" style="fill:var(--c-db)">唯一の正データ</text>
+    <!-- externals -->
+    <rect class="box" x="800" y="40" width="150" height="150" style="stroke:var(--c-ext)"/>
+    <text class="h" x="875" y="66" text-anchor="middle">GAS Bridge</text>
+    <text class="sm" x="875" y="84" text-anchor="middle">既存GAS Web App</text>
+    <text class="sm" x="875" y="106" text-anchor="middle">Sheets / Drive</text>
+    <text class="sm" x="875" y="123" text-anchor="middle">Calendar / Maps</text>
+    <text class="sm" x="875" y="140" text-anchor="middle">MailApp</text>
+    <rect x="812" y="156" width="126" height="22" rx="11" fill="var(--warn)" opacity=".18"/>
+    <text class="sm" x="875" y="172" text-anchor="middle" style="fill:var(--warn)">未デプロイ・未検証</text>
+    <rect class="box" x="800" y="215" width="150" height="60" style="stroke:var(--c-ext)"/>
+    <text class="h" x="875" y="240" text-anchor="middle">Gemini API</text>
+    <text class="sm" x="875" y="260" text-anchor="middle">日報下書き / 領収書OCR</text>
+    <rect class="box" x="800" y="300" width="150" height="60" style="stroke:var(--c-ext)"/>
+    <text class="h" x="875" y="325" text-anchor="middle">Google Chat</text>
+    <text class="sm" x="875" y="345" text-anchor="middle">Incoming Webhook</text>
+    <!-- arrows -->
+    <path class="arrow hi" d="M190 170 H273"/>
+    <text class="sm" x="232" y="162" text-anchor="middle">HTTPS</text>
+    <path class="arrow" d="M525 195 C560 195 560 280 598 280"/>
+    <text class="sm" x="575" y="232" text-anchor="middle">SQL</text>
+    <path class="arrow" d="M525 320 H598"/>
+    <text class="sm" x="561" y="312" text-anchor="middle">claim</text>
+    <path class="arrow" d="M525 262 C640 262 700 115 798 115"/>
+    <path class="arrow dash" d="M525 100 C640 60 700 60 798 60"/>
+    <text class="sm" x="640" y="52" text-anchor="middle">schedule / maps / mail</text>
+    <path class="arrow" d="M525 140 C680 140 720 245 798 245"/>
+    <path class="arrow" d="M525 165 H770 Q785 165 785 180 V320 Q785 330 798 330"/>
+    </svg>
+  </div>
+  <div class="foot"><span>実線=同期、破線=読み取り委譲。Worker→GAS Bridge が非同期ミラー</span><span>katahimo-app</span></div>
+  <div class="notes">
+    箱は4つ。ブラウザ、API、Worker、PostgreSQL。外部はGASブリッジ、Gemini、Google Chat。ポイントは2つ。PostgreSQLが唯一の正データで、Sheetsは書き戻し先であること。そしてGoogle系の外部連携が全部「既存のGAS Web App 1本」を経由すること。このGASブリッジは、実はまだ一度もデプロイされていません。これは後半の論点です。
+  </div>
+</section>
+<!-- 4 packages -->
+<section class="slide">
+  <h2>パッケージ構成と依存の向き <small>pnpm workspace / 9パッケージ</small></h2>
+  <div class="cols w-3-2">
+    <div class="fig">
+    <svg viewBox="0 0 560 400" role="img" aria-label="パッケージ依存">
+      <g>
+        <rect class="box" x="30" y="10" width="200" height="46" style="stroke:var(--c-web)"/>
+        <text class="h" x="130" y="30" text-anchor="middle">web</text><text class="sm" x="130" y="47" text-anchor="middle">React PWA(ブラウザ)</text>
+        <rect class="box" x="300" y="10" width="200" height="46" style="stroke:var(--c-demo)"/>
+        <text class="h" x="400" y="30" text-anchor="middle">demo</text><text class="sm" x="400" y="47" text-anchor="middle">PGlite + fetch差し替え(ブラウザ)</text>
+        <rect class="box" x="30" y="86" width="200" height="46" style="stroke:var(--c-api)"/>
+        <text class="h" x="130" y="106" text-anchor="middle">api</text><text class="sm" x="130" y="123" text-anchor="middle">Hono ルート + Container型</text>
+        <rect class="box" x="300" y="86" width="200" height="46" style="stroke:var(--c-api)"/>
+        <text class="h" x="400" y="106" text-anchor="middle">worker</text><text class="sm" x="400" y="123" text-anchor="middle">outbox ポーリング(Node)</text>
+        <rect class="box" x="30" y="166" width="130" height="46" style="stroke:var(--c-db)"/>
+        <text class="h" x="95" y="186" text-anchor="middle">db</text><text class="sm" x="95" y="203" text-anchor="middle">Drizzle + RLS</text>
+        <rect class="box" x="200" y="166" width="150" height="46" style="stroke:var(--c-ext)"/>
+        <text class="h" x="275" y="186" text-anchor="middle">integrations</text><text class="sm" x="275" y="203" text-anchor="middle">GAS / Gemini / 暗号</text>
+        <rect class="box" x="390" y="166" width="110" height="46" style="stroke:var(--c-ext)"/>
+        <text class="h" x="445" y="186" text-anchor="middle">ingestion</text><text class="sm" x="445" y="203" text-anchor="middle">RESERVA CSV</text>
+        <rect class="box" x="120" y="250" width="290" height="56" style="stroke:var(--c-core);stroke-width:2.5"/>
+        <text class="h" x="265" y="272" text-anchor="middle">core</text>
+        <text class="sm" x="265" y="292" text-anchor="middle">domain(純関数)/ ports(IF)/ usecases — 外部SDKを一切importしない</text>
+        <rect class="box" x="170" y="340" width="190" height="42"/>
+        <text class="h" x="265" y="360" text-anchor="middle">shared</text><text class="sm" x="265" y="375" text-anchor="middle">API契約(zod)</text>
+      </g>
+      <!-- arrows: dependency direction downward -->
+      <path class="arrow" d="M130 56 V84"/>
+      <path class="arrow" d="M230 33 H298"/>
+      <path class="arrow" d="M400 56 V84"/>
+      <path class="arrow" d="M300 109 H232"/>
+      <path class="arrow" d="M100 132 V164"/>
+      <path class="arrow" d="M160 132 L250 164"/>
+      <path class="arrow" d="M400 132 L445 164"/>
+      <path class="arrow" d="M95 212 L200 248"/>
+      <path class="arrow" d="M275 212 V248"/>
+      <path class="arrow" d="M445 212 L330 248"/>
+      <path class="arrow" d="M265 306 V338"/>
+    </svg>
+    </div>
+    <div>
+      <ul>
+        <li>矢印は「依存する方向」。<b>逆流は1本もない</b>(package.json で確認)</li>
+        <li><b>core</b> は <code>shared</code> 以外に依存しない。DBドライバ・argon2・googleapis は全部外側</li>
+        <li><b>db / integrations</b> は core のポートを実装する側。ここだけが外部SDKを知る</li>
+        <li><b>api</b> は Hono のルートと <code>Container</code>(全ポートの束)の型。Node向けの組み立ては別ファイル</li>
+        <li><b>demo</b> が api を依存に持つのは、ブラウザ内で同じ Hono アプリを動かすため</li>
+      </ul>
+      <div class="card" style="margin-top:.6em">
+        <h3>デモ用コードの隔離</h3>
+        <p><code>web → demo</code> は <b>devDependencies</b>。本番ビルドでは Vite プラグインが入口をスタブ化し、CI が<b>成果物そのもの</b>を検査する(<code>.wasm</code> の有無と禁止文字列)。設定を読むのではなく出力を見るので、設定ミスでも素通りしない。</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>packages/*/package.json</span><span>katahimo-app</span></div>
+  <div class="notes">
+    ヘキサゴナルを、パッケージ境界で強制している構成です。core は外部SDKを一切importしないので、ブラウザでもNodeでも同じコードが動きます。これがデモを可能にしている根拠でもあります。右下はデモ用コードの隔離で、web から demo への依存は devDependencies に置いたうえで、ビルド成果物そのものをCIで検査しています。設定を読むのではなく出力を見るので、設定ミスでも素通りしません。
+  </div>
+</section>
+
+<!-- 5 hexagonal -->
+<section class="slide">
+  <h2>ヘキサゴナル: ポートとアダプタ <small>core は「穴」だけを知る</small></h2>
+  <div class="cols w-3-2">
+    <div class="fig">
+    <svg viewBox="0 0 600 400" role="img" aria-label="ヘキサゴナル構成">
+      <!-- driving side -->
+      <g>
+        <rect class="box" x="10" y="60" width="130" height="54" style="stroke:var(--c-api)"/>
+        <text class="lbl" x="75" y="83" text-anchor="middle">Hono ルート</text><text class="sm" x="75" y="100" text-anchor="middle">HTTP → usecase</text>
+        <rect class="box" x="10" y="170" width="130" height="54" style="stroke:var(--c-api)"/>
+        <text class="lbl" x="75" y="193" text-anchor="middle">Worker ループ</text><text class="sm" x="75" y="210" text-anchor="middle">runOutboxBatch</text>
+        <rect class="box" x="10" y="280" width="130" height="54" style="stroke:var(--c-api)"/>
+        <text class="lbl" x="75" y="303" text-anchor="middle">CLI スクリプト</text><text class="sm" x="75" y="320" text-anchor="middle">seed / CSV取込</text>
+      </g>
+      <!-- core -->
+      <rect x="180" y="20" width="240" height="360" rx="16" fill="none" stroke="var(--c-core)" stroke-width="2.5"/>
+      <text class="h" x="300" y="46" text-anchor="middle" style="fill:var(--c-core)">core</text>
+      <rect class="box" x="200" y="62" width="200" height="60"/>
+      <text class="lbl" x="300" y="86" text-anchor="middle">usecases(12モジュール)</text>
+      <text class="sm" x="300" y="104" text-anchor="middle">XxxDeps = 必要なポートの部分集合</text>
+      <rect class="box" x="200" y="140" width="200" height="60"/>
+      <text class="lbl" x="300" y="164" text-anchor="middle">ports</text>
+      <text class="sm" x="300" y="182" text-anchor="middle">Repository×13 / UnitOfWork / Crypto …</text>
+      <rect class="box" x="200" y="218" width="200" height="140" style="stroke:var(--c-core)"/>
+      <text class="lbl" x="300" y="244" text-anchor="middle">domain(純関数・I/Oなし)</text>
+      <text class="sm" x="300" y="266" text-anchor="middle">勤怠計算 / 日報履歴 / 重複判定</text>
+      <text class="sm" x="300" y="283" text-anchor="middle">氏名正規化 / レガシーハッシュ</text>
+      <text class="sm" x="300" y="300" text-anchor="middle">パスワード生成 / JST日時</text>
+      <text class="sm" x="300" y="330" text-anchor="middle" style="fill:var(--c-core)">全ファイルに隣接テストあり</text>
+      <!-- driven side -->
+      <g>
+        <rect class="box" x="460" y="40" width="130" height="54" style="stroke:var(--c-db)"/>
+        <text class="lbl" x="525" y="63" text-anchor="middle">Drizzle リポジトリ</text><text class="sm" x="525" y="80" text-anchor="middle">13クラス + Outbox</text>
+        <rect class="box" x="460" y="110" width="130" height="54" style="stroke:var(--c-ext)"/>
+        <text class="lbl" x="525" y="133" text-anchor="middle">GAS Bridge ×4</text><text class="sm" x="525" y="150" text-anchor="middle">Mail/Maps/Schedule/Mirror</text>
+        <rect class="box" x="460" y="180" width="130" height="54" style="stroke:var(--c-ext)"/>
+        <text class="lbl" x="525" y="203" text-anchor="middle">Gemini / Chat</text><text class="sm" x="525" y="220" text-anchor="middle">+ Noop 実装</text>
+        <rect class="box" x="460" y="250" width="130" height="54" style="stroke:var(--c-ext)"/>
+        <text class="lbl" x="525" y="273" text-anchor="middle">Local Crypto/KMS</text><text class="sm" x="525" y="290" text-anchor="middle">AES-GCM / KEK env</text>
+        <rect class="box" x="460" y="320" width="130" height="54" style="stroke:var(--c-demo)"/>
+        <text class="lbl" x="525" y="343" text-anchor="middle">demo 差し替え</text><text class="sm" x="525" y="360" text-anchor="middle">Browser/Canned/Demo*</text>
+      </g>
+      <!-- arrows all point INTO core -->
+      <path class="arrow" d="M140 87 H198"/>
+      <path class="arrow" d="M140 197 L198 100"/>
+      <path class="arrow" d="M140 307 L198 110"/>
+      <path class="arrow" d="M460 67 L402 160"/>
+      <path class="arrow" d="M460 137 L402 165"/>
+      <path class="arrow" d="M460 207 L402 172"/>
+      <path class="arrow" d="M460 277 L402 178"/>
+      <path class="arrow dash" d="M460 347 L402 185"/>
+      <text class="sm" x="70" y="30">呼ぶ側(driving)</text>
+      <text class="sm" x="470" y="26">実装する側(driven)</text>
+    </svg>
+    </div>
+    <div>
+      <ul>
+        <li>矢印は全部 <b>core に向かって</b>入る。core から外へ出る依存は無い</li>
+        <li>usecase は <code>XxxDeps</code>(必要なポートだけの構造的部分集合)を受け取る。<code>Container</code> をそのまま渡せる</li>
+        <li><b>Container</b> = 全ポートの束。Node用 <code>createContainer(env, db)</code> と ブラウザ用 <code>createDemoContainer()</code> が同じ型を返す</li>
+        <li>外部が無いときは <b>Noop 実装</b>に落ちる(Maps / Schedule / AI / Mirror)。黙って壊れない</li>
+        <li><b>UnitOfWorkPort</b> だけは横断的で、複数リポジトリの書き込みを1つのトランザクションにまとめる(9枚目)</li>
+      </ul>
+      <div class="card" style="margin-top:.6em">
+        <h3>例外を1つ正直に</h3>
+        <p><code>PasswordHasherPort</code> だけ ports/ ではなく <code>usecases/auth.ts</code> に定義されている。動作に影響はないが、置き場所の一貫性は崩れている。</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>packages/core/src/{ports,usecases,domain} / packages/api/src/container.ts</span><span>katahimo-app</span></div>
+  <div class="notes">
+    教科書どおりのポート&アダプタです。強調したいのは「同じ Container 型を、Node とブラウザで別々に組み立てている」こと。デモはリポジトリも暗号化もusecasesも本番と同一コードで動きます。差し替えているのは、Node専用の実装と、鍵を置けない外部APIだけです。ポートの中で UnitOfWork だけは横断的で、複数リポジトリの書き込みを1つのトランザクションにまとめます。9枚目で詳しく話します。
+  </div>
+</section>
+<!-- 6 multitenancy -->
+<section class="slide">
+  <h2>マルチテナント分離 <small>shared schema + tenant_id + RLS</small></h2>
+  <div class="cols w-3-2">
+    <div class="fig">
+    <svg viewBox="0 0 600 380" role="img" aria-label="RLSの流れ">
+      <rect class="box" x="10" y="20" width="580" height="60" style="stroke:var(--c-api)"/>
+      <text class="lbl" x="24" y="45">① Cookie <tspan class="mono">katahimo_session = tenantId.rawToken</tspan></text>
+      <text class="sm" x="24" y="66">tenantId を先に知らないと RLS 対象の sessions を引けない(鶏と卵)。トークンはDB側でハッシュ照合</text>
+      <path class="arrow" d="M300 80 V100"/>
+      <rect class="box" x="10" y="102" width="580" height="60" style="stroke:var(--c-api)"/>
+      <text class="lbl" x="24" y="127">② resolveSession → 以後ルートは session.tenantId / staffId のみ信用</text>
+      <text class="sm" x="24" y="148">リクエスト本文の tenantId / staffId は使わない。管理者の代理操作は用途別3関数で解決</text>
+      <path class="arrow" d="M300 162 V182"/>
+      <rect class="box" x="10" y="184" width="580" height="96" style="stroke:var(--c-db)"/>
+      <text class="lbl" x="24" y="209">③ withTenant(db, tenantId, tx ⇒ …)</text>
+      <text class="mono sm" x="24" y="230">BEGIN;  SELECT set_config('app.tenant_id', $1, true);  …  COMMIT;</text>
+      <text class="sm" x="24" y="250">第3引数 true = トランザクションローカル。プール接続を使い回しても設定が残らない</text>
+      <text class="sm" x="24" y="268">全13リポジトリの全メソッドがこれで包まれる(tenants テーブルだけ例外)</text>
+      <path class="arrow" d="M300 280 V300"/>
+      <rect class="box" x="10" y="302" width="580" height="66" style="stroke:var(--c-db)"/>
+      <text class="lbl" x="24" y="326">④ POLICY tenant_isolation FOR ALL</text>
+      <text class="mono sm" x="24" y="346">USING / WITH CHECK: tenant_id = current_setting('app.tenant_id', true)::uuid</text>
+      <text class="sm" x="24" y="362">未設定なら NULL → 常に false(安全側)。ENABLE + <tspan font-weight="700">FORCE</tspan>、接続ロールは非所有者 katahimo_app</text>
+    </svg>
+    </div>
+    <div>
+      <ul>
+        <li>テナント別スキーマ/DBは不採用: 「法人ごとにスキーマが分岐すると保守が破綻しやすい」(doc/07)</li>
+        <li><b>FKはRLSをバイパスする</b>(PG仕様)→ 参照は <code>(tenant_id, id)</code> の複合FKに統一。参照先に <code>UNIQUE(tenant_id, id)</code></li>
+        <li>アプリ側(withTenant)と DB側(RLS)の<b>二重防御</b>。片方が抜けても他方が止める</li>
+      </ul>
+      <div class="card" style="margin-top:.6em">
+        <h3 class="ok">効いていることをCIで確かめている</h3>
+        <ul style="margin:0">
+          <li><b>静的検査</b>: スキーマから全テーブルを動的に集め、SQLに <code>ENABLE</code> と <code>FORCE</code> の両方、ポリシーの <code>USING</code>/<code>WITH CHECK</code> が揃っているかを検査。<b>新テーブルで FORCE を書き忘れると落ちる</b></li>
+          <li><b>実DB検証</b>: PGlite上に非特権ロールを作り、他テナントの行が見えないこと・<code>WITH CHECK</code> で弾かれることを確認。FORCE 無しの比較用テーブルと挙動が変わることまで固定</li>
+        </ul>
+      </div>
+      <div class="card q" style="margin-top:.5em">
+        <h3 class="warn">残るトレードオフ</h3>
+        <p><code>tenants</code> は唯一RLS対象外(ログイン前にslugで特定するため)。アプリロールが全テナント一覧を読める。</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>packages/db/src/tenantScope.ts / schema/_rls.ts / drizzle/*.sql / infra/initdb</span><span>katahimo-app</span></div>
+  <div class="notes">
+    分離は shared schema + RLS。アプリ側とDB側の二重防御です。FORCE は drizzle-kit が出力しないので手で追記していますが、書き忘れをCIで検出します。スキーマから全テーブルを動的に集めてマイグレーションSQLを検査するので、新しいテーブルを足して FORCE を忘れると落ちます。加えて PGlite 上に非特権ロールを作り、実際に他テナントの行が見えないことも確かめています。残るトレードオフは tenants がRLS対象外である点で、ワーカーが全テナントを列挙する設計とも絡みます。
+  </div>
+</section>
+
+<!-- 7 encryption -->
+<section class="slide">
+  <h2>データ保護 <small>封筒暗号化 + 対象の絞り込み</small></h2>
+  <div class="cols">
+    <div class="fig">
+    <svg viewBox="0 0 560 360" role="img" aria-label="封筒暗号化">
+      <rect class="box" x="10" y="20" width="230" height="70" style="stroke:var(--c-ext)"/>
+      <text class="h" x="125" y="45" text-anchor="middle">KEK</text>
+      <text class="sm" x="125" y="63" text-anchor="middle">いま: 環境変数 LOCAL_DEV_KEK</text>
+      <text class="sm" x="125" y="79" text-anchor="middle" style="fill:var(--warn)">将来: Cloud KMS(未実装)</text>
+      <rect class="box" x="310" y="20" width="240" height="70" style="stroke:var(--c-db)"/>
+      <text class="h" x="430" y="45" text-anchor="middle">tenant_keys</text>
+      <text class="sm" x="430" y="63" text-anchor="middle">PK = (tenant_id, dek_version)</text>
+      <text class="sm" x="430" y="79" text-anchor="middle">世代が並存する(ラップ済のみ保存)</text>
+      <path class="arrow" d="M240 55 H308"/>
+      <text class="sm" x="274" y="47" text-anchor="middle">wrap / unwrap</text>
+      <rect class="box" x="150" y="140" width="260" height="60" style="stroke:var(--c-core)"/>
+      <text class="h" x="280" y="165" text-anchor="middle">DEK(32B, テナント別・世代別)</text>
+      <text class="sm" x="280" y="185" text-anchor="middle">暗号化=最新世代 / 復号=記録された世代</text>
+      <path class="arrow" d="M430 90 L330 138"/>
+      <rect class="box" x="10" y="250" width="540" height="90" style="stroke:var(--c-db)"/>
+      <text class="h" x="280" y="275" text-anchor="middle">AES-256-GCM(毎回ランダム nonce)</text>
+      <text class="sm" x="280" y="296" text-anchor="middle">xxx_ciphertext + xxx_key_version(=世代)の列ペア</text>
+      <text class="sm" x="280" y="314" text-anchor="middle">復号ごとに AuditLogPort.recordDecrypt(tenantId)</text>
+      <text class="sm" x="280" y="331" text-anchor="middle">解約時 revoke() で暗号学的削除(バックアップも復号不能)</text>
+      <path class="arrow" d="M280 200 V248"/>
+    </svg>
+    </div>
+    <div>
+      <div class="card">
+        <h3>暗号化する / しない(2026-08レビューで絞り込み)</h3>
+        <dl class="kv">
+          <dt class="ok">暗号化</dt><dd>緊急連絡先・避難場所・メモ・緯度経度、家族構成員(氏名/生年月日)、日報・事故報告本文、領収書明細、Gemini APIキー</dd>
+          <dt class="muted">平文</dt><dd>氏名・かな・メール・電話・住所(検索性優先。TDE + RLS + IAM で保護)</dd>
+          <dt>Blind index</dt><dd>領収書の重複検出 <b>1箇所のみ</b>(HMAC、別鍵)。苗字検索は平文+通常インデックス</dd>
+        </dl>
+      </div>
+      <div class="card q" style="margin-top:.6em">
+        <h3 class="warn">論点</h3>
+        <ul style="margin:0">
+          <li><b>Cloud KMS 実装は存在しない</b>。KEK が環境変数1本のままなので、封筒暗号化の主要な便益(鍵の物理分離・KMS側監査)は未実現</li>
+          <li>世代が並存するのでローテーションで既存データは壊れないが、<b>再暗号化バッチが未実装</b>。古い世代の鍵を捨てられない</li>
+          <li>監査は認証イベントには「誰が」が入るが、<b>復号は「どのテナント」まで</b>。平文列(氏名・住所)へのアクセスはそもそもこの網に入らない</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>packages/integrations/src/local-crypto, local-kms / doc/09 3章</span><span>katahimo-app</span></div>
+  <div class="notes">
+    封筒暗号化の形は本番相当ですが、KEKがまだ環境変数です。「インターフェースを変えずにCloud KMSへ差し替える」設計なので構造は問題ないと考えていますが、現時点では本番相当の鍵管理が存在しない、とはっきり言っておきます。DEKは世代を並存させるので、鍵を差し替えても既存の暗号文は記録された世代の鍵でそのまま読めます。ただし再暗号化バッチが無いため、古い世代の鍵はまだ捨てられません。
+  </div>
+</section>
+<!-- 8 auth -->
+<section class="slide">
+  <h2>認証・認可 <small>自前実装(提案書の Firebase Auth からは変更)</small></h2>
+  <div class="cols">
+    <div>
+      <div class="card"><h3>パスワードとログイン試行</h3>
+        <ul style="margin:0">
+          <li>argon2id。コストは明示指定(<code>m=19MiB, t=2, p=1</code>)。既定任せにすると、どのコストで運用しているかがコードから読めない</li>
+          <li>GAS版の共有ソルト SHA-256 は、ログイン成功時に<b>サイレント再ハッシュ</b>して移行(再設定を強いない)</li>
+          <li>連続10回の失敗で<b>15分ロック</b>、成功でリセット。恒久ロックにしないのは、狙って失敗させれば人を締め出せてしまうため</li>
+          <li>ロック中かどうかで<b>応答を変えない</b>。変えると10回試すだけでアカウントの有無が分かる</li>
+        </ul>
+      </div>
+      <div class="card" style="margin-top:.6em"><h3>セッション</h3>
+        <ul style="margin:0">
+          <li>32B乱数トークン、DBには SHA-256 のみ。httpOnly / SameSite=Lax / 本番 Secure。TTL 7日(絶対期限)</li>
+          <li>Cookieに署名鍵は使わない。値は高エントロピーの乱数で、検証はDB側の照合。署名しても増える保証がない</li>
+          <li>書き込み系は <b>Origin 照合</b>でクロスサイトを弾く(SameSite に加えたサーバー側の1枚)</li>
+          <li><code>requirePasswordChangeGuard</code>: 初期パスワードのまま他APIを叩くと403(ミドルウェア1箇所)</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="card"><h3>パスワード再設定(GAS版から意図的に変えた点)</h3>
+        <ul style="margin:0">
+          <li>存在しない宛先でも同じ応答(<b>ユーザー列挙を塞ぐ</b>)。送信失敗も応答を変えない</li>
+          <li>6桁コードは <code>HMAC-SHA256(pepper, code)</code> で保存。pepper は環境変数、DBに置かない</li>
+          <li>検証と消費は <code>SELECT … FOR UPDATE</code> の1トランザクション。誤入力5回で無効、定数時間比較</li>
+          <li>書き込みは <code>replacePassword</code> 1本: 行ロック → 差し替え → セッション破棄を同一tx。楽観ロック <code>expect</code> で「認証後に別経路が差し替えた」を弾く</li>
+        </ul>
+      </div>
+      <div class="card"><h3>監査</h3>
+        <p style="margin:0">ログインの成否・パスワード変更・再設定・管理者によるスタッフ操作を、<b>誰が・誰を</b>付きで構造化ログに残す。ログイン失敗だけ severity を上げ、総当たりの兆候をフィルタで拾えるようにしている。</p>
+      </div>
+      <div class="card q" style="margin-top:.5em"><h3 class="warn">論点</h3>
+        <ul style="margin:0">
+          <li>絞り込みは<b>アカウント単位のみ</b>。IPや端末単位のレート制限は前段(WAF/Cloud Armor)が要る</li>
+          <li>レガシーの共有ソルト SHA-256 経路が残る。ログインしないスタッフのハッシュは<b>期限なく残り続ける</b></li>
+          <li>セッションは絶対期限7日のみ。アイドルタイムアウト・同時セッション数の制限は無い</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>packages/core/src/usecases/{auth,passwordReset,staff}.ts / packages/api/src/session.ts</span><span>katahimo-app</span></div>
+  <div class="notes">
+    提案書では Firebase Auth でしたが、実装は自前です。GAS版のパスワードをそのまま移行できるようにしたかったのが理由です。ログインはアカウント単位で10回失敗すると15分ロックし、時間で自動的に解けます。ロック中かどうかで応答を変えないのは、変えると10回試すだけでアカウントの有無が分かるからです。セッションCookieに署名鍵を使わないのは設計判断で、値が32バイトの乱数トークンで、検証はDB側のハッシュ照合だからです。残る論点は右下の3点、特にIP単位の制限が前段のWAF任せになっている点です。
+  </div>
+</section>
+
+<!-- 9 request trace -->
+<section class="slide">
+  <h2>1本のリクエストを追う <small>「日報を保存する」</small></h2>
+  <div class="fig">
+  <svg viewBox="0 0 960 400" role="img" aria-label="日報保存のシーケンス">
+    <!-- lanes -->
+    <g class="sm">
+      <text x="60" y="22" text-anchor="middle" class="h">React</text>
+      <text x="200" y="22" text-anchor="middle" class="h">Hono route</text>
+      <text x="340" y="22" text-anchor="middle" class="h">usecase</text>
+      <text x="480" y="22" text-anchor="middle" class="h">Crypto/KMS</text>
+      <text x="620" y="22" text-anchor="middle" class="h">PostgreSQL</text>
+      <text x="760" y="22" text-anchor="middle" class="h">Worker</text>
+      <text x="900" y="22" text-anchor="middle" class="h">GAS → Sheets</text>
+    </g>
+    <g stroke="var(--line)" stroke-dasharray="3 5">
+      <line x1="60" y1="32" x2="60" y2="380"/><line x1="200" y1="32" x2="200" y2="380"/><line x1="340" y1="32" x2="340" y2="380"/>
+      <line x1="480" y1="32" x2="480" y2="380"/><line x1="620" y1="32" x2="620" y2="380"/><line x1="760" y1="32" x2="760" y2="380"/><line x1="900" y1="32" x2="900" y2="380"/>
+    </g>
+    <!-- sync part -->
+    <path class="arrow hi" d="M60 58 H198"/><text class="sm" x="130" y="50" text-anchor="middle">POST /api/reports/daily</text>
+    <path class="arrow" d="M200 86 H338"/><text class="sm" x="270" y="78" text-anchor="middle">Origin照合 → guard → session → staffId強制</text>
+    <path class="arrow" d="M340 114 H478"/><text class="sm" x="410" y="106" text-anchor="middle">encrypt(本文)</text>
+    <path class="arrow" d="M480 134 H618"/><text class="sm" x="550" y="126" text-anchor="middle">最新世代のDEKをunwrap</text>
+    <!-- single transaction box -->
+    <rect x="330" y="152" width="300" height="76" rx="8" fill="var(--c-core)" opacity=".10"/>
+    <rect x="330" y="152" width="300" height="76" rx="8" fill="none" stroke="var(--c-core)" stroke-width="2"/>
+    <text class="sm" x="340" y="168" style="fill:var(--c-core);font-weight:600">unitOfWork.run — 1つのトランザクション</text>
+    <path class="arrow" d="M345 190 H618"/><text class="sm" x="485" y="184" text-anchor="middle">daily_reports INSERT</text>
+    <path class="arrow" d="M345 218 H618"/><text class="sm" x="485" y="212" text-anchor="middle">outbox_jobs INSERT(冪等キー = 種別:ID:版)</text>
+    <path class="arrow" d="M340 252 H198"/><text class="sm" x="270" y="244" text-anchor="middle">Chat通知 → { success, report }</text>
+    <path class="arrow hi" d="M200 272 H62"/>
+    <!-- boundary -->
+    <line x1="20" y1="292" x2="940" y2="292" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="8 6"/>
+    <text class="sm" x="30" y="286" style="fill:var(--warn)">ここまで同期(ユーザーが待つ)／ここから非同期(ポーリング 5秒)</text>
+    <!-- async -->
+    <path class="arrow dash" d="M760 318 H622"/><text class="sm" x="690" y="311" text-anchor="middle">claim(SKIP LOCKED / 再試行待ちは飛ばす)</text>
+    <path class="arrow dash" d="M760 344 H482"/><text class="sm" x="620" y="337" text-anchor="middle">再読込 → 記録された世代の鍵で decrypt</text>
+    <path class="arrow dash" d="M760 368 H898"/><text class="sm" x="830" y="361" text-anchor="middle">writeDailyReport</text>
+    <text class="sm" x="760" y="390" text-anchor="middle" style="fill:var(--warn)">失敗したら終端させず、バックオフして pending へ戻す(8回で打ち切り)</text>
+  </svg>
+  </div>
+  <div class="q" style="font-size:.9em"><b>要点:</b> ドメインの行と <code>outbox_jobs</code> は<b>同じトランザクションで確定する</b>。片方だけ通ると、保存はできたのにスプレッドシートへ永久に反映されない行が、誰にも気づかれずに残る。暗号化・通知・名前解決はトランザクションの外に出してある(単一接続のPGliteで内側から別トランザクションを開くと止まるため)。</div>
+  <div class="foot"><span>packages/core/src/usecases/reports.ts / ports/unitOfWork.ts / packages/db/src/unitOfWork.ts</span><span>katahimo-app</span></div>
+  <div class="notes">
+    1本追うとこうなります。緑の枠が1つのトランザクションで、日報の行とoutboxへの積み込みが揃って確定します。片方だけ成立する状態を作らないのが要点です。黄色の線から下がWorkerの非同期処理で、送信に失敗しても終端させず、バックオフして戻します。トランザクションの外に出してあるもの(暗号化・通知)には理由があって、単一接続のPGliteで内側から別のトランザクションを開くと自分の完了を待って止まるためです。テストでは、outboxへの書き込みだけを失敗させて日報の行が残らないことを固定しています。
+  </div>
+</section>
+<!-- 10 GAS coexistence -->
+<section class="slide">
+  <h2>GAS版との共存 <small>正データは PostgreSQL、Sheets はミラー</small></h2>
+  <div class="cols w-3-2">
+    <div class="fig">
+    <svg viewBox="0 0 560 330" role="img" aria-label="ミラー構成">
+      <rect class="box" x="10" y="30" width="200" height="70" style="stroke:var(--c-db)"/>
+      <text class="h" x="110" y="58" text-anchor="middle">PostgreSQL</text><text class="sm" x="110" y="80" text-anchor="middle">唯一の正データ</text>
+      <rect class="box" x="10" y="150" width="200" height="70" style="stroke:var(--c-db)"/>
+      <text class="h" x="110" y="176" text-anchor="middle">outbox_jobs</text><text class="sm" x="110" y="196" text-anchor="middle">pending / processing / done / failed</text><text class="sm" x="110" y="212" text-anchor="middle">next_attempt_at で再試行を待たせる</text>
+      <rect class="box" x="255" y="150" width="115" height="70" style="stroke:var(--c-api)"/>
+      <text class="h" x="312" y="178" text-anchor="middle">Worker</text><text class="sm" x="312" y="200" text-anchor="middle">テナント順に batch</text>
+      <rect class="box" x="390" y="30" width="165" height="260" style="stroke:var(--c-ext)"/>
+      <text class="h" x="472" y="56" text-anchor="middle">GAS Bridge</text>
+      <text class="sm" x="472" y="74" text-anchor="middle">?api=1&amp;secret=…&amp;action=…</text>
+      <g class="sm">
+        <text x="472" y="105" text-anchor="middle">writeDailyReport</text>
+        <text x="472" y="123" text-anchor="middle">writeAccidentReport</text>
+        <text x="472" y="141" text-anchor="middle">writeReceipt(画像 base64)</text>
+        <text x="472" y="159" text-anchor="middle">writeAttendanceDay</text>
+        <text x="472" y="190" text-anchor="middle">geocode / route</text>
+        <text x="472" y="208" text-anchor="middle">schedule(既存ロジック委譲)</text>
+        <text x="472" y="226" text-anchor="middle" style="fill:var(--warn)">sendEmail(GAS側に未実装)</text>
+      </g>
+      <rect x="414" y="250" width="116" height="24" rx="12" fill="var(--warn)" opacity=".18"/>
+      <text class="sm" x="472" y="267" text-anchor="middle" style="fill:var(--warn)">一度も未デプロイ</text>
+      <path class="arrow" d="M110 100 V148"/><text class="sm" x="135" y="122">enqueue</text><text class="sm" x="135" y="138" style="fill:var(--c-core)">(同一tx)</text>
+      <path class="arrow" d="M210 185 H253"/><text class="sm" x="231" y="177" text-anchor="middle">claim</text>
+      <path class="arrow" d="M370 185 H388"/>
+      <path class="arrow dash" d="M312 220 C312 268 200 268 110 222"/>
+      <text class="sm" x="228" y="284" text-anchor="middle">成功=done / 失敗=バックオフしてpendingへ</text>
+      <text class="sm" x="228" y="300" text-anchor="middle">8回で failed(デッドレター)</text>
+    </svg>
+    </div>
+    <div>
+      <ul>
+        <li><b>方針(doc/10)</b>: 新規GCP API より既存GASブリッジを優先。理由は ①新規課金・認証情報の準備を避ける ②GAS側の実証済みロジック(イベント分類・タグ解析・スタッフ名マッチ)を再実装しない</li>
+        <li>Sheets を止めるときは「ミラーのアダプタを止めるだけ」でドメインは無変更</li>
+        <li>多重ワーカー安全(<code>SKIP LOCKED</code>)。<code>processing</code> のまま5分放置された行は再びclaim対象になる(ワーカーが落ちた場合の回収)</li>
+        <li>失敗は終端にしない。5秒から倍々・上限1時間で再試行し、8回で <code>failed</code>。ワーカーはその件数を error ログに出す</li>
+      </ul>
+      <div class="card q" style="margin-top:.6em">
+        <h3 class="warn">論点</h3>
+        <ul style="margin:0">
+          <li>Mail / Maps / Calendar / Sheets の<b>4系統が1本のGAS Web App</b>に集中。SLA・クォータ・6分実行制限。単一障害点であることは変わらない</li>
+          <li><b>secret が URL クエリ</b>に載る(GASはカスタムヘッダーを読めない)。実行ログ・プロキシに残る。ローテーション手順は未整備</li>
+          <li>そのGAS Web App が<b>まだ一度もデプロイされていない</b>。<code>sendEmail</code> アクションはGAS側に存在しない</li>
+          <li>デッドレターに落ちた分の<b>再投入は手作業</b>。管理画面からの操作は用意していない</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>packages/core/src/ports/mirror.ts / usecases/mirrorWorker.ts / packages/integrations/src/gas-bridge</span><span>katahimo-app</span></div>
+  <div class="notes">
+    GASブリッジを既定にしたのは、新規GCP課金を避けつつ、現場で動いているロジックを捨てないためです。送信の失敗は終端させず、5秒から倍々・上限1時間で再試行し、8回で failed に落として運用が気づけるようにしています。ただしこのブリッジは、実はまだ一度もデプロイされておらず、メール送信アクションは存在すらしません。つまりSheetsミラーとメールは「コードはあるが本番で動いたことがない」。secretがURLに載る点も残ります。ここは設計の是非というより「この依存のしかたを許容するか」の判断です。
+  </div>
+</section>
+
+<!-- 11 demo -->
+<section class="slide">
+  <h2>公開デモ <small>同じコードをブラウザ内で丸ごと動かす</small></h2>
+  <div class="cols w-3-2">
+    <div class="fig">
+    <svg viewBox="0 0 640 340" role="img" aria-label="本番とデモの構成比較">
+      <text class="h" x="20" y="24">本番</text>
+      <rect class="box" x="20" y="36" width="110" height="50" style="stroke:var(--c-web)"/><text class="lbl" x="75" y="66" text-anchor="middle">React</text>
+      <rect class="box" x="170" y="36" width="300" height="50" style="stroke:var(--c-core);stroke-width:2.5"/>
+      <text class="lbl" x="320" y="58" text-anchor="middle">Hono routes + usecases + repositories</text>
+      <text class="sm" x="320" y="76" text-anchor="middle">createContainer(env, db) — Node</text>
+      <rect class="box" x="510" y="36" width="120" height="50" style="stroke:var(--c-db)"/><text class="lbl" x="570" y="60" text-anchor="middle">PostgreSQL</text><text class="sm" x="570" y="76" text-anchor="middle">+ GAS / Gemini</text>
+      <path class="arrow" d="M130 61 H168"/><text class="sm" x="149" y="53" text-anchor="middle">HTTPS</text>
+      <path class="arrow" d="M470 61 H508"/>
+
+      <text class="h" x="20" y="150">デモ(GitHub Pages)</text>
+      <rect x="10" y="160" width="620" height="170" rx="12" fill="none" stroke="var(--c-demo)" stroke-dasharray="6 5"/>
+      <text class="sm" x="22" y="180" style="fill:var(--c-demo)">ブラウザの中で全部動く(サーバー無し)</text>
+      <rect class="box" x="20" y="196" width="110" height="50" style="stroke:var(--c-web)"/><text class="lbl" x="75" y="226" text-anchor="middle">React</text>
+      <rect class="box" x="170" y="196" width="300" height="50" style="stroke:var(--c-core);stroke-width:2.5"/>
+      <text class="lbl" x="320" y="218" text-anchor="middle">同じ Hono routes + usecases + repositories</text>
+      <text class="sm" x="320" y="236" text-anchor="middle">createDemoContainer() — ブラウザ</text>
+      <rect class="box" x="510" y="196" width="120" height="50" style="stroke:var(--c-demo)"/><text class="lbl" x="570" y="216" text-anchor="middle">PGlite</text><text class="sm" x="570" y="234" text-anchor="middle">Postgres WASM</text>
+      <path class="arrow" d="M130 221 H168"/><text class="sm" x="149" y="192" text-anchor="middle">fetch差替</text>
+      <path class="arrow" d="M470 221 H508"/>
+      <g class="sm">
+        <text x="20" y="276">差し替え: 鍵(公開固定値) / argon2(@noble) / Storage(IndexedDB) / Maps・予定・Mail・通知・AI(定型) / Mirror(Noop)</text>
+        <text x="20" y="296">同じ: マイグレーションSQL(globで全部) / RLS / 暗号化 / ブラインドインデックス / 全ルート</text>
+        <text x="20" y="316">台帳 demo_applied_migrations: 既存訪問者の IndexedDB にも未適用分だけ当てる(本番の migrate() と同じ考え)</text>
+      </g>
+      <!-- highlight shared -->
+      <path d="M320 86 V196" stroke="var(--c-core)" stroke-width="2" stroke-dasharray="4 4"/>
+      <text class="sm" x="328" y="120" style="fill:var(--c-core)">同一コード</text>
+    </svg>
+    </div>
+    <div>
+      <ul>
+        <li>Service Worker ではなく <code>fetch</code> 差し替え: Pages のサブパス配信で SW スコープに悩まされない。<code>Set-Cookie</code> は禁止ヘッダーなので Hono の Context から横取り</li>
+        <li>通常ビルドには一切入らない: Vite プラグインで入口をスタブ化 + CI が成果物を検査(<code>.wasm</code> 有無、禁止文字列)</li>
+        <li>デモの鍵は公開固定値 → 訪問者が入れた Gemini キー等は<b>永続化しない</b>(暗号化しても平文同然のため)</li>
+      </ul>
+      <div class="card q" style="margin-top:.6em">
+        <h3 class="warn">論点</h3>
+        <ul style="margin:0">
+          <li>PGlite は 1.0 未満。書き出し完了を待つために<b>内部FSを直接呼んでいる</b>ため、バージョンは <code>0.2.17</code> に完全固定してある(それでも公開APIの外に依存していることに変わりはない)</li>
+          <li>単一接続のためトランザクションを直列化しているが、<b>tx外の単発クエリは対象外</b></li>
+          <li>多タブ排他は未実装(doc/07 は対策を挙げているが、画面上の案内も無い)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>packages/demo/src/{database,fetchShim,demoApi,container}.ts / scripts/assertNoDemoInBuild.mjs</span><span>katahimo-app</span></div>
+  <div class="notes">
+    デモは営業用でもありますが、アーキテクチャ的には「core が外部SDKを知らない」ことの実証でもあります。本番と同じマイグレーション・同じRLS・同じ暗号化がブラウザ内で動いています。逆に、デモ固有の脆さは PGlite への依存の深さ。ここは本番には影響しません。
+  </div>
+</section>
+<!-- 12 quality -->
+<section class="slide">
+  <h2>品質の担保 <small>何をテストし、何をしていないか</small></h2>
+  <div class="cols">
+    <div>
+      <div class="card"><h3>やっていること <span class="tag">43ファイル / 327件</span></h3>
+        <ul style="margin:0">
+          <li><b>ドメイン純関数の回帰</b>: 勤怠計算は GAS版をNodeで実行した結果を正解に、合成データ19ケース+月次集計で<b>完全一致</b>。CSV解析は実サンプル398行で一致</li>
+          <li><b>usecase 単体</b>: インメモリfakeで、失敗すべきときに失敗することを中心に(列挙防止・試行上限・割り込み・部分更新なし)</li>
+          <li><b>トランザクション境界</b>: outboxへの書き込みだけを失敗させ、日報の行が残らないことを固定。フェイクのUnitOfWorkが実際にロールバックする</li>
+          <li><b>RLS</b>: 静的検査(全テーブルの ENABLE + FORCE + ポリシー)と、PGlite上の非特権ロールでの実挙動</li>
+          <li><b>鍵の世代</b>: ローテーション後も旧世代の暗号文を復号できること、解約後はどの世代も読めないこと</li>
+          <li><b>CI(毎push)</b>: Biome → tsc strict → Vitest → 本番ビルド → 混入検査 → デモビルド</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="card q"><h3 class="warn">やっていないこと</h3>
+        <ul style="margin:0">
+          <li><b>E2E / ブラウザテストが無い</b>。React コンポーネントのテストも0本</li>
+          <li>API ルート層の統合テストが無い。実PostgreSQL(postgres-js)に対するリポジトリ層テストも無い</li>
+          <li>勤怠は<b>実データでの照合が未実施</b>(Phase 7 予定)。給与直結領域</li>
+          <li>Gemini 実API呼び出し、GASブリッジ経由の全経路が未検証</li>
+          <li>負荷試験・障害注入は未実施。outbox の滞留や再試行の挙動を、実運用の量で見たことがない</li>
+        </ul>
+      </div>
+      <div class="card" style="margin-top:.6em"><h3>テストの書き方の方針</h3>
+        <p style="margin:0">新しく足したテストは、<b>直した箇所を元に戻すと落ちること</b>を一つずつ確認してから残している。通るだけのテストは、あとから読む人に「守られている」という誤解だけを与えるため。</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>vitest.config.ts / .github/workflows/ci.yml / packages/core/src/usecases/testDoubles.ts</span><span>katahimo-app</span></div>
+  <div class="notes">
+    テストは327件。分布は依然として偏っていて、ドメインとusecaseは厚く、画面と実DBは薄いままです。ただしRLSについては、静的検査と実挙動の両方をCIに入れました。右下は自分たちの規約で、判別力を確認しないテストは足さない、としています。
+  </div>
+</section>
+
+<!-- 13 reality check -->
+<section class="slide mid">
+  <h2>主張と実装の対応 <small>誤解を招きやすい点を先に</small></h2>
+  <table>
+    <thead><tr><th style="width:34%">ドキュメントが語っていること</th><th style="width:14%">実装</th><th>実際の状態</th></tr></thead>
+    <tbody>
+      <tr><td>PostgreSQL + RLS のマルチテナント</td><td class="ok">実装済み</td><td>13テーブル、複合FK、FORCE。静的検査と実DB検証をCIで実行</td></tr>
+      <tr><td>Outbox によるスプレッドシートへの書き戻し</td><td class="ok">実装済み</td><td>ドメインの書き込みと同一トランザクション。バックオフ再試行とデッドレターあり</td></tr>
+      <tr><td>Cloud Run 本番デプロイ</td><td class="bad">未着手</td><td>Dockerfile / IaC が存在しない。自動化されているのは GitHub Pages のデモだけ</td></tr>
+      <tr><td>予約(EXCLUDE gist)・請求・カルテ・機能フラグ</td><td class="bad">未着手</td><td>提案書の差別化要因。<b>スキーマにテーブルすら無い</b></td></tr>
+      <tr><td>Sheetsミラーの実送信・メール送信</td><td class="warn">未検証</td><td>GAS Bridge が未デプロイのため一度も動いていない。既定 <code>MIRROR_TO_GOOGLE_SHEETS=false</code></td></tr>
+      <tr><td>Cloud KMS による鍵管理</td><td class="bad">未着手</td><td>KEK は環境変数。世代管理はできるが、再暗号化バッチは無い</td></tr>
+      <tr><td>認証は Firebase Auth / Identity Platform</td><td class="muted">方針変更</td><td>自前 argon2id + Cookie。レガシーパスワードを移行できるようにするため</td></tr>
+      <tr><td>勤怠計算は GAS版と一致</td><td class="warn">合成データ</td><td>実際の出勤簿での照合は Phase 7</td></tr>
+      <tr><td>公開デモ</td><td class="ok">稼働中</td><td>本番と同一のスキーマ / usecases / ルートがブラウザ内で動く</td></tr>
+    </tbody>
+  </table>
+  <div class="foot"><span>README 「フェーズ状況」 / doc/07 / packages/db/src/schema</span><span>katahimo-app</span></div>
+  <div class="notes">
+    このスライドが一番大事かもしれません。提案書を読むと立派に見えますが、赤の行は着手すらしていません。今日判断していただきたいのは「この土台の上に、赤を積んでいってよいか」です。土台に構造的な問題があるなら、赤を積む前に直したい。
+  </div>
+</section>
+<!-- 14 questions -->
+<section class="slide mid">
+  <h2>判断していただきたいこと <small>優先度順</small></h2>
+  <div class="cols">
+    <div>
+      <div class="card q"><h3 class="warn">1. GAS ブリッジ 1本への依存</h3>
+        <p>メール・地図・予定・スプレッドシートの4系統を、1つの GAS Web App に集約している。実行時間制限とクォータを持ち、SLA は無く、secret は URL クエリに載る。しかも<b>まだ一度もデプロイしていない</b>。</p>
+        <p class="muted">選択肢: (a) この依存のまま早期にデプロイして運用設計を詰める (b) メールだけ別経路(SES/SendGrid等)に逃がす (c) Sheets 連携そのものを移行の対象から外す</p>
+      </div>
+      <div class="card q" style="margin-top:.6em"><h3 class="warn">2. 鍵管理を本番相当にする時期</h3>
+        <p>封筒暗号化の形はできていて世代も並存するが、KEK は環境変数のまま。<b>Cloud KMS を入れる前に本番データを溜め始めてよいか</b>。再暗号化バッチも未実装で、古い世代の鍵をまだ捨てられない。</p>
+      </div>
+    </div>
+    <div>
+      <div class="card q"><h3 class="warn">3. 予約・請求・カルテをどう積むか</h3>
+        <p>提案書の差別化要因は、まだスキーマにも無い。二重予約防止(<code>EXCLUDE USING gist</code>)や請求の整合性は、後から足すと既存データの移行が要る。<b>いま土台に入れるか、後回しにするか</b>。</p>
+      </div>
+      <div class="card q" style="margin-top:.6em"><h3 class="warn">4. テストの薄い層をどこまで埋めるか</h3>
+        <p>ドメインとusecaseは厚いが、APIルート・実PostgreSQL・画面は手動確認のまま。<b>どれをローンチ前提条件にするか</b>。特に勤怠は給与に直結する。</p>
+      </div>
+      <div class="card q" style="margin-top:.6em"><h3 class="warn">5. 単一障害点と運用の受け皿</h3>
+        <p>デッドレターの再投入、outbox の滞留、鍵のローテーション。<b>いずれも今は手作業</b>。運用画面を作るか、手順書で足りるか。</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>いずれも「直せない」ものではなく「今やるか、いつやるか」の判断</span><span>katahimo-app</span></div>
+  <div class="notes">
+    5つに絞りました。1番は設計の是非というより「この依存を許容するか」。2番は順序の問題です。3番が一番大きくて、予約や請求は後から足すとデータ移行が伴うので、土台のうちに入れるべきかを聞きたい。4番と5番は、どこまでをローンチの条件にするかという線引きです。私の推奨は、メールだけ別経路に逃がしたうえで、予約のスキーマを先に入れることです。ただしこれは意見なので、ご判断をいただきたい。
+  </div>
+</section>
+
+<!-- 15 closing -->
+<section class="slide title-slide">
+  <h1 style="font-size:2em">まとめ</h1>
+  <div class="cols" style="flex:0 0 auto;margin-top:.5em">
+    <div>
+      <h3 class="ok" style="margin:.2em 0">この設計で守れていると考えているもの</h3>
+      <ul>
+        <li>core が外部SDKを知らない → Node とブラウザで同一コードが動く(デモで実証)</li>
+        <li>テナント分離の二重防御。効いていることを静的検査と実DBの両方で検証している</li>
+        <li>揃って成立すべき書き込みが1つのトランザクションで確定する</li>
+        <li>要配慮データの列暗号化、鍵の世代管理、暗号学的削除の導線</li>
+        <li>認証の失敗経路(列挙・総当たり・割り込み・部分更新・クロスサイト)を塞いだ</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="warn" style="margin:.2em 0">判断をいただきたいもの</h3>
+      <ul>
+        <li>GAS ブリッジ1本への依存と、その運用設計</li>
+        <li>鍵管理を本番相当にする時期</li>
+        <li>予約・請求・カルテを土台に入れる順番</li>
+        <li>テストの薄い層と、運用の受け皿をどこまで作るか</li>
+      </ul>
+    </div>
+  </div>
+  <p class="muted center" style="margin-top:1.2em">デモ: <span class="mono">https://ohru131.github.io/katahimo-app/</span>(admin@demo.example.com / demo1234)<br>詳細: doc/07 技術構成提案書 ・ doc/09 データベース構造解説 ・ doc/10 開発メモ</p>
+  <div class="notes">
+    左は自信を持って言えること、右は判断してほしいこと。質疑では特に、GASブリッジの依存を許容するかと、予約・請求をいつ土台に入れるか、の2点についてご意見をいただければと思います。
+  </div>
+</section>
+
+</div>
+<div id="hud"></div>
+<div id="help">← → / Space: 移動 　N: 発表メモ 　F: 全画面 　P: 印刷</div>
+<script>
+(() => {
+  const slides = [...document.querySelectorAll('.slide')];
+  const hud = document.getElementById('hud');
+  const fromHash = () => (Number.parseInt(location.hash.slice(1), 10) || 1) - 1;
+  let i = Math.max(0, Math.min(slides.length - 1, fromHash()));
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    for (const [k, s] of slides.entries()) s.classList.toggle('active', k === i);
+    hud.textContent = `${i + 1} / ${slides.length}`;
+    history.replaceState(null, '', `#${i + 1}`);
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown' || e.key === 'Enter') { e.preventDefault(); show(i + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'Backspace') { e.preventDefault(); show(i - 1); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.key === 'n' || e.key === 'N') document.body.classList.toggle('show-notes');
+    else if (e.key === 'f' || e.key === 'F') { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); }
+    else if (e.key === 'p' || e.key === 'P') window.print();
+  });
+  document.getElementById('deck').addEventListener('click', (e) => {
+    if (e.target.closest('a')) return;
+    show(e.clientX / window.innerWidth < 0.25 ? i - 1 : i + 1);
+  });
+  let touchX = null;
+  document.addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 40) show(dx < 0 ? i + 1 : i - 1);
+    touchX = null;
+  });
+  window.addEventListener('hashchange', () => show(fromHash()));
+  show(i);
+})();
+</script>
+</body>
+</html>

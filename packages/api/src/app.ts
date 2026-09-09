@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Container } from './container';
+import { createCrossSiteWriteGuard } from './csrf';
 import { createAttendanceRoutes } from './routes/attendance';
 import { createAuthRoutes } from './routes/auth';
 import { createCustomerRoutes } from './routes/customers';
@@ -19,6 +20,11 @@ export interface CreateAppOptions {
    * 外部DBへの疎通という概念がない構成のため)。
    */
   pingDataStore?: () => Promise<string | null>;
+  /**
+   * 書き込み系APIを別オリジンから叩くことを許可するオリジン。既定では同一オリジンのみ。
+   * 管理画面を別ドメインに置くような構成になったときだけ明示的に足す。
+   */
+  allowedOrigins?: readonly string[];
 }
 
 /**
@@ -49,6 +55,10 @@ export function createApp(container: Container, options: CreateAppOptions) {
       }
     });
   }
+
+  // 別オリジンからのCookie付き書き込みを止める。Cookieの SameSite=Lax に加えた
+  // サーバー側の防御(csrf.ts)。ヘルスチェックより後、業務APIより前に置く。
+  app.use('/api/*', createCrossSiteWriteGuard(options.allowedOrigins ?? []));
 
   // 初期パスワードのままのスタッフを、パスワード変更以外のAPIから締め出す。
   // ルートを足すたびに書き足す必要がないよう、全ルートの手前に1つだけ置く。

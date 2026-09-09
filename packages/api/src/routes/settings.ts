@@ -1,5 +1,6 @@
 import {
   getAdminSettings,
+  resolveGeminiApiKey,
   saveGeminiApiKey,
   saveGeminiModelSettings,
   saveGoogleChatWebhookSettings,
@@ -21,7 +22,11 @@ function isAdmin(session: ResolvedSession | null): session is ResolvedSession {
 export function createSettingsRoutes(container: Container) {
   const app = new Hono();
 
-  /** 現在の管理者設定を復号して返す。GAS版のgetGeminiApiKeyForAdmin等をまとめたもの。 */
+  /**
+   * 現在の管理者設定を返す。GAS版のgetGeminiApiKeyForAdmin等をまとめたもの。
+   * Gemini APIキーは平文を返さず、設定済みかどうか(hasGeminiApiKey)と
+   * 末尾数文字(geminiApiKeyPreview)だけをusecaseから受け取ってそのまま返す。
+   */
   app.get('/admin', async (c) => {
     const session = await getAuthenticatedSession(c, container);
     if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
@@ -84,8 +89,9 @@ export function createSettingsRoutes(container: Container) {
   });
 
   /**
-   * 保存前の入力中キーでも確認できるよう、apiKeyは明示的にリクエストボディで受け取る
+   * 保存前の入力中キーでも確認できるよう、apiKeyはリクエストボディで受け取れる
    * (GAS版listAvailableGeminiModelsForAdminのapiKeyOverrideと同じ)。
+   * 画面は保存済みキーの平文を持てないため、apiKey未指定なら保存済みキーで取得する。
    */
   app.post('/admin/gemini-models/available', async (c) => {
     const session = await getAuthenticatedSession(c, container);
@@ -93,7 +99,8 @@ export function createSettingsRoutes(container: Container) {
     if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
 
     const body = await c.req.json().catch(() => null);
-    const apiKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : '';
+    const override = typeof body?.apiKey === 'string' ? body.apiKey.trim() : '';
+    const apiKey = override || (await resolveGeminiApiKey(container, session.tenantId));
     if (!apiKey) {
       return c.json(
         {

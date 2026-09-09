@@ -18,6 +18,17 @@ const TEXT_SIZE_OPTIONS: { value: TextSize; label: string }[] = [
   { value: 'large', label: '大 (大きく)' },
 ];
 
+/**
+ * Gemini APIキー入力欄のプレースホルダ。平文は読み戻せないので、
+ * 「設定済みかどうか」と末尾数文字だけで現在の状態を示す。
+ */
+function apiKeyPlaceholder(settings: AdminSettingsView): string {
+  if (!settings.hasGeminiApiKey) return '未設定(新しいキーを入力)';
+  return settings.geminiApiKeyPreview
+    ? `設定済み(末尾 ${settings.geminiApiKeyPreview})- 変更する場合のみ入力`
+    : '設定済み - 変更する場合のみ入力';
+}
+
 /** 現在の値が一覧に無くても必ず選べるようにする(値が消えないようにするため)。GAS版setSelectOptions_と同じ。 */
 function ModelOptions({ current, fetched }: { current: string; fetched: GeminiModelInfo[] }) {
   const options: GeminiModelInfo[] = [];
@@ -74,10 +85,11 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
 
   // 読み込みが完了してから初めてフォームへ反映する(未読み込みのまま保存されて空値等で
   // 上書きされる事故を防ぐため。GAS版のgeminiKeyLoadState等と同じ考え方)。
+  // Gemini APIキーは平文を読み戻せない(書き込み専用)ので、入力欄は常に空から始める。
+  // 空のまま保存した場合は保存APIを呼ばず、既存のキーをそのまま残す。
   useEffect(() => {
     const data: AdminSettingsView | undefined = settingsQuery.data;
     if (!data) return;
-    setApiKeyInput(data.geminiApiKey);
     setReportModel(data.geminiReportModel);
     setOcrModel(data.geminiOcrModel);
     setReportWebhook(data.gchatReportWebhookUrl);
@@ -92,15 +104,18 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
     applyTextSize(size);
   };
 
+  // 入力欄が空なら保存済みのキーで取得する(サーバー側で解決)。入力中の新しいキーで
+  // 試したい場合は、その値をそのまま渡す。
   const handleRefreshModels = async () => {
-    if (!apiKeyInput.trim()) {
+    const typedKey = apiKeyInput.trim();
+    if (!typedKey && !settingsQuery.data?.hasGeminiApiKey) {
       setSaveError('Gemini APIキーを入力してから取得してください');
       return;
     }
     setRefreshingModels(true);
     setSaveError(null);
     try {
-      const models = await listAvailableGeminiModels(apiKeyInput.trim());
+      const models = await listAvailableGeminiModels(typedKey || undefined);
       setModelOptions(models);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
@@ -117,8 +132,9 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
     setSaving(true);
     setSaveError(null);
     try {
-      if (apiKeyInput !== settingsQuery.data.geminiApiKey) {
-        const result = await saveGeminiApiKey(apiKeyInput);
+      // 空のままなら「変更なし」とみなして保存APIを呼ばない(既存キーを消さないため)。
+      if (apiKeyInput.trim()) {
+        const result = await saveGeminiApiKey(apiKeyInput.trim());
         if (!result.ok) throw new Error(result.message);
       }
       if (
@@ -221,6 +237,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
                       type={showApiKey ? 'text' : 'password'}
                       value={apiKeyInput}
                       onChange={(e) => setApiKeyInput(e.target.value)}
+                      placeholder={apiKeyPlaceholder(settingsQuery.data)}
                       className="flex-1 p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
                     />
                     <button
@@ -232,7 +249,10 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
                     </button>
                   </div>
                   <p className="text-[10px] text-gray-400 mt-1">
-                    ※ 日報・事故報告のAI生成、領収書OCRに使用します。空のまま保存はできません。
+                    ※ 日報・事故報告のAI生成、領収書OCRに使用します。
+                    {settingsQuery.data.hasGeminiApiKey
+                      ? ' 保存済みのキーは表示できません。変更するときだけ新しいキーを入力してください(空のままなら現在のキーを維持します)。'
+                      : ' 空のまま保存はできません。'}
                   </p>
 
                   <div className="mt-4 pt-4 border-t border-gray-100">
@@ -270,7 +290,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
                     </button>
                     <p className="text-[10px] text-gray-400 mt-1">
                       ※
-                      上のAPIキー入力欄の値で一覧を取得します(保存前でも確認できます)。モデルが使えなくなった場合はここで切り替えてください。
+                      上のAPIキー入力欄に値があればその値で、空なら保存済みのキーで一覧を取得します(保存前の新しいキーでも確認できます)。モデルが使えなくなった場合はここで切り替えてください。
                     </p>
                   </div>
 

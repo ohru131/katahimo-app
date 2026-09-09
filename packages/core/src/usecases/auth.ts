@@ -2,9 +2,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   computeLegacyHash,
   isAcceptablePassword,
+  isLoginLocked,
+  LOGIN_THROTTLE_POLICY,
   MIN_PASSWORD_LENGTH,
   normalizeEmailForIndex,
 } from '../domain';
+import type { AuditLogPort } from '../ports/audit';
 import type {
   NewSessionInput,
   NewStaffInput,
@@ -25,6 +28,8 @@ export interface AuthDeps {
   sessions: SessionRepositoryPort;
   passwordResetCodes: PasswordResetCodeRepositoryPort;
   passwordHasher: PasswordHasherPort;
+  /** 認証イベント(成功・失敗・パスワード変更)の監査ログ。未設定なら記録しない。 */
+  audit?: AuditLogPort;
   /**
    * GAS版Script Properties AUTH_SALTと同じ値。既存スタッフがパスワード変更なしでログイン
    * できるようにするための移行専用の値で、未設定でも新規登録スタッフのログインには影響しない
@@ -106,6 +111,15 @@ export async function login(deps: AuthDeps, input: LoginInput): Promise<LoginRes
     if (retireDate <= today) return { ok: false, reason: 'retired' };
   }
 
+  // 連続失敗が続いているアカウントは、一定時間ログインを受け付けない。パスワードの
+  // 最低条件は8文字しか課していないので、無制限に試せると総当たりに対して弱い。
+  //
+  // ロック中であることを応答で区別しないのは、区別できると「10回失敗させてみて反応が
+  // 変わるか」でメールアドレスの登録有無を確かめられてしまうため(requestPasswordResetで
+  // ユーザー列挙を塞いでいるのと同じ理由)。
+  const now = new Date();
+  if (isLoginLocked(staff, now)) return { ok: false, reason: 'invalid_credentials' };
+
   let matched = staff.passwordHash
     ? await deps.passwordHasher.verify(staff.passwordHash, input.password)
     : false;
@@ -122,7 +136,24 @@ export async function login(deps: AuthDeps, input: LoginInput): Promise<LoginRes
     }
   }
 
-  if (!matched) return { ok: false, reason: 'invalid_credentials' };
+  if (!matched) {
+    // 加算とロック判定はリポジトリが行ロックの中で行う(ここで現在値を読んで書き戻すと、
+    // 同時に届いた失敗が互いの加算を打ち消し、上限をすり抜けられる)。
+    await deps.staff.recordFailedLogin(tenant.id, staff.id, LOGIN_THROTTLE_POLICY);
+    deps.audit?.record({
+      type: 'login_failed',
+      tenantId: tenant.id,
+      actorStaffId: staff.id,
+      context: 'password_mismatch',
+    });
+    return { ok: false, reason: 'invalid_credentials' };
+  }
+
+  // 成功したら失敗の記録を消す。連続でない失敗の積み上がりでロックされないようにするため。
+  if (staff.failedLoginAttempts > 0 || staff.lockedUntil) {
+    await deps.staff.clearLoginFailures(tenant.id, staff.id);
+  }
+  deps.audit?.record({ type: 'login_succeeded', tenantId: tenant.id, actorStaffId: staff.id });
 
   const rawToken = randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
@@ -240,6 +271,7 @@ export async function changePassword(
   if (replaced === 'stale') return { ok: false, reason: 'incorrect_current_password' };
   // 再設定コードを発行したまま自力で思い出した場合に、そのコードを残さない。
   await deps.passwordResetCodes.consumeAllForStaff(tenantId, staffId);
+  deps.audit?.record({ type: 'password_changed', tenantId, actorStaffId: staffId });
   return { ok: true };
 }
 

@@ -2,6 +2,7 @@ import type {
   AccidentReportRepositoryPort,
   AppSettingsRepositoryPort,
   AttendanceDayRepositoryPort,
+  AuditLogPort,
   BlindIndexPort,
   CryptoPort,
   CustomerRepositoryPort,
@@ -20,6 +21,7 @@ import type {
   StaffRepositoryPort,
   StoragePort,
   TenantRepositoryPort,
+  UnitOfWorkPort,
 } from '@katahimo/core/ports';
 import type { PasswordHasherPort } from '@katahimo/core/usecases';
 
@@ -54,6 +56,8 @@ export interface Container {
   appSettings: AppSettingsRepositoryPort;
   crypto: CryptoPort;
   blindIndex: BlindIndexPort;
+  /** 復号と、認証・権限まわりのイベントの監査ログ(packages/core/src/ports/audit.ts)。 */
+  audit: AuditLogPort;
   passwordHasher: PasswordHasherPort;
   storage: StoragePort;
   notifier: NotifierPort;
@@ -84,6 +88,12 @@ export interface Container {
    * (GAS版スプレッドシート/Driveへの反映)はAPIサーバーではなくワーカー(packages/worker)が行う。
    */
   mirror: MirrorPort;
+  /**
+   * 複数リポジトリにまたがる書き込みを1つのトランザクションにまとめる。
+   * ドメインの行とoutbox_jobsのように、揃って確定しなければ意味がない書き込みで使う
+   * (packages/core/src/ports/unitOfWork.ts)。
+   */
+  unitOfWork: UnitOfWorkPort;
   /** GAS版 Script Properties AUTH_SALT と同じ値。移行済みスタッフのログインにのみ使う。 */
   legacyAuthSalt?: string;
 }

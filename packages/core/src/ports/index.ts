@@ -11,3 +11,4 @@ export * from './notifier';
 export * from './repositories';
 export * from './schedule';
 export * from './storage';
+export * from './unitOfWork';

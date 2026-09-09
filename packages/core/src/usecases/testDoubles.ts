@@ -1,4 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
+import type { LoginThrottlePolicy } from '../domain/auth/loginThrottle';
+import { applyFailedLogin } from '../domain/auth/loginThrottle';
 import type { BlindIndexPort, CryptoPort, EncryptedValue } from '../ports/crypto';
 import type { MailerPort, MailMessage } from '../ports/mailer';
 import type { MirrorJob, OutboxJobRecord, OutboxRepositoryPort } from '../ports/mirror';
@@ -54,6 +56,7 @@ import type {
   VerifyPasswordResetCodeInput,
 } from '../ports/repositories';
 import type { StoragePort, StoredFile } from '../ports/storage';
+import type { TransactionScope, UnitOfWorkPort } from '../ports/unitOfWork';
 import type { PasswordHasherPort } from './auth';
 
 /**
@@ -61,6 +64,44 @@ import type { PasswordHasherPort } from './auth';
  * ドメインロジック(特に「登録時と検索時でブラインドインデックスの正規化が一致しているか」)
  * を検証するためのもの。テスト専用であり、本番コードから参照してはいけない。
  */
+
+/**
+ * FakeUnitOfWorkのロールバック対象になれるフェイクの目印。
+ * 行の配列を丸ごと退避・復元する(1段の浅いコピーで足りる形の行しか持たせていない)。
+ */
+export interface FakeTransactionParticipant {
+  snapshotForTest(): unknown;
+  restoreForTest(snapshot: unknown): void;
+}
+
+function snapshotRows<T>(rows: readonly T[]): T[] {
+  return rows.map((row) => ({ ...row }));
+}
+
+function restoreRows<T>(rows: T[], snapshot: unknown): void {
+  rows.length = 0;
+  rows.push(...(snapshot as T[]));
+}
+
+/**
+ * UnitOfWorkPortのインメモリ実装。コールバックが例外を投げたら、参加しているフェイクの
+ * 中身を呼び出し前の状態へ戻す。これが無いと「ドメインの書き込みとoutboxへのenqueueが
+ * 同じトランザクションに乗っているか」をテストで確かめられず、片方だけ確定してしまう
+ * 不具合を素通ししてしまう。
+ */
+export class FakeUnitOfWork implements UnitOfWorkPort {
+  constructor(private readonly participants: readonly FakeTransactionParticipant[]) {}
+
+  async run<T>(tenantId: string, fn: (scope: TransactionScope) => Promise<T>): Promise<T> {
+    const snapshots = this.participants.map((p) => [p, p.snapshotForTest()] as const);
+    try {
+      return await fn({ tenantId });
+    } catch (error) {
+      for (const [participant, snapshot] of snapshots) participant.restoreForTest(snapshot);
+      throw error;
+    }
+  }
+}
 
 /** 暗号化は行わず`ENC:平文`のタグを付けるだけの、検証しやすいフェイク実装。 */
 export class FakeCryptoPort implements CryptoPort {
@@ -115,7 +156,7 @@ export class FakeTenantRepository implements TenantRepositoryPort {
   }
 }
 
-export class FakeStaffRepository implements StaffRepositoryPort {
+export class FakeStaffRepository implements StaffRepositoryPort, FakeTransactionParticipant {
   private readonly rows: StaffRecord[] = [];
   private seq = 0;
 
@@ -149,6 +190,8 @@ export class FakeStaffRepository implements StaffRepositoryPort {
       legacyPasswordHash: input.legacyPasswordHash ?? null,
       isAdmin: input.isAdmin,
       retirementDate: null,
+      failedLoginAttempts: 0,
+      lockedUntil: null,
       mustChangePassword: input.mustChangePassword ?? false,
     };
     this.rows.push(record);
@@ -210,6 +253,39 @@ export class FakeStaffRepository implements StaffRepositoryPort {
   setRetirementDateForTest(tenantId: string, staffId: string, retirementDate: string | null): void {
     const record = this.rows.find((s) => s.tenantId === tenantId && s.id === staffId);
     if (record) record.retirementDate = retirementDate;
+  }
+
+  async recordFailedLogin(tenantId: string, staffId: string, policy: LoginThrottlePolicy): Promise<void> {
+    const row = this.rows.find((r) => r.tenantId === tenantId && r.id === staffId);
+    if (!row) return;
+    // 本物の実装と同じく、保存されている現在値から遷移を計算する
+    // (呼び出し側が読んだ値ではない。staffRepository.ts の行ロック参照)。
+    const next = applyFailedLogin(row, new Date(), policy);
+    row.failedLoginAttempts = next.failedLoginAttempts;
+    row.lockedUntil = next.lockedUntil;
+  }
+
+  async clearLoginFailures(tenantId: string, staffId: string): Promise<void> {
+    const row = this.rows.find((r) => r.tenantId === tenantId && r.id === staffId);
+    if (!row) return;
+    row.failedLoginAttempts = 0;
+    row.lockedUntil = null;
+  }
+
+  /** テスト専用: ロック状態を直接設定する。 */
+  setLockForTest(staffId: string, lockedUntil: Date | null, failedLoginAttempts = 0): void {
+    const row = this.rows.find((r) => r.id === staffId);
+    if (!row) return;
+    row.lockedUntil = lockedUntil;
+    row.failedLoginAttempts = failedLoginAttempts;
+  }
+
+  snapshotForTest(): unknown {
+    return snapshotRows(this.rows);
+  }
+
+  restoreForTest(snapshot: unknown): void {
+    restoreRows(this.rows, snapshot);
   }
 }
 
@@ -396,7 +472,7 @@ export class FakeFamilyMemberRepository implements FamilyMemberRepositoryPort {
   }
 }
 
-export class FakeAttendanceDayRepository implements AttendanceDayRepositoryPort {
+export class FakeAttendanceDayRepository implements AttendanceDayRepositoryPort, FakeTransactionParticipant {
   private readonly rows: AttendanceDayRecord[] = [];
   private seq = 0;
 
@@ -427,6 +503,7 @@ export class FakeAttendanceDayRepository implements AttendanceDayRepositoryPort 
     );
     if (existing) {
       existing.rowData = rowData;
+      existing.updatedAt = new Date();
       return existing;
     }
     const record: AttendanceDayRecord = {
@@ -435,6 +512,7 @@ export class FakeAttendanceDayRepository implements AttendanceDayRepositoryPort 
       staffId,
       businessDate,
       rowData,
+      updatedAt: new Date(),
     };
     this.rows.push(record);
     return record;
@@ -463,6 +541,14 @@ export class FakeAttendanceDayRepository implements AttendanceDayRepositoryPort 
         r.businessDate >= startDate &&
         r.businessDate <= endDate,
     );
+  }
+
+  snapshotForTest(): unknown {
+    return snapshotRows(this.rows);
+  }
+
+  restoreForTest(snapshot: unknown): void {
+    restoreRows(this.rows, snapshot);
   }
 }
 
@@ -505,21 +591,26 @@ export class FakeStoragePort implements StoragePort {
   async signedUrl(key: string): Promise<string> {
     return `fake://${key}`;
   }
+
+  /** テスト専用: 現在置かれているファイルのキー一覧。 */
+  listKeysForTest(): string[] {
+    return [...this.files.keys()];
+  }
 }
 
-export class FakeDailyReportRepository implements DailyReportRepositoryPort {
+export class FakeDailyReportRepository implements DailyReportRepositoryPort, FakeTransactionParticipant {
   private readonly rows: DailyReportRecord[] = [];
   private seq = 0;
 
   async create(input: NewDailyReportInput): Promise<DailyReportRecord> {
-    const record: DailyReportRecord = { id: `daily-report-${++this.seq}`, ...input };
+    const record: DailyReportRecord = { id: `daily-report-${++this.seq}`, ...input, updatedAt: new Date() };
     this.rows.push(record);
     return record;
   }
   async update(tenantId: string, id: string, input: NewDailyReportInput): Promise<DailyReportRecord | null> {
     const index = this.rows.findIndex((r) => r.tenantId === tenantId && r.id === id);
     if (index === -1) return null;
-    const record: DailyReportRecord = { id, ...input };
+    const record: DailyReportRecord = { id, ...input, updatedAt: new Date() };
     this.rows[index] = record;
     return record;
   }
@@ -539,14 +630,28 @@ export class FakeDailyReportRepository implements DailyReportRepositoryPort {
       .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
       .slice(0, limit);
   }
+
+  snapshotForTest(): unknown {
+    return snapshotRows(this.rows);
+  }
+
+  restoreForTest(snapshot: unknown): void {
+    restoreRows(this.rows, snapshot);
+  }
 }
 
-export class FakeAccidentReportRepository implements AccidentReportRepositoryPort {
+export class FakeAccidentReportRepository
+  implements AccidentReportRepositoryPort, FakeTransactionParticipant
+{
   private readonly rows: AccidentReportRecord[] = [];
   private seq = 0;
 
   async create(input: NewAccidentReportInput): Promise<AccidentReportRecord> {
-    const record: AccidentReportRecord = { id: `accident-report-${++this.seq}`, ...input };
+    const record: AccidentReportRecord = {
+      id: `accident-report-${++this.seq}`,
+      ...input,
+      updatedAt: new Date(),
+    };
     this.rows.push(record);
     return record;
   }
@@ -557,7 +662,7 @@ export class FakeAccidentReportRepository implements AccidentReportRepositoryPor
   ): Promise<AccidentReportRecord | null> {
     const index = this.rows.findIndex((r) => r.tenantId === tenantId && r.id === id);
     if (index === -1) return null;
-    const record: AccidentReportRecord = { id, ...input };
+    const record: AccidentReportRecord = { id, ...input, updatedAt: new Date() };
     this.rows[index] = record;
     return record;
   }
@@ -577,6 +682,14 @@ export class FakeAccidentReportRepository implements AccidentReportRepositoryPor
       .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
       .slice(0, limit);
   }
+
+  snapshotForTest(): unknown {
+    return snapshotRows(this.rows);
+  }
+
+  restoreForTest(snapshot: unknown): void {
+    restoreRows(this.rows, snapshot);
+  }
 }
 
 interface StoredReceipt {
@@ -584,7 +697,7 @@ interface StoredReceipt {
   dedupeBlindIndex: string | null;
 }
 
-export class FakeReceiptRepository implements ReceiptRepositoryPort {
+export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransactionParticipant {
   private readonly rows: StoredReceipt[] = [];
   private seq = 0;
 
@@ -600,6 +713,7 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort {
       handoffText: input.handoffText,
       fileKey: input.fileKey,
       contentType: input.contentType,
+      createdAt: new Date(),
     };
     this.rows.push({ record, dedupeBlindIndex: input.dedupeBlindIndex });
     return record;
@@ -617,6 +731,14 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort {
         .map((r) => r.dedupeBlindIndex as string),
     );
   }
+
+  snapshotForTest(): unknown {
+    return snapshotRows(this.rows);
+  }
+
+  restoreForTest(snapshot: unknown): void {
+    restoreRows(this.rows, snapshot);
+  }
 }
 
 /**
@@ -624,9 +746,19 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort {
  * pending→processingへ遷移させてから返す(実DBのFOR UPDATE SKIP LOCKEDに相当する排他制御は
  * テストでは不要なため省略)。
  */
-export class FakeOutboxRepository implements OutboxRepositoryPort {
-  private readonly rows: (OutboxJobRecord & { idempotencyKey: string; status: string })[] = [];
+export interface OutboxRowForTest extends OutboxJobRecord {
+  idempotencyKey: string;
+  status: string;
+  nextAttemptAt: Date | null;
+  lastError: string | null;
+}
+
+export class FakeOutboxRepository implements OutboxRepositoryPort, FakeTransactionParticipant {
+  private readonly rows: OutboxRowForTest[] = [];
   private seq = 0;
+
+  /** 再試行の待ち時間を検証できるよう、時刻を差し替えられるようにしてある。 */
+  constructor(private readonly now: () => Date = () => new Date()) {}
 
   async enqueue(job: MirrorJob): Promise<void> {
     if (this.rows.some((r) => r.tenantId === job.tenantId && r.idempotencyKey === job.idempotencyKey)) {
@@ -640,12 +772,20 @@ export class FakeOutboxRepository implements OutboxRepositoryPort {
       idempotencyKey: job.idempotencyKey,
       attempts: 0,
       status: 'pending',
+      nextAttemptAt: null,
+      lastError: null,
     });
   }
 
   async claimPending(tenantId: string, limit: number): Promise<OutboxJobRecord[]> {
+    const now = this.now().getTime();
     const claimed = this.rows
-      .filter((r) => r.tenantId === tenantId && r.status === 'pending')
+      .filter(
+        (r) =>
+          r.tenantId === tenantId &&
+          r.status === 'pending' &&
+          (r.nextAttemptAt === null || r.nextAttemptAt.getTime() <= now),
+      )
       .slice(0, limit);
     for (const r of claimed) {
       r.status = 'processing';
@@ -665,14 +805,26 @@ export class FakeOutboxRepository implements OutboxRepositoryPort {
     if (row) row.status = 'done';
   }
 
-  async markFailed(tenantId: string, id: string): Promise<void> {
+  async markFailed(tenantId: string, id: string, error: string, nextAttemptAt: Date | null): Promise<void> {
     const row = this.rows.find((r) => r.tenantId === tenantId && r.id === id);
-    if (row) row.status = 'failed';
+    if (!row) return;
+    row.lastError = error;
+    // nextAttemptAtがあれば再試行待ち(pending)へ戻す。nullなら終端(デッドレター)。
+    row.status = nextAttemptAt === null ? 'failed' : 'pending';
+    row.nextAttemptAt = nextAttemptAt;
   }
 
-  /** テスト専用: 現在保持しているジョブ一覧(statusを含む)を確認する。 */
-  listAllForTest(): readonly (OutboxJobRecord & { idempotencyKey: string; status: string })[] {
+  /** テスト専用: 現在保持しているジョブ一覧(status/再試行予定を含む)を確認する。 */
+  listAllForTest(): readonly OutboxRowForTest[] {
     return this.rows;
+  }
+
+  snapshotForTest(): unknown {
+    return snapshotRows(this.rows);
+  }
+
+  restoreForTest(snapshot: unknown): void {
+    restoreRows(this.rows, snapshot);
   }
 }
 
@@ -721,7 +873,9 @@ export class FakeMailer implements MailerPort {
   }
 }
 
-export class FakePasswordResetCodeRepository implements PasswordResetCodeRepositoryPort {
+export class FakePasswordResetCodeRepository
+  implements PasswordResetCodeRepositoryPort, FakeTransactionParticipant
+{
   private readonly rows: {
     id: string;
     tenantId: string;
@@ -783,5 +937,13 @@ export class FakePasswordResetCodeRepository implements PasswordResetCodeReposit
   /** テスト専用: 有効なコードの期限を過去にずらす。 */
   expireAllForTest(): void {
     for (const row of this.rows) row.expiresAt = new Date(Date.now() - 1000);
+  }
+
+  snapshotForTest(): unknown {
+    return snapshotRows(this.rows);
+  }
+
+  restoreForTest(snapshot: unknown): void {
+    restoreRows(this.rows, snapshot);
   }
 }

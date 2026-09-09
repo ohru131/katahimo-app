@@ -1,0 +1,70 @@
+/* biome-ignore-all lint/suspicious/noUnknownAtRules: @tailwind はTailwindがビルド時に展開する独自の記法。 */
+/* biome-ignore-all lint/complexity/noImportantStyles: 文字サイズ設定はTailwindのtext-*ユーティリティを
+   上書きする必要があり、!important でしか実現できない(GAS版から引き継いだ挙動)。 */
+/*
+ * アプリ全体のスタイル入口。main.tsx から読み込む。
+ *
+ * Tailwind CDN をやめてビルド時生成に切り替えたため、CDN が注入していたベース/ユーティリティを
+ * ここで取り込む。index.html に直接書いていた独自CSSも、読み込み順を確実にするためここへ移した。
+ */
+
+/* フォントはGoogle Fontsからの外部読み込みをやめ、npmパッケージ(@fontsource)で同梱する。
+   CDN版と同じ Outfit の 300/400/500/600 のみを入れる(日本語はOutfitに含まれないため、
+   従来どおり body の font-family の sans-serif にフォールバックする)。 */
+@import "@fontsource/outfit/300.css";
+@import "@fontsource/outfit/400.css";
+@import "@fontsource/outfit/500.css";
+@import "@fontsource/outfit/600.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: "Outfit", sans-serif;
+  background-color: #f3f4f6;
+}
+
+.loading-spinner {
+  border-top-color: #3b82f6;
+  border-left-color: #3b82f6;
+  animation: spin 1s infinite linear;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* 文字サイズ設定(GAS版index.htmlの同名ルールと同じ)。 */
+html[data-text-size="medium"] .text-xs {
+  font-size: 0.875rem !important;
+  line-height: 1.4 !important;
+}
+html[data-text-size="medium"] .text-sm {
+  font-size: 1rem !important;
+  line-height: 1.5 !important;
+}
+html[data-text-size="medium"] .text-base {
+  font-size: 1.05rem !important;
+}
+html[data-text-size="large"] .text-xs {
+  font-size: 1rem !important;
+  line-height: 1.5 !important;
+}
+html[data-text-size="large"] .text-sm {
+  font-size: 1.125rem !important;
+  line-height: 1.6 !important;
+}
+html[data-text-size="large"] .text-base {
+  font-size: 1.2rem !important;
+}
+html[data-text-size="large"] input,
+html[data-text-size="large"] textarea,
+html[data-text-size="large"] button {
+  font-size: 1.1rem !important;
+}
