@@ -21,9 +21,11 @@ export class ConsoleAuditLogPort implements AuditLogPort {
     );
   }
 
+  /**
+   * 認証・権限まわりのイベントを記録する。ログイン失敗だけWARNINGにしておく。
+   * 総当たりの兆候を重要度フィルタだけで拾えるようにするため(件数の急増が普通のINFOに埋もれない)。
+   */
   record(event: AuditEvent): void {
-    // ログイン失敗だけはWARNINGにしておく。総当たりの兆候を重要度フィルタだけで
-    // 拾えるようにするため(件数の急増が普通のINFOに埋もれない)。
     const severity = event.type === 'login_failed' ? 'WARNING' : 'INFO';
     console.log(
       JSON.stringify({

@@ -121,10 +121,15 @@ export class DrizzleStaffRepository implements StaffRepositoryPort {
     );
   }
 
+  /**
+   * ログイン失敗を1回記録する。行ロックを取ってから読み、遷移を計算して書き戻すまでを
+   * 1つのトランザクションで行う。
+   *
+   * ロックを取らずに読むと、同時に届いた失敗が揃って加算前の値を読み、どちらも同じ値を
+   * 書いて加算が消える。その隙間を突けば、上限に達しないまま並列に何度でも試せてしまう。
+   */
   async recordFailedLogin(tenantId: string, staffId: string, policy: LoginThrottlePolicy): Promise<void> {
     await withTenant(this.db, tenantId, async (tx) => {
-      // 行ロックを取ってから読む。同時に届いた失敗が揃って加算前の値を読むと、
-      // どちらも同じ値を書いて加算が消え、上限に達しないまま並列に試せてしまう。
       const rows = await tx
         .select({ failedLoginAttempts: staff.failedLoginAttempts, lockedUntil: staff.lockedUntil })
         .from(staff)
@@ -142,6 +147,7 @@ export class DrizzleStaffRepository implements StaffRepositoryPort {
     });
   }
 
+  /** ログイン成功時に失敗回数とロックを消す。連続でない失敗が積み上がってロックされないようにする。 */
   async clearLoginFailures(tenantId: string, staffId: string): Promise<void> {
     await withTenant(this.db, tenantId, async (tx) => {
       await tx.update(staff).set({ failedLoginAttempts: 0, lockedUntil: null }).where(eq(staff.id, staffId));

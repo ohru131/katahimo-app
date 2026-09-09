@@ -90,6 +90,7 @@ export class DrizzleOutboxRepository implements OutboxRepositoryPort {
     });
   }
 
+  /** 送信に成功したジョブを完了にする。再試行の記録(lastError)は残さない。 */
   async markDone(tenantId: string, id: string): Promise<void> {
     await withTenant(this.db, tenantId, async (tx) => {
       const now = new Date();

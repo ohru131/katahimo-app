@@ -53,6 +53,7 @@ export class LocalCryptoPort implements CryptoPort {
     private readonly auditLog?: AuditLogPort,
   ) {}
 
+  /** 暗号学的削除(解約処理)済みの鍵を使おうとしていないかを確かめる。 */
   private assertUsable(tenantId: string, record: { revokedAt: Date | null }): void {
     if (record.revokedAt) {
       throw new Error(
@@ -136,6 +137,7 @@ export class LocalCryptoPort implements CryptoPort {
     return created.dekVersion;
   }
 
+  /** 最新世代のDEKで暗号化し、使った世代を戻り値に載せる(復号時にその世代の鍵を引くため)。 */
   async encrypt(tenantId: string, plaintext: string): Promise<EncryptedValue> {
     const { dek, dekVersion } = await this.getOrCreateCurrentDek(tenantId);
     const nonce = randomBytes(12);

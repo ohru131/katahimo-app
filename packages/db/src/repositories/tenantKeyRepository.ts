@@ -24,6 +24,7 @@ function toRecord(row: TenantKeyRow): TenantKeyRecord {
 export class DrizzleTenantKeyRepository implements TenantKeyRepositoryPort {
   constructor(private readonly db: Database) {}
 
+  /** 最新世代を返す。新しい暗号化はこの鍵で行う。 */
   async findCurrent(tenantId: string): Promise<TenantKeyRecord | null> {
     return withTenant(this.db, tenantId, async (tx) => {
       const rows = await tx
@@ -37,6 +38,7 @@ export class DrizzleTenantKeyRepository implements TenantKeyRepositoryPort {
     });
   }
 
+  /** 指定世代を返す。既存の暗号文は記録された世代の鍵で復号する必要があるため。 */
   async findByVersion(tenantId: string, dekVersion: number): Promise<TenantKeyRecord | null> {
     return withTenant(this.db, tenantId, async (tx) => {
       const rows = await tx
