@@ -34,9 +34,7 @@ async function show(label: string, run: () => Promise<unknown>): Promise<void> {
 
 // 1. 日本語住所のジオコーディング。curl(Git Bash)ではマルチバイトが壊れて失敗したので、
 //    Nodeのfetch+URLSearchParams経由なら正しく通ることを確認する。
-await show('geocode 宮城県仙台市青葉区一番町1-1-1', () =>
-  maps.geocode('宮城県仙台市青葉区一番町1-1-1'),
-);
+await show('geocode 宮城県仙台市青葉区一番町1-1-1', () => maps.geocode('宮城県仙台市青葉区一番町1-1-1'));
 await show('geocode 仙台市青葉区二日町', () => maps.geocode('仙台市青葉区二日町'));
 
 // 2. ルート計算(GAS版getRouteDetailsと同じ)
@@ -46,9 +44,7 @@ await show('route 仙台駅→県庁付近', () =>
 
 // 3. 予定取得。存在しない日本語スタッフ名を渡し、staffNameがそのまま返るかで
 //    マルチバイトの往復を確認する(GAS側は見つからない場合その名前をそのまま返す)。
-await show('schedule 存在しない日本語スタッフ名', () =>
-  schedule.getSchedule('架空 太郎', '2026-09-10'),
-);
+await show('schedule 存在しない日本語スタッフ名', () => schedule.getSchedule('架空 太郎', '2026-09-10'));
 
 const staffName = process.argv[2];
 if (staffName) {
