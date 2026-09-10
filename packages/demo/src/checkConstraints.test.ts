@@ -21,6 +21,7 @@ import { applyPendingMigrations } from './database';
 
 const DRIZZLE_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../db/drizzle');
 
+/** 本番のマイグレーションSQLを、ファイル名順(=適用順)に全件読み込む。 */
 function loadMigrations(): DemoMigration[] {
   return readdirSync(DRIZZLE_DIR)
     .filter((name) => name.endsWith('.sql'))

@@ -27,6 +27,7 @@ function isCommittableNumberString(raw: string): boolean {
   return !Number.isNaN(n) && n >= 0;
 }
 
+/** 数値項目1つ。入力中の生文字列はローカルに持ち、確定できる状態になった時だけ親へ渡す。 */
 function NumberField({
   id,
   label,
@@ -65,6 +66,7 @@ function NumberField({
   );
 }
 
+/** 文字列項目1つ。空欄は「未入力」としてundefinedを渡す(0と未入力を区別する数値項目と対称)。 */
 function TextField({
   id,
   label,

@@ -39,6 +39,7 @@ export interface SeededDemo {
   addressLatLng: Map<string, { lat: number; lng: number }>;
 }
 
+/** 市区町村と番地以下を、顧客一覧の表示と同じ並びで1本の住所文字列にする。 */
 function fullAddress(index: number): string {
   const figure = DEMO_FIGURES[index];
   if (!figure) throw new Error(`存在しないデモ世帯です: index=${index}`);

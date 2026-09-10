@@ -31,6 +31,10 @@ const DATA_DIR = 'katahimo-demo';
  */
 const LEDGER_TABLE = 'demo_applied_migrations';
 
+/**
+ * テーブルが存在するかを見る。`to_regclass` は無ければ例外ではなくNULLを返すので、
+ * 「まだ作っていない」状態を分岐に使える。
+ */
 async function relationExists(client: PGlite, qualifiedName: string): Promise<boolean> {
   const { rows } = await client.query<{ exists: boolean }>('SELECT to_regclass($1) IS NOT NULL AS exists;', [
     qualifiedName,

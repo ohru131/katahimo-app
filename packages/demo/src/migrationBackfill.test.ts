@@ -18,6 +18,7 @@ import { applyPendingMigrations } from './database';
 
 const DRIZZLE_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../db/drizzle');
 
+/** 本番のマイグレーションSQLを、ファイル名順(=適用順)に全件読み込む。 */
 function loadMigrations(): DemoMigration[] {
   return readdirSync(DRIZZLE_DIR)
     .filter((name) => name.endsWith('.sql'))
@@ -38,12 +39,17 @@ function migrationsThrough(tag: string): DemoMigration[] {
  * そのものを検証するためのものなので、作り直しルールを無効化して渡す(空配列)。 */
 const NO_REBUILD_REQUIRED: readonly string[] = [];
 
+/**
+ * 空のPGliteを立てる。テストごとに作り直すのは、「途中まで当てた状態」を作るために
+ * 台帳(demo_applied_migrations)の中身が他のテストと混ざらないようにするため。
+ */
 async function createClient(): Promise<PGlite> {
   const client = new PGlite();
   await client.waitReady;
   return client;
 }
 
+/** 旧形式の行を入れるのに必要な親行(テナント)。RLSはsuperuserでバイパスされるので設定は不要。 */
 async function insertTenant(client: PGlite): Promise<string> {
   const {
     rows: [tenant],
@@ -54,6 +60,7 @@ async function insertTenant(client: PGlite): Promise<string> {
   return tenant.id;
 }
 
+/** 勤怠・領収書の複合FK(tenant_id, staff_id)の参照先。 */
 async function insertStaff(client: PGlite, tenantId: string): Promise<string> {
   const {
     rows: [staff],
@@ -65,6 +72,7 @@ async function insertStaff(client: PGlite, tenantId: string): Promise<string> {
   return staff.id;
 }
 
+/** 日報・世帯構成員の複合FK(tenant_id, customer_id)の参照先。 */
 async function insertCustomer(client: PGlite, tenantId: string): Promise<string> {
   const {
     rows: [customer],

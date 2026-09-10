@@ -136,6 +136,7 @@ function trimTrailingEmpty<T>(arr: T[], isEmpty: (v: T) => boolean): T[] {
   return arr.slice(0, end);
 }
 
+/** trimTrailingEmptyの判定用。1つも値が入っていない訪問を「そもそも無かった」とみなす。 */
 function isVisitEmpty(v: AttendanceVisit): boolean {
   return (
     !isPresent(v.place) &&
@@ -147,10 +148,15 @@ function isVisitEmpty(v: AttendanceVisit): boolean {
   );
 }
 
+/** isVisitEmptyと同じ判定を事務作業に対して行う。 */
 function isOfficeWorkEmpty(o: AttendanceOfficeWork): boolean {
   return !isPresent(o.name) && !isPresent(o.start) && !isPresent(o.end);
 }
 
+/**
+ * 訪問1件を組み立てる。値が入っていない項目はキー自体を作らない(`undefined` を明示的に
+ * 持たせると、jsonbへ落としたときに `null` になって「未入力」と区別できなくなる)。
+ */
 function buildVisit(
   place: string | undefined,
   start: string | undefined,
@@ -169,6 +175,7 @@ function buildVisit(
   return v;
 }
 
+/** buildVisitと同じ方針で事務作業1件を組み立てる。 */
 function buildOfficeWork(
   name: string | undefined,
   start: string | undefined,
