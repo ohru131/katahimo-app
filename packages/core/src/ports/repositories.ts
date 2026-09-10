@@ -499,7 +499,15 @@ export interface AccidentReportRepositoryPort {
 }
 
 /**
- * 領収書登録1件。GAS版processReceiptImagesの1画像分に相当。amount/storeNameは未入力ならnull。
+ * 領収書の請求区分。'customer_billable'=顧客に請求する、'company_expense'=会社が立て替える
+ * (doc/14 第4章)。DB(receipts_billing_type_check)と画面の両方でこの配列を使い回すことで、
+ * 許可値がズレることを防ぐ。
+ */
+export const RECEIPT_BILLING_TYPES = ['customer_billable', 'company_expense'] as const;
+export type ReceiptBillingType = (typeof RECEIPT_BILLING_TYPES)[number];
+
+/**
+ * 領収書登録1件。GAS版processReceiptImagesの1画像分に相当。amountYen/storeNameは未入力ならnull。
  */
 export interface ReceiptRecord {
   id: string;
@@ -507,12 +515,16 @@ export interface ReceiptRecord {
   staffId: string;
   customerId: string | null;
   receiptTimestamp: Date;
-  /** 正規化済みの金額文字列(normalizeAmount)。未入力ならnull。 */
-  amount: string | null;
+  /** 金額(円)。集計・請求用の整数。OCRが読めなかった/数値化できなかった場合はnull。 */
+  amountYen: number | null;
+  /** OCRが返した金額の生文字列。amountYenがnullでも参照用に残す。 */
+  amountRaw: string | null;
   storeName: string | null;
   handoffText: string | null;
   fileKey: string;
   contentType: string;
+  /** 請求区分(doc/14 第4章)。 */
+  billingType: ReceiptBillingType;
   /**
    * ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。
    * 領収書は追記しかしないため作成時刻。
@@ -527,14 +539,20 @@ export interface NewReceiptInput {
   receiptTimestamp: Date;
   /**
    * 重複登録検出用のキー(buildReceiptDedupeKeyの戻り値そのまま)。金額または店舗名が空で
-   * 重複判定の対象外ならnull。
+   * 重複判定の対象外ならnull。dedupe_keyはamountYenではなく、従来どおりnormalizeAmount()の
+   * 出力から作る(GAS版buildKeyと1文字も違えてはいけないため)。
    */
   dedupeKey: string | null;
-  amount: string | null;
+  /** 金額(円)。集計・請求用の整数。数値化できなかった場合はnull(amountRawに生値を残す)。 */
+  amountYen: number | null;
+  /** OCRが返した金額の生文字列。未入力ならnull。 */
+  amountRaw: string | null;
   storeName: string | null;
   handoffText: string | null;
   fileKey: string;
   contentType: string;
+  /** 請求区分(doc/14 第4章)。customer_billableの場合customerIdがnullだとDB制約で拒否される。 */
+  billingType: ReceiptBillingType;
 }
 
 export interface ReceiptRepositoryPort {

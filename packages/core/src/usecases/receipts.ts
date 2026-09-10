@@ -3,6 +3,7 @@ import {
   buildReceiptDedupeKey,
   buildReceiptNotificationText,
   canCheckReceiptDuplicate,
+  computeReceiptAmount,
   normalizeAmount,
   normalizeText,
   parseJstTimestampString,
@@ -12,6 +13,7 @@ import type { MirrorPort } from '../ports/mirror';
 import type { NotifierPort } from '../ports/notifier';
 import type {
   CustomerRepositoryPort,
+  ReceiptBillingType,
   ReceiptRepositoryPort,
   StaffRepositoryPort,
 } from '../ports/repositories';
@@ -37,6 +39,12 @@ export interface ReceiptImageInput {
   storeName?: string | null;
   /** OCRで取得した領収書日時('yyyy/MM/dd HH:mm'等)。無ければfallbackTimestampを使う。 */
   receiptDate?: string | null;
+  /**
+   * 請求区分(doc/14 第4章)。領収書1枚ごとに選べる(同じ訪問でも顧客請求分/会社立替分が
+   * 混在しうるため)。未指定ならcompany_expense(取りこぼしが「うっかり顧客に請求してしまう」
+   * 向きに転ばないようにするための既定値。receipts.tsのコメントと同じ理由)。
+   */
+  billingType?: ReceiptBillingType;
 }
 
 export interface UploadReceiptsInput {
@@ -114,6 +122,13 @@ export async function uploadReceipts(
     };
   }
 
+  // DB制約(receipts_billable_requires_customer)に落として23514で失敗させるより先に、
+  // ここで弾いて分かりやすいエラーにする(顧客未選択なのに顧客請求は画面側でも選べない
+  // ようにしているため、ここに来るのは利用者の入力ミスではなく実装・呼び出し側の誤り)。
+  if (!input.customerId && input.images.some((img) => img.billingType === 'customer_billable')) {
+    throw new Error('顧客に紐付かない領収書は「顧客に請求」にできません');
+  }
+
   const perImage = input.images.map((img, index) => {
     const timestamp = normalizeText(img.receiptDate) || input.fallbackTimestamp;
     const canCheck = canCheckReceiptDuplicate({ amount: img.amount, storeName: img.storeName });
@@ -157,12 +172,12 @@ export async function uploadReceipts(
     await deps.storage.put(fileKey, decoded.contentType, decoded.bytes);
 
     // 金額・店舗名・申し送りは正規化済みの平文で保存する(未入力はnull)。
-    const amount =
-      p.img.amount !== undefined && p.img.amount !== null && p.img.amount !== ''
-        ? normalizeAmount(p.img.amount) || null
-        : null;
+    // amountYen/amountRawの組み立てはdedupeKey(上でp.dedupeKeyとして計算済み)とは独立に行う
+    // (doc/14 A項。amountYenをdedupeKeyの材料に使い替えてはいけない)。
+    const { amountYen, amountRaw } = computeReceiptAmount(p.img.amount);
     const storeName = p.img.storeName ? normalizeText(p.img.storeName) || null : null;
     const handoffText = input.handoffText?.trim() || null;
+    const billingType: ReceiptBillingType = p.img.billingType ?? 'company_expense';
 
     // 行の作成とミラー要求のenqueueは1つのトランザクションで確定させる(片方だけ確定すると
     // 領収書がスプレッドシートに永久に現れない)。画像はオブジェクトストレージ側なので
@@ -176,11 +191,13 @@ export async function uploadReceipts(
             customerId: input.customerId,
             receiptTimestamp: parseJstTimestampString(p.timestamp),
             dedupeKey: p.dedupeKey,
-            amount,
+            amountYen,
+            amountRaw,
             storeName,
             handoffText,
             fileKey,
             contentType: decoded.contentType,
+            billingType,
           },
           scope,
         );

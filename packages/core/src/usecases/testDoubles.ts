@@ -718,11 +718,13 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
       staffId: input.staffId,
       customerId: input.customerId,
       receiptTimestamp: input.receiptTimestamp,
-      amount: input.amount,
+      amountYen: input.amountYen,
+      amountRaw: input.amountRaw,
       storeName: input.storeName,
       handoffText: input.handoffText,
       fileKey: input.fileKey,
       contentType: input.contentType,
+      billingType: input.billingType,
       createdAt: new Date(),
     };
     this.rows.push({ record, dedupeKey: input.dedupeKey });
@@ -741,6 +743,11 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
         .filter((r) => r.record.tenantId === tenantId && r.dedupeKey && keys.has(r.dedupeKey))
         .map((r) => r.dedupeKey as string),
     );
+  }
+
+  /** 登録順の全件を返す(billingType/amountYen等、createに渡した値の検証に使う)。 */
+  listAllForTest(): ReceiptRecord[] {
+    return this.rows.map((r) => r.record);
   }
 
   snapshotForTest(): unknown {

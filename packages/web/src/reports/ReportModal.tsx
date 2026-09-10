@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
-import type { ReceiptImageUpload } from '../api';
+import type { ReceiptBillingType, ReceiptImageUpload } from '../api';
 import {
   extractReceiptOcr,
   fetchCustomerDetail,
@@ -214,6 +214,12 @@ interface ReceiptImageState {
   ocrLoading: boolean;
   /** OCR失敗時のエラーメッセージ(表示用)。成功時・未実行時はnull。 */
   ocrError: string | null;
+  /**
+   * 請求区分(doc/14 第4章)。領収書1枚ごとに選べる。既定は'company_expense'
+   * (取りこぼしが「うっかり顧客に請求してしまう」向きに転ばないようにするため。
+   * DB側のデフォルトと同じ理由)。
+   */
+  billingType: ReceiptBillingType;
 }
 
 /**
@@ -588,7 +594,16 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     }
     setImages((prev) => [
       ...prev,
-      { id, dataUrl, amount: '', storeName: '', receiptDate: '', ocrLoading: true, ocrError: null },
+      {
+        id,
+        dataUrl,
+        amount: '',
+        storeName: '',
+        receiptDate: '',
+        ocrLoading: true,
+        ocrError: null,
+        billingType: 'company_expense',
+      },
     ]);
 
     try {
@@ -650,6 +665,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
         amount: img.amount || null,
         storeName: img.storeName || null,
         receiptDate: img.receiptDate || null,
+        billingType: img.billingType,
       }));
       const result = await uploadReceipts({ customerId, images: payloadImages, handoffText });
       markCustomerRecentlyUsed(customerId);
@@ -918,6 +934,26 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                       placeholder="店舗名"
                       className="w-full p-1 text-sm border border-gray-300 rounded text-center"
                     />
+                    {/* 請求区分(doc/14 第4章)。顧客が選択されていない場合はDB制約
+                        (receipts_billable_requires_customer)と同じ制限を画面でも表現するため
+                        「顧客に請求」を選べないようにする。 */}
+                    <select
+                      value={img.billingType}
+                      disabled={!customerId}
+                      onChange={(e) =>
+                        setImages((prev) =>
+                          prev.map((i) =>
+                            i.id === img.id ? { ...i, billingType: e.target.value as ReceiptBillingType } : i,
+                          ),
+                        )
+                      }
+                      className="w-full p-1 text-[11px] border border-gray-300 rounded text-center bg-white disabled:opacity-60"
+                    >
+                      <option value="company_expense">会社立替</option>
+                      <option value="customer_billable" disabled={!customerId}>
+                        顧客に請求
+                      </option>
+                    </select>
                     {img.ocrError && (
                       <p className="text-[10px] text-red-500 text-center leading-tight">
                         自動読取に失敗しました。金額等を手入力してください。

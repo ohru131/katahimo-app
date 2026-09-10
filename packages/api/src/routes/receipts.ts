@@ -1,8 +1,18 @@
 import { extractReceiptAmount, uploadReceipts } from '@katahimo/core';
 import { formatJstDateTime } from '@katahimo/core/domain';
+import { RECEIPT_BILLING_TYPES, type ReceiptBillingType } from '@katahimo/core/ports';
 import { Hono } from 'hono';
 import type { Container } from '../container';
 import { getAuthenticatedSession, resolveReportTargetStaffId } from '../session';
+
+/**
+ * billingTypeの値域検証。「文字列かどうか」ではなく「許可された2値かどうか」で判定する
+ * (RECEIPT_BILLING_TYPESはDBのCHECK制約・画面と共有しているので、ここがズレるとDB制約
+ * 違反(23514)という分かりにくいエラーで初めて気付く形になる)。
+ */
+function isReceiptBillingType(value: unknown): value is ReceiptBillingType {
+  return (RECEIPT_BILLING_TYPES as readonly unknown[]).includes(value);
+}
 
 export function createReceiptRoutes(container: Container) {
   const app = new Hono();
@@ -31,6 +41,26 @@ export function createReceiptRoutes(container: Container) {
       return c.json({ success: false, message: '領収書画像がありません。' }, 400);
     }
 
+    // 指定はあるが解釈できない billingType は、既定値(会社立替)に倒さず落とす。
+    // 倒すと 'customer_billeable' のような綴り違いが「会社立替として保存された」という
+    // 請求の誤りになり、しかもエラーが出ないので気付けない。
+    const invalidBillingType = body.images.some(
+      (img: unknown) =>
+        typeof img === 'object' &&
+        img !== null &&
+        (img as Record<string, unknown>).billingType !== undefined &&
+        !isReceiptBillingType((img as Record<string, unknown>).billingType),
+    );
+    if (invalidBillingType) {
+      return c.json(
+        {
+          success: false,
+          message: `billingType は ${RECEIPT_BILLING_TYPES.join(' / ')} のいずれかにしてください`,
+        },
+        400,
+      );
+    }
+
     const staffId = resolveReportTargetStaffId(session, body.staffId);
     const images = body.images
       .filter((img: unknown): img is Record<string, unknown> => typeof img === 'object' && img !== null)
@@ -39,6 +69,7 @@ export function createReceiptRoutes(container: Container) {
         amount: typeof img.amount === 'string' || typeof img.amount === 'number' ? img.amount : null,
         storeName: typeof img.storeName === 'string' ? img.storeName : null,
         receiptDate: typeof img.receiptDate === 'string' ? img.receiptDate : null,
+        billingType: isReceiptBillingType(img.billingType) ? img.billingType : undefined,
       }))
       .filter((img: { data: string }) => img.data);
 

@@ -283,3 +283,52 @@ describe('receipts_tenant_dedupe_key_uidx(dedupeKeyがある行だけの一意�
     await client.close();
   });
 });
+
+/**
+ * doc/14 A項の目的そのもの: amount(text)をamount_yen(integer)に分けたことで、SQLのSUM()が
+ * そのまま使える(文字列だった頃は"1,000"と"1000"が別の値になり集計できなかった)。
+ * amount_yenがnull(OCRが数値化できなかった領収書)の行は、SQLのSUMが自動でスキップすることも
+ * 合わせて確認する(取りこぼして0円扱いになっていないか=誤って合計に含めていないか、
+ * ではなく単に無視されることの確認)。
+ */
+describe('SUM(amount_yen)による集計(doc/14 A項)', () => {
+  it('複数の領収書のamount_yenを合計できる(amount_yenがnullの行は無視される)', async () => {
+    const client = new PGlite();
+    await client.waitReady;
+    await applyPendingMigrations(client, loadMigrations());
+
+    const { rows: tenants } = await client.query<{ id: string }>(
+      "INSERT INTO tenants (name, slug) VALUES ('テスト法人', 'demo') RETURNING id;",
+    );
+    const tenantId = tenants[0]?.id;
+    if (!tenantId) throw new Error('テナントの準備に失敗しました');
+    const { rows: staffRows } = await client.query<{ id: string }>(
+      "INSERT INTO staff (tenant_id, name, email) VALUES ($1, 'スタッフ', 's@example.test') RETURNING id;",
+      [tenantId],
+    );
+    const staffId = staffRows[0]?.id;
+    if (!staffId) throw new Error('スタッフの準備に失敗しました');
+
+    const insertReceipt = (amountYen: number | null) =>
+      client.query(
+        `INSERT INTO receipts (tenant_id, staff_id, receipt_timestamp, amount_yen, file_key, content_type)
+         VALUES ($1, $2, now(), $3, 'file-key', 'image/jpeg');`,
+        [tenantId, staffId, amountYen],
+      );
+
+    await insertReceipt(1000);
+    await insertReceipt(2500);
+    // OCRが数値化できなかった領収書(amount_rawだけ保管されている想定)。SUMに含まれてはいけない。
+    await insertReceipt(null);
+
+    const {
+      rows: [result],
+    } = await client.query<{ sum: string | null }>(
+      'SELECT SUM(amount_yen) AS sum FROM receipts WHERE tenant_id = $1;',
+      [tenantId],
+    );
+    expect(Number(result?.sum)).toBe(3500);
+
+    await client.close();
+  });
+});

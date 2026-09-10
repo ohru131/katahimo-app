@@ -1,7 +1,9 @@
 import { sql } from 'drizzle-orm';
 import {
+  check,
   foreignKey,
   index,
+  integer,
   pgPolicy,
   pgTable,
   text,
@@ -31,6 +33,16 @@ import { tenants } from './tenants';
  * 以前のHMACブラインドインデックスは廃止)。金額または店舗名が空の場合はGAS版と同様に
  * 重複判定自体を行わないためnullになる。
  *
+ * 【doc/14 A項】amount(text)はamountYen(集計・請求用の整数)とamountRaw(OCRの生文字列)に分割した。
+ * dedupeKeyはamountYenではなく従来どおりnormalizeAmount()の出力から作る(GAS版buildKeyと1文字も
+ * 違えてはいけないため。移行期に同じ領収書を重複と判定できなくなる)。amountYenはこのキーの材料に
+ * 使い替えない。
+ *
+ * 【doc/14 4章】billingTypeは「顧客に請求する分/会社が立て替える分」を区別する。既定を
+ * company_expense にしているのは、取りこぼし(スタッフが選び忘れた場合)が「うっかり顧客に
+ * 請求してしまう」方向に転ばないようにするため。顧客に紐付かない領収書はcustomer_billableに
+ * できない(receipts_billable_requires_customer)。
+ *
  * fileKeyはStoragePort(領収書画像の実体。ローカル開発はファイルシステム、本番はGCS想定)の
  * 保存キー。GAS版のDriveアップロードに相当するが、正の保存先はオブジェクトストレージ側に変わる。
  */
@@ -48,8 +60,10 @@ export const receipts = pgTable(
     receiptTimestamp: timestamp({ withTimezone: true }).notNull(),
     dedupeKey: text(),
 
-    /** 金額(正規化済み文字列)。OCRで読めなかった場合はnull。 */
-    amount: text(),
+    /** 金額(円)。集計・請求に使う整数。OCRが読めなかった/数値化できなかった場合はnull。 */
+    amountYen: integer(),
+    /** OCRが返した金額の生文字列。人が後から直すときの参照用(amountYenがnullでも残る)。 */
+    amountRaw: text(),
     /** 店舗名(正規化済み文字列)。 */
     storeName: text(),
     /** 申し送り(自由記述)。 */
@@ -58,10 +72,23 @@ export const receipts = pgTable(
     fileKey: text().notNull(),
     contentType: text().notNull(),
 
+    /**
+     * 請求区分。'customer_billable'=顧客に請求する、'company_expense'=会社が立て替える。
+     * 既定はcompany_expense(理由は上記コメント参照)。
+     */
+    billingType: text().notNull().default('company_expense'),
+
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING }),
+    check('receipts_amount_yen_nonneg', sql`${t.amountYen} IS NULL OR ${t.amountYen} >= 0`),
+    check('receipts_billing_type_check', sql`${t.billingType} IN ('customer_billable', 'company_expense')`),
+    // 顧客に紐付かない領収書(駐車場代等の会社経費)は、顧客請求にできない。
+    check(
+      'receipts_billable_requires_customer',
+      sql`${t.billingType} = 'company_expense' OR ${t.customerId} IS NOT NULL`,
+    ),
     // dailyReports.tsと同じ理由。customerIdがnullの行はPostgreSQLのMATCH SIMPLE(既定)により
     // FK制約の対象外になる(顧客に紐付かない経費領収書を許容する仕様と両立する)。
     foreignKey({

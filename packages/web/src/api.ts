@@ -617,11 +617,16 @@ export async function fetchCustomerHistory(customerId: string, before?: string):
   return body.items;
 }
 
+/** 領収書の請求区分。'customer_billable'=顧客に請求する、'company_expense'=会社が立て替える(doc/14 第4章)。 */
+export type ReceiptBillingType = 'customer_billable' | 'company_expense';
+
 export interface ReceiptImageUpload {
   data: string;
   amount?: string | number | null;
   storeName?: string | null;
   receiptDate?: string | null;
+  /** 未指定ならAPI側でcompany_expense扱いになる(取りこぼしが顧客請求に転ばないための既定)。 */
+  billingType?: ReceiptBillingType;
 }
 
 export interface UploadReceiptsInput {

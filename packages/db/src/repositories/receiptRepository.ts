@@ -1,5 +1,6 @@
 import type {
   NewReceiptInput,
+  ReceiptBillingType,
   ReceiptRecord,
   ReceiptRepositoryPort,
   TransactionScope,
@@ -11,7 +12,11 @@ import { withTenant } from '../tenantScope';
 
 type ReceiptRow = typeof receipts.$inferSelect;
 
-/** DrizzleのreceiptsテーブルのSELECT結果行を、ポート層のReceiptRecordに変換する。 */
+/**
+ * DrizzleのreceiptsテーブルのSELECT結果行を、ポート層のReceiptRecordに変換する。
+ * billingTypeはDBのCHECK制約(receipts_billing_type_check)で許可値に縛られているため、
+ * ここではキャストのみで安全(未知の値が来ることはDB側で防いでいる)。
+ */
 function toRecord(row: ReceiptRow): ReceiptRecord {
   return {
     id: row.id,
@@ -19,11 +24,13 @@ function toRecord(row: ReceiptRow): ReceiptRecord {
     staffId: row.staffId,
     customerId: row.customerId,
     receiptTimestamp: row.receiptTimestamp,
-    amount: row.amount,
+    amountYen: row.amountYen,
+    amountRaw: row.amountRaw,
     storeName: row.storeName,
     handoffText: row.handoffText,
     fileKey: row.fileKey,
     contentType: row.contentType,
+    billingType: row.billingType as ReceiptBillingType,
     createdAt: row.createdAt,
   };
 }
@@ -44,11 +51,13 @@ export class DrizzleReceiptRepository implements ReceiptRepositoryPort {
             customerId: input.customerId,
             receiptTimestamp: input.receiptTimestamp,
             dedupeKey: input.dedupeKey,
-            amount: input.amount,
+            amountYen: input.amountYen,
+            amountRaw: input.amountRaw,
             storeName: input.storeName,
             handoffText: input.handoffText,
             fileKey: input.fileKey,
             contentType: input.contentType,
+            billingType: input.billingType,
           })
           .returning();
         const row = rows[0];

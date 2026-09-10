@@ -257,6 +257,105 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
     });
   });
 
+  describe('receipts_amount_yen_nonneg', () => {
+    it('nullまたは0以上のamount_yenは通る', async () => {
+      for (const amountYen of [null, 0, 1200]) {
+        await expect(
+          fixture.client.query(
+            `INSERT INTO receipts (tenant_id, staff_id, receipt_timestamp, amount_yen, file_key, content_type)
+             VALUES ($1, $2, now(), $3, 'file-key', 'image/jpeg');`,
+            [fixture.tenantId, fixture.staffId, amountYen],
+          ),
+        ).resolves.toBeDefined();
+      }
+    });
+
+    it('負のamount_yenは拒否される', async () => {
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO receipts (tenant_id, staff_id, receipt_timestamp, amount_yen, file_key, content_type)
+           VALUES ($1, $2, now(), -1, 'file-key', 'image/jpeg');`,
+          [fixture.tenantId, fixture.staffId],
+        ),
+        'receipts_amount_yen_nonneg',
+      );
+    });
+  });
+
+  describe('receipts_billing_type_check', () => {
+    it("許可された値('customer_billable'/'company_expense')は通る", async () => {
+      await expect(
+        fixture.client.query(
+          `INSERT INTO receipts (tenant_id, staff_id, customer_id, receipt_timestamp, billing_type, file_key, content_type)
+           VALUES ($1, $2, $3, now(), 'customer_billable', 'file-key', 'image/jpeg');`,
+          [fixture.tenantId, fixture.staffId, fixture.customerId],
+        ),
+      ).resolves.toBeDefined();
+      await expect(
+        fixture.client.query(
+          `INSERT INTO receipts (tenant_id, staff_id, receipt_timestamp, billing_type, file_key, content_type)
+           VALUES ($1, $2, now(), 'company_expense', 'file-key', 'image/jpeg');`,
+          [fixture.tenantId, fixture.staffId],
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('列を省略した場合は既定値company_expenseになる(取りこぼしが顧客請求に転ばないため)', async () => {
+      const {
+        rows: [row],
+      } = await fixture.client.query<{ billing_type: string }>(
+        `INSERT INTO receipts (tenant_id, staff_id, receipt_timestamp, file_key, content_type)
+         VALUES ($1, $2, now(), 'file-key', 'image/jpeg') RETURNING billing_type;`,
+        [fixture.tenantId, fixture.staffId],
+      );
+      expect(row?.billing_type).toBe('company_expense');
+    });
+
+    it('許可外の文字列は拒否される', async () => {
+      // customer_idを埋めて receipts_billable_requires_customer には引っかからないようにし、
+      // billing_type_checkだけを狙って落とす(そうしないと「顧客未紐付け」の理由で偶然弾かれて
+      // しまい、billing_type_checkを検証したことにならない)。
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO receipts (tenant_id, staff_id, customer_id, receipt_timestamp, billing_type, file_key, content_type)
+           VALUES ($1, $2, $3, now(), 'でたらめ', 'file-key', 'image/jpeg');`,
+          [fixture.tenantId, fixture.staffId, fixture.customerId],
+        ),
+        'receipts_billing_type_check',
+      );
+    });
+  });
+
+  describe('receipts_billable_requires_customer', () => {
+    it('顧客に紐付くcustomer_billableと、顧客に紐付かないcompany_expenseは通る', async () => {
+      await expect(
+        fixture.client.query(
+          `INSERT INTO receipts (tenant_id, staff_id, customer_id, receipt_timestamp, billing_type, file_key, content_type)
+           VALUES ($1, $2, $3, now(), 'customer_billable', 'file-key', 'image/jpeg');`,
+          [fixture.tenantId, fixture.staffId, fixture.customerId],
+        ),
+      ).resolves.toBeDefined();
+      await expect(
+        fixture.client.query(
+          `INSERT INTO receipts (tenant_id, staff_id, receipt_timestamp, billing_type, file_key, content_type)
+           VALUES ($1, $2, now(), 'company_expense', 'file-key', 'image/jpeg');`,
+          [fixture.tenantId, fixture.staffId],
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('顧客に紐付かないのにcustomer_billableは拒否される(うっかり顧客に請求する事故を防ぐ)', async () => {
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO receipts (tenant_id, staff_id, receipt_timestamp, billing_type, file_key, content_type)
+           VALUES ($1, $2, now(), 'customer_billable', 'file-key', 'image/jpeg');`,
+          [fixture.tenantId, fixture.staffId],
+        ),
+        'receipts_billable_requires_customer',
+      );
+    });
+  });
+
   describe('tenant_keys_version_check', () => {
     it('dek_version/kek_versionが1以上は通る', async () => {
       await expect(

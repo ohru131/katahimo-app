@@ -127,7 +127,9 @@ export async function processOutboxJob(
         customerId: record.customerId ?? '',
         customerName: customerRecord?.name ?? '',
         receiptTimestampJst: formatJstDateTime(record.receiptTimestamp),
-        amount: record.amount ?? '',
+        // doc/14 A項。amountYenが取れればそれを文字列化し、取れなければOCRの生値(amountRaw)、
+        // それも無ければ空文字にフォールバックする(GAS版の「金額」列の見え方を崩さないため)。
+        amount: record.amountYen !== null ? String(record.amountYen) : (record.amountRaw ?? ''),
         storeName: record.storeName ?? '',
         handoffText: record.handoffText ?? '',
         imageDataUrl: `data:${record.contentType};base64,${bytesToBase64(imageBytes)}`,

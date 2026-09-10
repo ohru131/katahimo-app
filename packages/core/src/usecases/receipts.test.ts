@@ -122,11 +122,13 @@ describe('uploadReceipts', () => {
       customerId,
       receiptTimestamp: new Date(),
       dedupeKey,
-      amount,
+      amountYen: 1200,
+      amountRaw: amount,
       storeName,
       handoffText: null,
       fileKey: `${tenantId}/receipts/existing.jpg`,
       contentType: 'image/jpeg',
+      billingType: 'company_expense',
     });
 
     // アプリ側の事前チェックがすり抜けた状況を再現する(本来ならexistingに入っているはず)。
@@ -144,5 +146,68 @@ describe('uploadReceipts', () => {
     expect(result.duplicates[0]).toMatchObject({ amount, storeName });
     // 重複と分かった画像のファイルは残さず消す。
     expect(storage.listKeysForTest()).toEqual([]);
+  });
+
+  it('billingTypeを指定しない場合はcompany_expenseになる(取りこぼしが顧客請求に転ばないため)', async () => {
+    await uploadReceipts(deps, tenantId, {
+      staffId,
+      customerId,
+      images: [{ data: 'data:image/jpeg;base64,AAAA', amount: '1200', storeName: 'コンビニ' }],
+      fallbackTimestamp: '2026/08/30 10:00:00',
+    });
+
+    const [record] = receiptRepository.listAllForTest();
+    expect(record?.billingType).toBe('company_expense');
+  });
+
+  it('billingType=customer_billableを指定すればそのまま保存される', async () => {
+    await uploadReceipts(deps, tenantId, {
+      staffId,
+      customerId,
+      images: [
+        {
+          data: 'data:image/jpeg;base64,AAAA',
+          amount: '1200',
+          storeName: 'コンビニ',
+          billingType: 'customer_billable',
+        },
+      ],
+      fallbackTimestamp: '2026/08/30 10:00:00',
+    });
+
+    const [record] = receiptRepository.listAllForTest();
+    expect(record?.billingType).toBe('customer_billable');
+  });
+
+  it('顧客に紐付かないのにcustomer_billableを指定した場合はDBに落とす前に弾く', async () => {
+    await expect(
+      uploadReceipts(deps, tenantId, {
+        staffId,
+        customerId: null,
+        images: [
+          {
+            data: 'data:image/jpeg;base64,AAAA',
+            amount: '1200',
+            storeName: 'コンビニ',
+            billingType: 'customer_billable',
+          },
+        ],
+        fallbackTimestamp: '2026/08/30 10:00:00',
+      }),
+    ).rejects.toThrow('顧客に請求');
+    expect(receiptRepository.listAllForTest()).toHaveLength(0);
+  });
+
+  it('金額はamountYen(集計用の整数)とamountRaw(生値)の両方に保存される', async () => {
+    await uploadReceipts(deps, tenantId, {
+      staffId,
+      customerId,
+      images: [{ data: 'data:image/jpeg;base64,AAAA', amount: '1,200', storeName: 'コンビニ' }],
+      fallbackTimestamp: '2026/08/30 10:00:00',
+    });
+
+    const [record] = receiptRepository.listAllForTest();
+    expect(record?.amountYen).toBe(1200);
+    expect(record?.amountRaw).toBe('1,200');
   });
 });
