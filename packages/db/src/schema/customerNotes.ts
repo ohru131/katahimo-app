@@ -167,8 +167,11 @@ export const customerNotePhotos = pgTable(
     }),
     // 同じ保存キーを2行が指す状態(片方を消すともう片方から画像が消える)を防ぐ。
     uniqueIndex('customer_note_photos_tenant_file_key_uidx').on(t.tenantId, t.fileKey),
-    // 並び順の重複を許すと表示順が実行ごとに変わる(ORDER BYが決定的でなくなる)。
-    unique('customer_note_photos_note_sort_uk').on(t.tenantId, t.noteId, t.sortOrder),
+    // sortOrderに一意制約は付けない。人が画面で写真を並べ替える(2枚のsortOrderを入れ替える)
+    // 操作を1本のUPDATEで書くと、PostgreSQLは一意制約を行ごとに即時検査するため
+    // 入れ替えの途中で必ず衝突して失敗する。回避するにはDEFERRABLEな制約が必要だが、
+    // drizzleのスキーマ定義では表現できない。並び順の決定性は
+    // 「ORDER BY sort_order, id」(同じsortOrderならid順)で担保する。
     check('customer_note_photos_sort_order_check', sql`${t.sortOrder} >= 0`),
     // 0バイトの画像は壊れており、上限超過はストレージ費用と一覧の読み込み時間の問題になる
     // (入口でも弾くが、APIを経由しない経路から入っても止まるようにDB側にも置く)。

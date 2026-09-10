@@ -1,5 +1,5 @@
 {
-  "id": "66ac9441-497c-4476-823f-52d69e293d38",
+  "id": "3deca800-e943-465e-8e83-d923f94907ca",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -2157,17 +2157,7 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "customer_note_photos_note_sort_uk": {
-          "name": "customer_note_photos_note_sort_uk",
-          "nullsNotDistinct": false,
-          "columns": [
-            "tenant_id",
-            "note_id",
-            "sort_order"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {
         "tenant_isolation": {
           "name": "tenant_isolation",

@@ -264,7 +264,6 @@ CREATE TABLE "customer_note_photos" (
 	"captured_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "customer_note_photos_note_sort_uk" UNIQUE("tenant_id","note_id","sort_order"),
 	CONSTRAINT "customer_note_photos_sort_order_check" CHECK ("customer_note_photos"."sort_order" >= 0),
 	CONSTRAINT "customer_note_photos_byte_size_check" CHECK ("customer_note_photos"."byte_size" > 0 AND "customer_note_photos"."byte_size" <= 10485760)
 );
