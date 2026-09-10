@@ -91,6 +91,12 @@ export interface Container {
    */
   mirror: MirrorPort;
   /**
+   * 勤怠の保存時に「勤怠集計」シートの再計算(`attendance_aggregate`)も積むか
+   * (`MIRROR_ATTENDANCE_AGGREGATE`、既定false)。ジョブ1件ごとにGAS側でMapsのルート計算が
+   * 走るため、既定では積まない(packages/core/src/usecases/attendance.ts の AttendanceDeps 参照)。
+   */
+  mirrorAttendanceAggregate: boolean;
+  /**
    * 複数リポジトリにまたがる書き込みを1つのトランザクションにまとめる。
    * ドメインの行とoutbox_jobsのように、揃って確定しなければ意味がない書き込みで使う
    * (packages/core/src/ports/unitOfWork.ts)。

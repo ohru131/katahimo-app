@@ -88,11 +88,11 @@
 <!-- 1 title -->
 <section class="slide title-slide active">
   <p class="muted" style="letter-spacing:.1em">ARCHITECTURE REVIEW</p>
-  <h1>katahimo-app<br>アーキテクチャ説明</h1>
+  <h1>katahimo-app<br>アーキテクチャ / DB設計 説明</h1>
   <p class="lead">訪問保育(ベビーシッター法人)向け業務SaaS — GAS版からの移行基盤</p>
-  <p class="muted" style="margin-top:1.5em">目的: この設計で進めてよいか、有識者の判断をいただく<br>所要 10分 / 2026-09</p>
+  <p class="muted" style="margin-top:1.5em">目的: アプリ構成とデータベース構成の両方について、この設計で進めてよいか判断をいただく<br>所要 13分(うちデータベース設計 6枚) / 2026-09</p>
   <div class="notes">
-    今日の目的は「褒めてもらう」ことではなく「進めていいか判断してもらう」こと。前半6分で構造を説明し、後半4分は判断していただきたい論点と、現状で「できていないこと」に使います。
+    今日の目的は「褒めてもらう」ことではなく「進めていいか判断してもらう」こと。前半でアプリの構造を説明し、中盤にデータベース設計をまとめて見ていただきます(6〜11枚目)。後半は判断していただきたい論点と、現状で「できていないこと」に使います。
   </div>
 </section>
 
@@ -130,7 +130,7 @@
           <dt>パッケージ</dt><dd>9(pnpm workspace)</dd>
           <dt>TypeScript</dt><dd>205ファイル / 約20,400行(テスト除く)</dd>
           <dt>テスト</dt><dd>43ファイル / 327件、CIで毎回実行</dd>
-          <dt>DB</dt><dd>13テーブル、マイグレーション5本</dd>
+          <dt>DB</dt><dd>13テーブル、マイグレーション8本</dd>
         </dl>
       </div>
     </div>
@@ -335,7 +335,7 @@
         <li>usecase は <code>XxxDeps</code>(必要なポートだけの構造的部分集合)を受け取る。<code>Container</code> をそのまま渡せる</li>
         <li><b>Container</b> = 全ポートの束。Node用 <code>createContainer(env, db)</code> と ブラウザ用 <code>createDemoContainer()</code> が同じ型を返す</li>
         <li>外部が無いときは <b>Noop 実装</b>に落ちる(Maps / Schedule / AI / Mirror)。黙って壊れない</li>
-        <li><b>UnitOfWorkPort</b> だけは横断的で、複数リポジトリの書き込みを1つのトランザクションにまとめる(9枚目)</li>
+        <li><b>UnitOfWorkPort</b> だけは横断的で、複数リポジトリの書き込みを1つのトランザクションにまとめる(13枚目)</li>
       </ul>
       <div class="card" style="margin-top:.6em">
         <h3>例外を1つ正直に</h3>
@@ -345,10 +345,115 @@
   </div>
   <div class="foot"><span>packages/core/src/{ports,usecases,domain} / packages/api/src/container.ts</span><span>katahimo-app</span></div>
   <div class="notes">
-    教科書どおりのポート&アダプタです。強調したいのは「同じ Container 型を、Node とブラウザで別々に組み立てている」こと。デモはリポジトリも暗号化もusecasesも本番と同一コードで動きます。差し替えているのは、Node専用の実装と、鍵を置けない外部APIだけです。ポートの中で UnitOfWork だけは横断的で、複数リポジトリの書き込みを1つのトランザクションにまとめます。9枚目で詳しく話します。
+    教科書どおりのポート&アダプタです。強調したいのは「同じ Container 型を、Node とブラウザで別々に組み立てている」こと。デモはリポジトリも暗号化もusecasesも本番と同一コードで動きます。差し替えているのは、Node専用の実装と、鍵を置けない外部APIだけです。ポートの中で UnitOfWork だけは横断的で、複数リポジトリの書き込みを1つのトランザクションにまとめます。13枚目で詳しく話します。
   </div>
 </section>
-<!-- 6 multitenancy -->
+<!-- 6 data model -->
+<section class="slide">
+  <h2>データモデル全体像 <small>13テーブル / マイグレーション8本</small></h2>
+  <div class="fig">
+  <svg viewBox="0 0 960 420" role="img" aria-label="テーブル関連図">
+    <defs>
+      <marker id="er-t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#fbbf24"/></marker>
+      <marker id="er-s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#a78bfa"/></marker>
+      <marker id="er-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#34d399"/></marker>
+    </defs>
+    <!-- tenants から各テーブルへ -->
+    <g fill="none" stroke="#fbbf24" stroke-width="1.4" opacity=".8" marker-end="url(#er-t)">
+      <path d="M150 208 C182 208 182 42 204 42"/>
+      <path d="M150 212 C182 212 182 98 204 98"/>
+      <path d="M150 216 C182 216 182 166 204 166"/>
+      <path d="M150 226 C182 226 182 276 204 276"/>
+      <path d="M150 232 C182 232 182 352 204 352"/>
+    </g>
+    <!-- staff を参照 -->
+    <g fill="none" stroke="#a78bfa" stroke-width="1.4" opacity=".8" marker-end="url(#er-s)">
+      <path d="M385 156 C470 156 470 32 536 32"/>
+      <path d="M385 160 C470 160 470 86 536 86"/>
+      <path d="M385 164 C470 164 470 140 536 140"/>
+      <path d="M385 170 C470 170 470 196 536 196"/>
+      <path d="M385 174 C470 174 470 250 536 250"/>
+      <path d="M385 178 C470 178 470 304 536 304"/>
+    </g>
+    <!-- customers を参照 -->
+    <g fill="none" stroke="#34d399" stroke-width="1.4" opacity=".8" marker-end="url(#er-c)">
+      <path d="M385 268 C486 268 486 206 536 206"/>
+      <path d="M385 272 C486 272 486 260 536 260"/>
+      <path d="M385 280 C486 280 486 314 536 314" stroke-dasharray="5 4"/>
+      <path d="M385 286 C486 286 486 372 536 372"/>
+    </g>
+    <!-- tenants -->
+    <rect class="box" x="10" y="190" width="140" height="60" style="stroke:var(--c-db)"/>
+    <text class="h mono" x="80" y="212" text-anchor="middle">tenants</text>
+    <text class="sm" x="80" y="229" text-anchor="middle">法人マスタ</text>
+    <text class="sm" x="80" y="243" text-anchor="middle" style="fill:var(--warn)">唯一のRLS対象外</text>
+    <!-- layer 1 -->
+    <rect class="box" x="210" y="20" width="175" height="44" style="stroke:var(--c-db)"/>
+    <text class="h mono" x="298" y="39" text-anchor="middle">tenant_keys</text>
+    <text class="sm" x="298" y="55" text-anchor="middle">PK=(tenant_id, dek_version)</text>
+    <rect class="box" x="210" y="76" width="175" height="44" style="stroke:var(--c-db)"/>
+    <text class="h mono" x="298" y="95" text-anchor="middle">app_settings</text>
+    <text class="sm" x="298" y="111" text-anchor="middle">唯一の暗号化列(資格情報3列)</text>
+    <rect class="box" x="210" y="140" width="175" height="52" style="stroke:var(--c-api)"/>
+    <text class="h mono" x="298" y="160" text-anchor="middle">staff</text>
+    <text class="sm" x="298" y="176" text-anchor="middle">スタッフ兼認証情報</text>
+    <text class="sm" x="298" y="188" text-anchor="middle">UK(tenant_id, email)</text>
+    <rect class="box" x="210" y="250" width="175" height="52" style="stroke:var(--c-core)"/>
+    <text class="h mono" x="298" y="270" text-anchor="middle">customers</text>
+    <text class="sm" x="298" y="286" text-anchor="middle">35列・全て平文・ソフトデリート</text>
+    <text class="sm" x="298" y="298" text-anchor="middle">UK(tenant_id, 取込元, 外部ID)</text>
+    <rect class="box" x="210" y="330" width="175" height="44" style="stroke:var(--c-ext)"/>
+    <text class="h mono" x="298" y="349" text-anchor="middle">outbox_jobs</text>
+    <text class="sm" x="298" y="365" text-anchor="middle">ミラー用ジョブキュー</text>
+    <!-- layer 2 -->
+    <rect class="box" x="540" y="14" width="230" height="44" style="stroke:var(--c-api)"/>
+    <text class="h mono" x="655" y="33" text-anchor="middle">sessions</text>
+    <text class="sm" x="655" y="49" text-anchor="middle">生トークンは持たずハッシュのみ</text>
+    <rect class="box" x="540" y="68" width="230" height="44" style="stroke:var(--c-api)"/>
+    <text class="h mono" x="655" y="87" text-anchor="middle">password_reset_codes</text>
+    <text class="sm" x="655" y="103" text-anchor="middle">6桁コードのHMAC・30分で失効</text>
+    <rect class="box" x="540" y="122" width="230" height="44" style="stroke:var(--c-core)"/>
+    <text class="h mono" x="655" y="141" text-anchor="middle">attendance_days</text>
+    <text class="sm" x="655" y="157" text-anchor="middle">UK(tenant_id, staff_id, 業務日)</text>
+    <rect class="box" x="540" y="178" width="230" height="44" style="stroke:var(--c-core)"/>
+    <text class="h mono" x="655" y="197" text-anchor="middle">daily_reports</text>
+    <text class="sm" x="655" y="213" text-anchor="middle">本文は項目ごとの平文text列</text>
+    <rect class="box" x="540" y="232" width="230" height="44" style="stroke:var(--c-core)"/>
+    <text class="h mono" x="655" y="251" text-anchor="middle">accident_reports</text>
+    <text class="sm" x="655" y="267" text-anchor="middle">事故報告 / ヒヤリハット</text>
+    <rect class="box" x="540" y="286" width="230" height="44" style="stroke:var(--c-core)"/>
+    <text class="h mono" x="655" y="305" text-anchor="middle">receipts</text>
+    <text class="sm" x="655" y="321" text-anchor="middle">画像はStorage、明細は平文列</text>
+    <rect class="box" x="540" y="350" width="230" height="44" style="stroke:var(--c-core)"/>
+    <text class="h mono" x="655" y="369" text-anchor="middle">family_members</text>
+    <text class="sm" x="655" y="385" text-anchor="middle">世帯構成員(氏名・生年月日・付帯情報)</text>
+    <!-- legend -->
+    <rect x="796" y="120" width="156" height="150" rx="8" fill="none" stroke="var(--line)" stroke-dasharray="4 4"/>
+    <text class="sm" x="808" y="144" style="fill:var(--fg)">矢印の色 = 参照元</text>
+    <line x1="808" y1="168" x2="828" y2="168" stroke="#fbbf24" stroke-width="2"/>
+    <text class="sm" x="836" y="172">tenants</text>
+    <line x1="808" y1="194" x2="828" y2="194" stroke="#a78bfa" stroke-width="2"/>
+    <text class="sm" x="836" y="198">staff</text>
+    <line x1="808" y1="220" x2="828" y2="220" stroke="#34d399" stroke-width="2"/>
+    <text class="sm" x="836" y="224">customers</text>
+    <line x1="808" y1="246" x2="828" y2="246" stroke="#34d399" stroke-width="2" stroke-dasharray="4 3"/>
+    <text class="sm" x="836" y="250">nullable</text>
+  </svg>
+  </div>
+  <div class="card" style="flex:0 0 auto">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.15em 1.4em;font-size:.86em">
+      <div><b class="muted">内訳</b><br>テナント基盤3 / 認証3 / 業務6 / 連携1</div>
+      <div><b class="muted">共通の形</b><br>tenants 以外の全12テーブルが <code>tenant_id</code> を持ち、RLS の対象</div>
+      <div><b class="muted">例外は3つだけ</b><br><code>tenants</code>=RLS対象外 / <code>receipts.customer_id</code>=nullable / <code>sessions.token_hash</code>=グローバル一意</div>
+    </div>
+  </div>
+  <div class="foot"><span>packages/db/src/schema/*.ts / drizzle/0000〜0007 / doc/09 2章 ER図</span><span>katahimo-app</span></div>
+  <div class="notes">
+    テーブルは13本だけです。左から読みます。すべてが tenants にぶら下がり、その下に「認証まわり(staff系)」と「業務データ(customers系)」の2系統がある。矢印の色が参照元です。紫が staff を参照するもの、緑が customers を参照するもの。日報・事故報告・領収書は両方を参照します。例外は3つだけで、tenants だけが RLS の対象外、領収書の顧客だけが nullable(経費のみの領収書があるため)、セッションのトークンハッシュだけがテナントをまたいで一意です。暗号化列が残っているのは app_settings だけです(2026-09 の見直し。8枚目で話します)。提案書にある予約・請求・カルテは、まだこの図に存在しません。
+  </div>
+</section>
+
+<!-- 7 multitenancy -->
 <section class="slide">
   <h2>マルチテナント分離 <small>shared schema + tenant_id + RLS</small></h2>
   <div class="cols w-3-2">
@@ -399,7 +504,7 @@
   </div>
 </section>
 
-<!-- 7 encryption -->
+<!-- 8 encryption -->
 <section class="slide">
   <h2>データ保護 <small>保存時暗号化に委ね、アプリ層暗号化は資格情報のみ</small></h2>
   <div class="cols">
@@ -452,7 +557,146 @@
     2026-09 に方針を変えました。アプリ層で暗号化するのは管理者設定の資格情報 3 列だけで、顧客・日報などの業務データは平文列です。理由は 3 つ、SQL での検索性、日報データの AI 活用、そして秘密保持契約(案)第6条が求めるのが「アクセス制限・通信/保存時の暗号化・パスワード管理」であってフィールド暗号化ではないこと。保存時の暗号化は本番配備先(Cloud SQL)の既定機能に委ねる想定で、RLS と IAM を組み合わせます。ただし本番(Cloud Run + Cloud SQL)は未配備で、いま動いているのはローカル開発(Docker の PostgreSQL、TDE なし)と公開デモ(ブラウザ内 PGlite、鍵は公開固定値)だけなので、保存時暗号化・TLS・IAM は配備時に満たすべき前提条件として扱っています。第7条の返還・廃棄はテナント単位の DELETE とバックアップ保持期間で担保する想定で、revoke による暗号学的削除が効くのは資格情報だけです。封筒暗号化の形は本番相当ですが、KEKがまだ環境変数です。「インターフェースを変えずにCloud KMSへ差し替える」設計なので構造は問題ないと考えていますが、現時点では本番相当の鍵管理が存在しない、とはっきり言っておきます。DEKは世代を並存させるので、鍵を差し替えても既存の暗号文は記録された世代の鍵でそのまま読めます。ただし再暗号化バッチが無いため、古い世代の鍵はまだ捨てられません。
   </div>
 </section>
-<!-- 8 auth -->
+<!-- 9 schema conventions -->
+<section class="slide mid">
+  <h2>スキーマ設計の共通ルール <small>13テーブルすべてで同じ形を守る</small></h2>
+  <div class="cols">
+    <div>
+      <div class="card">
+        <h3>列と型</h3>
+        <ul style="margin:0">
+          <li>主キーは <code>uuid</code> + <code>gen_random_uuid()</code>。連番を使わない(件数が漏れない・採番の集中点を作らない)</li>
+          <li>日時はすべて <code>timestamptz</code>。業務上の「日」だけ <code>date</code>(<code>business_date</code>)</li>
+          <li>暗号化列は <code>app_settings</code> の資格情報3列<b>だけ</b>。そこは <code>xxx_ciphertext</code> と <code>xxx_key_version</code> の必ず2列ペアで、世代を記録しない暗号文を作れない形にしてある(業務データは平文列。2026-09 見直し)</li>
+          <li><b>派生値は保存しない</b>。残業時間などは入力値から都度計算(二重管理を作らない)</li>
+          <li>削除は <code>deactivated_at</code> のソフトデリート。物理削除の経路を持たない(テナント丸ごとの廃棄だけは例外)</li>
+          <li class="warn"><code>updated_at</code> はアプリが毎回セットしている。DBトリガーは無いので、psql等で直接UPDATEすると古いまま残る</li>
+        </ul>
+      </div>
+      <div class="card" style="margin-top:.6em">
+        <h3>外部システム由来のデータ</h3>
+        <ul style="margin:0">
+          <li><code>external_source</code> + <code>external_id</code> に隔離し、<code>UNIQUE(tenant_id, external_source, external_id)</code></li>
+          <li>RESERVA CSV 取込は<b>全置換をやめて差分適用</b>(create / update / deactivate)。消失率が20%を超えたら停止し、明示的な <code>force</code> が無いと適用しない</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h3>制約とインデックス</h3>
+        <ul style="margin:0">
+          <li>参照はすべて複合FK <code>(tenant_id, xxx_id) → (tenant_id, id)</code>。単一FKだとRLSをバイパスしてテナントを跨げるため</li>
+          <li>一意制約・検索インデックスは<b>全部 <code>tenant_id</code> 先頭</b>(例: <code>staff(tenant_id, email)</code>、<code>customers(tenant_id, family_name)</code>)</li>
+          <li>領収書の重複検出は <code>(tenant_id, dedupe_key)</code> の<b>部分一意インデックス</b>(<code>WHERE dedupe_key IS NOT NULL</code>)。同時登録が事前チェックをすり抜けてもDB側で止める</li>
+          <li><code>ON DELETE</code> はすべて <code>no action</code>。親を消せないのは書き忘れではなく方針(廃棄はテナント単位の物理DELETE + バックアップ保持期間の満了で行う)</li>
+          <li>初期化SQLで <code>btree_gist</code> を有効化済み。将来の予約テーブルの二重予約防止(<code>EXCLUDE USING gist</code>)用の仕込み</li>
+        </ul>
+      </div>
+      <div class="card" style="margin-top:.6em">
+        <h3>マイグレーション運用 <small class="muted">0000〜0007 の8本</small></h3>
+        <ul style="margin:0">
+          <li><code>drizzle-kit generate</code> で生成 → 手で追記 → <code>migrate</code> で適用。前方適用のみで <code>down</code> は持たない</li>
+          <li>手を入れるのは2種類だけ: <b><code>FORCE ROW LEVEL SECURITY</code></b>(生成されない)と <code>tenant_keys</code> の主キー張り替え。どちらもSQLに理由をコメントで残している</li>
+          <li>2026-09 の方針変更は <code>0005</code>(暗号化列の削除)→ <code>0006</code>(平文列の追加)→ <code>0007</code>(領収書の部分一意)の3本。<b>既存の暗号化済みデータは引き継がない</b>(NOT NULL 列に <code>DEFAULT ''</code>/<code>'{}'</code> を付けて適用は通す)</li>
+          <li>ロール分離: 所有者 <code>katahimo</code>(DDL)/ アプリ <code>katahimo_app</code>(DMLのみ・RLS対象)。<code>ALTER DEFAULT PRIVILEGES</code> で新テーブルにも自動付与</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>packages/db/src/schema / drizzle/*.sql / infra/initdb/01_bootstrap.sql / packages/ingestion</span><span>katahimo-app</span></div>
+  <div class="notes">
+    テーブルごとに判断せず、13本すべてで同じ規約に寄せています。強調したいのは3つ。1つ目、参照を全部「テナントIDを含む複合FK」にして、インデックスと一意制約も tenant_id 先頭にそろえていること。2つ目、暗号化列を残した唯一の場所(app_settings の資格情報)では2列ペアを崩さず、復号世代を記録し忘れた暗号文が作れないようにしていること。3つ目、マイグレーションで手を入れるのは FORCE RLS と tenant_keys の主キー張り替えの2種類だけで、それ以外は生成物のままだということ。0005〜0007 が今回の方針変更で、暗号化列を落として平文列を足しています。既存の暗号文は引き継がない判断をしました。updated_at だけはアプリ任せで、DBトリガーを置いていません。直接SQLを叩く運用が入るなら見直しが要ります。
+  </div>
+</section>
+
+<!-- 10 column design -->
+<section class="slide mid">
+  <h2>列をどう分けたか <small>2026-09に業務データを平文化した結果</small></h2>
+  <div class="cols w-3-2">
+    <div>
+      <h3 class="muted" style="margin:.1em 0 .3em"><code>customers</code> の全35列(RESERVA CSVの全項目に対応・すべて平文)</h3>
+      <table>
+        <tr><th>カテゴリ</th><th>列</th><th>備考</th></tr>
+        <tr><td>識別子 <span class="muted">4</span></td><td><code>id</code> / <code>tenant_id</code> / <code>external_source</code> / <code>external_id</code></td><td class="muted">識別子そのもの</td></tr>
+        <tr><td>氏名 <span class="muted">5</span></td><td>姓・名・かな2種・表示名</td><td class="muted">姓は <code>(tenant_id, family_name)</code> のインデックスで検索</td></tr>
+        <tr><td>連絡先・住所 <span class="muted">7</span></td><td>メール・電話・市区・住所・駐車場2種・第2住所</td><td class="muted">分析・報告時は除外/座標化の対象(NDA 第3条2・第4条)</td></tr>
+        <tr><td class="warn">第三者情報・位置・自由記述 <span class="muted">5</span></td><td>緊急連絡先・続柄・避難場所・メモ・緯度経度</td><td class="warn">2026-09 まで暗号化列。検索性とAI活用のため平文化</td></tr>
+        <tr><td>他システムの会員証 <span class="muted">1</span></td><td>Benefit会員ID</td><td class="warn">同上</td></tr>
+        <tr><td>運用区分 <span class="muted">6</span></td><td>会員種別・状態・支払方法・支払状況・性別・年齢層</td><td class="muted">個人特定に直結しない</td></tr>
+        <tr><td>日時 <span class="muted">7</span></td><td>登録日・外部更新日・第2住所期間2・退会日・作成/更新</td><td class="muted"></td></tr>
+      </table>
+      <p class="muted" style="font-size:.85em;margin-top:.4em">取り込まない列が1つだけある: RESERVA側のログインパスワード。本アプリの認証に使わないため、他システムの資格情報を複製しない。</p>
+    </div>
+    <div>
+      <div class="card">
+        <h3>本文の持ち方(JSON 1本の暗号文をやめた)</h3>
+        <ul style="margin:0">
+          <li><b>日報・事故報告</b>: <code>DailyReportContent</code> / <code>AccidentReportContent</code> と1:1の平文 <code>text</code> 列に分割(日報5列・事故報告11列)。SQLで検索・集計でき、将来 <code>tsvector</code> 等の全文検索インデックスも張れる</li>
+          <li><b>勤怠</b>: <code>row_data jsonb</code> の1列のまま。キーがスプレッドシートの列記号で動的、かつ常に1日分をまるごと読み書きするため分解する利点が無い</li>
+          <li><b>領収書</b>: 金額・店舗名・申し送りは平文列。重複検出は <code>dedupe_key</code>(正規化済み文字列)の等値一致で、ブラインドインデックス(HMAC)は<b>廃止</b></li>
+        </ul>
+      </div>
+      <div class="card" style="margin-top:.6em">
+        <h3 class="ok">暗号化が残っているのは3列だけ</h3>
+        <p style="margin:0"><code>app_settings</code> の Gemini APIキー・Google Chat Webhook URL 2本。個人情報ではなく検索・AI活用の対象外だが、DBダンプが流出したときに平文で漏れると被害が外部サービスへ広がるため残した。</p>
+      </div>
+      <div class="card q" style="margin-top:.6em">
+        <h3 class="warn">このトレードオフ</h3>
+        <ul style="margin:0">
+          <li>得たもの: SQLでの検索・集計・匿名化、日報のAI活用、鍵の配線を分析側へ広げずに済むこと</li>
+          <li>引き受けたもの: <b>DBに直接届く経路があれば業務データは読める</b>。保存時暗号化は本番配備先(Cloud SQL)頼みで、<b>本番は未配備</b></li>
+          <li>復号監査が効くのも資格情報だけになった。データアクセス監査はDB側(pgaudit 等)が本命</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>doc/09 1.3節 / 4.1節 ・ packages/db/src/schema/{customers,dailyReports,attendanceDays,receipts}.ts</span><span>katahimo-app</span></div>
+  <div class="notes">
+    2026-08 のレビューで要配慮6項目まで絞った暗号化を、2026-09 にさらに資格情報だけへ縮小しました。理由は3つ。SQLでの検索性、日報データのAI活用、そして秘密保持契約(案)第6条が求めるのが「アクセス制限・通信/保存時の暗号化・パスワード管理」であってフィールド暗号化ではないこと。左の表で色が付いている6項目が、前回まで暗号化列だったところです。右上が今日いちばん見ていただきたい判断で、日報と事故報告の本文をJSON1本の暗号文から項目ごとの平文列に開きました。勤怠だけはJSONのままです。引き受けたリスクは正直に書いてあります。DBに届く経路があれば業務データは読める、保存時暗号化はCloud SQL頼み、そしてその本番はまだ配備していません。
+  </div>
+</section>
+
+<!-- 11 db review points -->
+<section class="slide mid">
+  <h2>DB設計でご意見をいただきたい点 <small>doc/09 5章</small></h2>
+  <div class="cols">
+    <div>
+      <div class="card q"><h3 class="warn">1. 複合PK/FK + RLS の二重防御</h3>
+        <p>「FKはRLSをバイパスする」というPostgreSQLの仕様は複合FKで塞いだつもり。<b>他に見落としている仕様上の落とし穴はないか</b>。</p>
+        <p class="muted" style="margin:.25em 0 0">塞いだつもりの3点: 単一FKによる跨ぎ / 所有者ロールのバイパス(FORCE) / プール接続に設定が残ること(トランザクションローカル)</p>
+      </div>
+      <div class="card q" style="margin-top:.55em"><h3 class="warn">2. 鍵階層と再暗号化</h3>
+        <p>KEK→DEK→資格情報の階層は、Cloud KMS移行を見据えた形として妥当か。世代は並存させているが<b>再暗号化バッチが無く古い世代の鍵を捨てられない</b>。オンライン再暗号化とメンテ枠バッチのどちらが定石か。</p>
+        <p class="muted" style="margin:.25em 0 0">対象は資格情報3列に縮小したので、規模としては小さくなった</p>
+      </div>
+      <div class="card q" style="margin-top:.55em"><h3 class="warn">3. 監査の粒度</h3>
+        <p>復号ログは資格情報にしか効かなくなった。業務データの参照を追うなら<b>DB側監査(pgaudit 等)をいつ・どの粒度で入れるべきか</b>。将来の訪問看護展開まで見据えたときの要件は。</p>
+        <p class="muted" style="margin:.25em 0 0">認証・権限イベントは「誰が・誰を」まで記録済み。監査ログ自体はDBに持たず Cloud Logging 前提</p>
+      </div>
+    </div>
+    <div>
+      <div class="card q"><h3 class="warn">4. 匿名化と廃棄の運用</h3>
+        <p>報告・分析では氏名・連絡先・住所を除外し、スタッフ氏名は仮名化、住所は座標化する(NDA 第3条2・第4条)。<b>これをSQL/ビューで実施する運用で足りるか</b>。第7条の返還・廃棄を<b>テナント単位の物理DELETE + バックアップ保持期間の満了</b>で担保する整理に不足はないか。</p>
+        <p class="muted" style="margin:.25em 0 0">revoke による暗号学的削除が効くのは資格情報だけになった</p>
+      </div>
+      <div class="card q" style="margin-top:.55em"><h3 class="warn">5. 平文化した本文の扱い</h3>
+        <p>日報・事故報告の本文は項目ごとの <code>text</code> 列、勤怠は <code>jsonb</code>。<b>全文検索インデックス(<code>tsvector</code> / <code>pg_bigm</code> 等)を本文に張る際の注意点</b>と、勤怠をJSONのままにしておく判断の妥当性。</p>
+        <p class="muted" style="margin:.25em 0 0">平文列に並べ替え・集計用の値を外出しする必要は無くなった</p>
+      </div>
+      <div class="card q" style="margin-top:.55em"><h3 class="warn">6. 本番配備時のチェックリスト</h3>
+        <p>保存時暗号化・TLS・IAM・バックアップ保持・削除手順は<b>配備時に満たす前提条件</b>として書き出した。<b>この一覧で漏れがないか</b>。いま動いているのはローカル開発と公開デモだけで、本番(Cloud Run + Cloud SQL)は未配備。</p>
+        <p class="muted" style="margin:.25em 0 0">現時点でコードとして担保しているのは RLS・ロール分離・argon2id・資格情報の暗号化まで</p>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="flex:0 0 auto;margin-top:.7em"><p style="margin:0"><b class="ok">特に伺いたいのは 1・4・6</b>。1は自分では気づきようがない領域、4は契約が求める水準を満たせているかの確認、6は業務データを平文にした以上その前提条件が実際に満たせるかで設計の是非が決まるため。2・3・5は要件と時期次第で答えが変わるものとして挙げている。</p></div>
+  <div class="foot"><span>いずれも doc/09「レビュー観点」に対応。詳細はドキュメント側に記載</span><span>katahimo-app</span></div>
+  <div class="notes">
+    DBに絞った論点が6つ。優先度が高いのは1・4・6です。1番は「二重防御に穴が無いか」で、知識のある方に見ていただかないと自分では気づけない部分。4番は、業務データを平文にした以上、契約が求める水準を運用側でどう満たすかという話。6番は本番配備時のチェックリストで、いまは前提条件として書いてあるだけなので、この一覧で足りているかを見ていただきたい。2・3・5は要件と時期次第で答えが変わるものとして挙げています。
+  </div>
+</section>
+
+<!-- 12 auth -->
 <section class="slide">
   <h2>認証・認可 <small>自前実装(提案書の Firebase Auth からは変更)</small></h2>
   <div class="cols">
@@ -501,7 +745,7 @@
   </div>
 </section>
 
-<!-- 9 request trace -->
+<!-- 13 request trace -->
 <section class="slide">
   <h2>1本のリクエストを追う <small>「日報を保存する」</small></h2>
   <div class="fig">
@@ -549,7 +793,7 @@
     1本追うとこうなります。緑の枠が1つのトランザクションで、日報の行とoutboxへの積み込みが揃って確定します。片方だけ成立する状態を作らないのが要点です。黄色の線から下がWorkerの非同期処理で、送信に失敗しても終端させず、バックオフして戻します。トランザクションの外に出してあるもの(通知・名前解決)には理由があって、単一接続のPGliteで内側から別のトランザクションを開くと自分の完了を待って止まるためです。テストでは、outboxへの書き込みだけを失敗させて日報の行が残らないことを固定しています。
   </div>
 </section>
-<!-- 10 GAS coexistence -->
+<!-- 14 GAS coexistence -->
 <section class="slide">
   <h2>GAS版との共存 <small>正データは PostgreSQL、Sheets はミラー</small></h2>
   <div class="cols w-3-2">
@@ -607,7 +851,7 @@
   </div>
 </section>
 
-<!-- 11 demo -->
+<!-- 15 demo -->
 <section class="slide">
   <h2>公開デモ <small>同じコードをブラウザ内で丸ごと動かす</small></h2>
   <div class="cols w-3-2">
@@ -663,7 +907,7 @@
     デモは営業用でもありますが、アーキテクチャ的には「core が外部SDKを知らない」ことの実証でもあります。本番と同じマイグレーション・同じRLS・同じ暗号化がブラウザ内で動いています。逆に、デモ固有の脆さは PGlite への依存の深さ。ここは本番には影響しません。
   </div>
 </section>
-<!-- 12 quality -->
+<!-- 16 quality -->
 <section class="slide">
   <h2>品質の担保 <small>何をテストし、何をしていないか</small></h2>
   <div class="cols">
@@ -700,7 +944,7 @@
   </div>
 </section>
 
-<!-- 13 reality check -->
+<!-- 17 reality check -->
 <section class="slide mid">
   <h2>主張と実装の対応 <small>誤解を招きやすい点を先に</small></h2>
   <table>
@@ -722,7 +966,7 @@
     このスライドが一番大事かもしれません。提案書を読むと立派に見えますが、赤の行は着手すらしていません。今日判断していただきたいのは「この土台の上に、赤を積んでいってよいか」です。土台に構造的な問題があるなら、赤を積む前に直したい。
   </div>
 </section>
-<!-- 14 questions -->
+<!-- 18 questions -->
 <section class="slide mid">
   <h2>判断していただきたいこと <small>優先度順</small></h2>
   <div class="cols">
@@ -753,7 +997,7 @@
   </div>
 </section>
 
-<!-- 15 closing -->
+<!-- 19 closing -->
 <section class="slide title-slide">
   <h1 style="font-size:2em">まとめ</h1>
   <div class="cols" style="flex:0 0 auto;margin-top:.5em">
@@ -765,6 +1009,7 @@
         <li>揃って成立すべき書き込みが1つのトランザクションで確定する</li>
         <li>業務データは RLS + IAM で保護し、保存時暗号化は本番配備先(Cloud SQL)に委ねる想定(NDA 第6条の水準。<b>本番は未配備</b>のため配備時の前提条件)。資格情報だけ列暗号化と鍵の世代管理を実装済み</li>
         <li>認証の失敗経路(列挙・総当たり・割り込み・部分更新・クロスサイト)を塞いだ</li>
+        <li>13テーブルすべてで同じスキーマ規約(複合FK・tenant_id先頭のインデックス・平文と暗号化の線引き)</li>
       </ul>
     </div>
     <div>
@@ -774,6 +1019,7 @@
         <li>鍵管理を本番相当にする時期</li>
         <li>予約・請求・カルテを土台に入れる順番</li>
         <li>テストの薄い層と、運用の受け皿をどこまで作るか</li>
+        <li>DB: 匿名化・廃棄の運用、DB側監査を入れる時期、本番配備時のチェックリスト</li>
       </ul>
     </div>
   </div>

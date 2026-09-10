@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MAX_OUTBOX_ATTEMPTS } from '../domain/mirror/retry';
+import type { MirrorKind } from '../ports/mirror';
 import type { MirrorWorkerDeps } from './mirrorWorker';
 import { runOutboxBatch } from './mirrorWorker';
 import {
@@ -127,18 +128,22 @@ describe('ミラージョブの再試行', () => {
   });
 
   it('未対応の種別は再試行せず、その場でデッドレターに落とす', async () => {
+    // outbox_jobs.kindはDBではtext列で、DrizzleOutboxRepositoryがMirrorKindへ無検査で
+    // キャストしている。廃止した種別の積み残しや手で入れた行など、MirrorKindに無い値が
+    // ワーカーに届くことは実際に起こりうるため、その経路を固定する。
     await outbox.enqueue({
       tenantId,
-      kind: 'calendar_event',
-      targetId: 'event-1',
-      idempotencyKey: 'calendar_event:event-1:1',
+      kind: 'legacy_unknown_kind' as MirrorKind,
+      targetId: 'target-1',
+      idempotencyKey: 'legacy_unknown_kind:target-1:1',
     });
 
     const result = await runOutboxBatch(deps, tenantId, 10, now);
 
     expect(result.deadLettered).toBe(1);
-    const row = outbox.listAllForTest().find((r) => r.kind === 'calendar_event');
+    const row = outbox.listAllForTest().find((r) => (r.kind as string) === 'legacy_unknown_kind');
     expect(row?.status).toBe('failed');
+    expect(row?.lastError).toContain('未対応のミラー種別です');
     expect(row?.attempts).toBe(1);
   });
 });

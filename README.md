@@ -346,7 +346,7 @@ pnpm --filter @katahimo/api import:legacy-staff demo "氏名" メールアドレ
 - [x] **Phase 3 — 取込・アップサート基盤(RESERVA CSV)**: `parseFamilyInfo`/`normalizeDateStr`(GAS版`CsvImport.js`から完全移植、実サンプル398行でGAS実行結果と1件残らず一致することを検証済み)・Excelシリアル日時変換を追加し、RESERVA顧客CSV(UTF-16LE・タブ区切り・30列、パスワード列を除く全項目)のデコード/パース/外部ID突合による差分計算(作成/更新/ソフトデリート)/適用を実装。世帯構成員(子ども等)は`family_members`テーブルに全件保存し、詳細取得で確認できる(当時は暗号化列、2026-09 以降は平文列)。消失率(取込データから消えた顧客の割合)が閾値を超えると適用を拒否する安全装置つき。実データ(`fixtures/Kokyaku_202601191958_1_dummy.csv`、398件)を実際にPostgreSQLへ取り込み、冪等性(再取込で重複しないこと)も確認済み。**地区(city)はGAS版`Main.js`の住所パーサーを移植した`extractCityFromAddress`で住所文字列から自動抽出する**(当初は「信頼できるパーサーが無い」として未設定にしていたが、GAS版自身がこのパーサーを実務で使っていたと判明したため2026-08-28に追加)。
 - [x] **Phase 4 — 顧客詳細画面(読み取り系の一部)+ UIをGAS版に合わせて再構築**: `GET /api/customers/:id`(セッションのtenantIdのみを使用)を追加。RESERVA CSV由来の全項目・世帯構成員一覧を表示する(当時は復号を挟んでいたが、2026-09 の見直しで平文列に)。当初はreact-router-domでページ遷移させていたが、移行時の混乱を減らすためGAS版(`gas-childcare-visit-app/index.html`)と同じ「ヘッダー+3タブ(📅 予定/🏠 訪問先一覧/🕒 勤怠)のURLなし単一ページアプリ」構造・Tailwind配色に作り直した(react-router-domは廃止)。顧客詳細はGAS版と同じボトムシートモーダルに変更。「予定」タブは当時Calendar連携(Phase 5)が無かったため空状態を表示する枠のみだったが、後述のPhase 5進捗で実装した。
 - [x] **日報/事故報告/活動記録/領収書登録**: `daily_reports`/`accident_reports`/`receipts`テーブル(当初は自由記述をattendance_daysと同じくJSON1本にまとめて暗号化していたが、2026-09 の見直しで日報/事故報告は項目ごとの平文`text`列、勤怠は平文`jsonb`に変更)、`POST /api/reports/daily`・`/accident`・`/daily/generate`・`/accident/generate`・`GET /api/reports/history`・`POST /api/receipts`・`/ocr`を実装。GAS版`GeminiReport.js`の`callGemini`(思考パートのスキップ・コードフェンス除去・改行アンエスケープ・HTTPステータス別エラーメッセージ)と`Main.js`の`getCustomerReports`/`saveReport`/`saveAccidentReport`/`uploadReceiptsOnly`をNode実行結果と突き合わせて移植。`GEMINI_API_KEY`未設定時はGAS版と同じフォールバック応答を返す(`NoopReportAiPort`)。領収書画像は`StoragePort`(ローカル開発は`LocalFileStoragePort`、本番はGCS想定)に保存し、Google Chat通知は`WebhookNotifierPort`(Webhook URL未設定時はスキップ)で送る。Web UIは訪問先一覧のカードタップで報告作成モーダル、「顧客情報」「活動記録」ボタンでそれぞれ専用モーダルを開く3導線構成にした(GAS版の`openModal`/`showCustomerDetail`/`showCustomerHistory`と同じ使い分け)。ローカルPostgreSQL+APIで一気通貫の動作確認済み(Gemini実API呼び出し自体はAPIキー未設定のため未検証)。
-- [ ] **Phase 5 — 外部連携(Sheets/Drive/Calendar/Maps、ミラーはoutbox。Chat/Geminiは上記で先行実装済み)**: 着手中。
+- [ ] **Phase 5 — 外部連携(Sheets/Drive/Calendar/Maps、ミラーはoutbox。Chat/Geminiは上記で先行実装済み)**: 着手中(残るのはBridge.jsの本番デプロイ承認と、本番アダプタ(GCS/Cloud KMS)。ミラーの種別は下記のとおり出揃った)。
   Google Maps Platform(新規契約・課金設定が必要)を避けるため、**稼働中のgas-childcare-visit-app Web App
   (`Bridge.js`)を軽量なJSON APIプロキシとして再利用する方式にした**。GASのMapsサービス
   (`Maps.newGeocoder`/`newDirectionFinder`、無料)と、既に本番で動いているカレンダー解析・ルート計算
@@ -359,8 +359,8 @@ pnpm --filter @katahimo/api import:legacy-staff demo "氏名" メールアドレ
   (`clasp push`/新デプロイ作成)とScript PropertiesへのBRIDGE_API_SECRET設定はユーザー承認待ちのため
   未実施**で、実際にAPIを叩いての動作検証(このリポジトリのLogic verification規約が求める検証)は
   まだ行っていない。
-  **Sheets/Driveへのミラー書き込み(outbox)のうち、日報/事故報告/領収書/勤怠(出勤簿)の4種類を実装した**
-  (`attendance_aggregate`・`calendar_event`は未着手)。設計はGAS版と同じくBridge.js経由(Maps
+  **Sheets/Driveへのミラー書き込み(outbox)は日報/事故報告/領収書/勤怠(出勤簿)/勤怠集計の
+  5種類**。設計はGAS版と同じくBridge.js経由(Maps
   Platform同様、書き込みも稼働中のWeb Appデプロイのアクセス権をそのまま使うことで新規のGCP
   サービスアカウント/Sheets APIの権限付与を避けた)。`saveDailyReport`/`saveAccidentReport`/
   `uploadReceipts`/`saveAttendanceDay`の各usecaseがDB保存に成功した直後、`MirrorPort.enqueue`で
@@ -380,9 +380,31 @@ pnpm --filter @katahimo/api import:legacy-staff demo "氏名" メールアドレ
   一致すること、ブリッジが到達不能な場合はジョブが例外を投げずに`lastError`を記録して再試行待ちへ
   戻り、次のポーリングに影響しないことを確認済み。**Bridge.js側の書き込みaction自体は
   Sheets/Drive連携の中核であるため、読み取り側と同じくデプロイ承認待ち(未デプロイ)**。
-  `attendance_aggregate`(「勤怠集計」シート)・`calendar_event`(Googleカレンダー同期)は
-  次のフェーズで追加する。ワーカーはこの2種類を未対応として扱い、万一積まれていても再試行せず
-  即デッドレターに落とす(`PermanentMirrorError`。何度試しても成功しないものを再試行しても
+  **`attendance_aggregate`(「勤怠集計」シート)は他の4種類と作りが違う**。勤怠集計シートは
+  katahimo-app の入力値ではなく Google カレンダーの予定と Maps のルート計算から導かれる派生
+  データで、1行=予定1件(種別・顧客名・開始/終了・移動時間・距離・各ルートURLの17列。
+  `RouteSearch.js` の `ATTENDANCE_SHEET_HEADER`)という形をしており、`attendance_days` が持つ
+  出勤簿の入力列とは形も出自も違うため DB の値を書き写せない。そのためこの種別だけは値を送らず、
+  対象スタッフ名と日付だけを渡して**GAS側に再計算をやり直させる**(Bridge.jsの新規action
+  `writeAttendanceAggregate` が `computeAttendanceRowDataForStaffOnDate_` で計算し、
+  `writeAttendanceAggregateRows_` で該当スタッフ・該当日の既存行を消してから書き直す。GAS版
+  `refreshAttendanceForStaffOnDate` からセッション検証・管理者チェックを外したものと同じ。個別
+  出勤簿には触らないので、`attendance_day` のミラーが書いた行を上書きすることはない。行を消して
+  から書き直す形なので再送で行が増えることもない)。**ジョブ1件ごとにGAS側でMapsのルート計算が
+  走るため既定では積まない**(`MIRROR_ATTENDANCE_AGGREGATE=false`。GAS版自身も「この日を
+  カレンダーから反映」ボタンと夜間トリガーの2経路だけで再計算しており、勤怠の保存ごとには
+  走らせていない)。スタッフ名が引けない勤怠行のジョブは、空文字で送ると GAS 側がどのスタッフの
+  行を消して書き直すか決められないため、再試行せず即デッドレターに落とす。GAS の実行時間が
+  伸びる分、ワーカーのブリッジ呼び出しタイムアウトは `GAS_BRIDGE_TIMEOUT_MS`(既定20秒)で
+  延ばせるようにした。
+  **Googleカレンダーへのミラー(旧 `calendar_event`)は対象外として `MirrorKind` から外した**。
+  GAS版はカレンダーを読むだけで一度も書き込んでいない(`RouteSearch.js` の `CalendarApp` 呼び出しは
+  `getEvents`/`getMyStatus` のみ)ため、書き戻し先そのものが存在しない。`CalendarPort`
+  (`packages/core/src/ports/calendar.ts`)は実装を持たない型だけの状態で、将来カレンダーを
+  新システム側で編集する要件が出たときの置き場所として残してある。`outbox_jobs.kind` はDBでは
+  `text` 列でリポジトリが `MirrorKind` へ無検査キャストしているため、`MirrorKind` に無い値
+  (廃止した種別の積み残し等)がワーカーに届くことは起こりうる。その場合は再試行せず即
+  デッドレターに落とす(`PermanentMirrorError`。何度試しても成功しないものを再試行しても
   キューを詰まらせるだけのため)。
 - [x] **書き込みの原子性とミラーの再試行**: 日報/事故報告/勤怠/領収書の保存と`outbox_jobs`への
   enqueue、パスワード再設定コードの消費と新しいパスワードの書き込みは、それぞれ同一トランザクションで

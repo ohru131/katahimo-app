@@ -17,6 +17,11 @@ const envSchema = z.object({
   // 未設定の場合はNoopMirrorSenderPort(何もせず成功扱い)にフォールバックする。
   GAS_BRIDGE_URL: z.string().optional(),
   GAS_BRIDGE_SECRET: z.string().optional(),
+  // ブリッジ1回あたりのタイムアウト(ミリ秒)。既定はGasBridgeClientの20秒。
+  // 勤怠集計の再計算(writeAttendanceAggregate)はGAS側でカレンダー取得+予定件数分の
+  // Mapsルート計算まで走るため、他のactionより時間がかかる。足りずに打ち切られるようなら
+  // ここを延ばす(打ち切られてもジョブは再試行待ちに戻るだけで、失われはしない)。
+  GAS_BRIDGE_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
 
   // ポーリング間隔(ミリ秒)。
   OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),

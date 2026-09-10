@@ -10,20 +10,30 @@
 
 import type { TransactionScope } from './unitOfWork';
 
-/** ミラー対象の種類。outbox_jobs.kind に対応する。 */
+/**
+ * ミラー対象の種類。outbox_jobs.kind に対応する。
+ *
+ * Googleカレンダーへのミラー(旧 `calendar_event`)は**対象外**として外した。GAS版は
+ * カレンダーを読むだけで一度も書き込んでいない(`RouteSearch.js` の `CalendarApp` 呼び出しは
+ * `getEvents`/`getMyStatus` のみ)。予定の作り手はRESERVAの予約連携とスタッフの手動操作で、
+ * 書き戻し先そのものが存在しない。
+ */
 export type MirrorKind =
   /** 個別出勤簿スプレッドシートの1日分の行(入力列のみ・値のみ。数式セルには触れない) */
   | 'attendance_day'
-  /** 「勤怠集計」スプレッドシートの集約行 */
+  /**
+   * 「勤怠集計」スプレッドシートの集約行。他の種別と違い、DBの値をそのまま書き写すのではなく
+   * GAS側にカレンダー+Mapsからの再計算をやり直させる(RouteSearch.js の
+   * `computeAttendanceRowDataForStaffOnDate_` + `writeAttendanceAggregateRows_`)。
+   * 詳細は MirrorSenderPort の AttendanceAggregateMirrorPayload 参照。
+   */
   | 'attendance_aggregate'
   /** 「日報」シートへの追記 */
   | 'daily_report'
   /** 「事故報告」シートへの追記 */
   | 'accident_report'
   /** 領収書ログシート + Driveフォルダへの保存 */
-  | 'receipt'
-  /** Googleカレンダーの予定 */
-  | 'calendar_event';
+  | 'receipt';
 
 export interface MirrorJob {
   tenantId: string;

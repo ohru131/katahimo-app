@@ -235,6 +235,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
     const attendanceDeps: AttendanceDeps = {
       attendanceDays,
       mirror: outbox,
+      mirrorAttendanceAggregate: false,
       unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
     };
 
@@ -265,6 +266,98 @@ describe('runOutboxBatch / processOutboxJob', () => {
         values: { C: '訪問先A', D: '09:00', E: '10:00' },
       },
     ]);
+  });
+
+  it('mirrorAttendanceAggregate=trueなら勤怠集計の再計算も積み、スタッフ名と日付だけを送る', async () => {
+    const attendanceDays = new FakeAttendanceDayRepository();
+    const attendanceDeps: AttendanceDeps = {
+      attendanceDays,
+      mirror: outbox,
+      mirrorAttendanceAggregate: true,
+      unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
+    };
+
+    await saveAttendanceDay(attendanceDeps, tenantId, staffId, '2026-08-30', {
+      C: '訪問先A',
+      D: '09:00',
+      E: '10:00',
+    });
+
+    // 出勤簿(attendance_day)と勤怠集計(attendance_aggregate)は別ジョブとして積まれる。
+    // 冪等キーがkind込みなので、同じレコード・同じ版でも片方が捨てられることはない。
+    expect(
+      outbox
+        .listAllForTest()
+        .map((r) => r.kind)
+        .sort(),
+    ).toEqual(['attendance_aggregate', 'attendance_day']);
+
+    const workerDeps: MirrorWorkerDeps = {
+      outbox,
+      dailyReports: new FakeDailyReportRepository(),
+      accidentReports: new FakeAccidentReportRepository(),
+      receipts: new FakeReceiptRepository(),
+      attendanceDays,
+      staff,
+      customers,
+      storage: new FakeStoragePort(),
+      sender,
+    };
+    const result = await runOutboxBatch(workerDeps, tenantId);
+
+    expect(result).toEqual({ processed: 2, failed: 0, deadLettered: 0 });
+    // 勤怠集計シートはカレンダー+Maps由来の派生データなので、rowDataの値は一切送らない
+    // (再計算はGAS側が行う)。
+    expect(sender.attendanceAggregates).toEqual([{ staffName: '佐藤 花子', businessDate: '2026-08-30' }]);
+  });
+
+  it('mirrorAttendanceAggregateが既定(false)なら勤怠集計の再計算は積まない', async () => {
+    const attendanceDays = new FakeAttendanceDayRepository();
+    const attendanceDeps: AttendanceDeps = {
+      attendanceDays,
+      mirror: outbox,
+      mirrorAttendanceAggregate: false,
+      unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
+    };
+
+    await saveAttendanceDay(attendanceDeps, tenantId, staffId, '2026-08-30', { C: '訪問先A' });
+
+    expect(outbox.listAllForTest().map((r) => r.kind)).toEqual(['attendance_day']);
+  });
+
+  it('勤怠集計のミラーでスタッフ名が引けない場合は再試行せずデッドレターに落とす', async () => {
+    const attendanceDays = new FakeAttendanceDayRepository();
+    // スタッフ台帳に存在しないIDの勤怠(スタッフ行が消された等)を直接作る。
+    const record = await attendanceDays.upsert(tenantId, 'staff-missing', '2026-08-30', {
+      C: '訪問先A',
+    });
+    await outbox.enqueue({
+      tenantId,
+      kind: 'attendance_aggregate',
+      targetId: record.id,
+      idempotencyKey: 'attendance_aggregate:missing:1',
+    });
+
+    const workerDeps: MirrorWorkerDeps = {
+      outbox,
+      dailyReports: new FakeDailyReportRepository(),
+      accidentReports: new FakeAccidentReportRepository(),
+      receipts: new FakeReceiptRepository(),
+      attendanceDays,
+      staff,
+      customers,
+      storage: new FakeStoragePort(),
+      sender,
+    };
+    const result = await runOutboxBatch(workerDeps, tenantId);
+
+    // 名前が引けないまま送ると、GAS側がどのスタッフの行を消して書き直すか決められない
+    // (勤怠集計シートの行はスタッフ名で突き合わせる)。空文字で送らず打ち切る。
+    expect(result).toEqual({ processed: 0, failed: 1, deadLettered: 1 });
+    const row = outbox.listAllForTest().find((r) => r.kind === 'attendance_aggregate');
+    expect(row?.status).toBe('failed');
+    expect(row?.lastError).toContain('勤怠集計のミラー対象スタッフが見つかりません');
+    expect(sender.attendanceAggregates).toEqual([]);
   });
 
   it('領収書の画像がストレージから見つからない場合は失敗扱いにする(成功として握りつぶさない)', async () => {
@@ -317,6 +410,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
     const attendanceDeps: AttendanceDeps = {
       attendanceDays,
       mirror: outbox,
+      mirrorAttendanceAggregate: false,
       unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
     };
 

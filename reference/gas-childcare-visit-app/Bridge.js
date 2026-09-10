@@ -306,6 +306,45 @@ function bridgeWriteAttendanceDay_(payload) {
 }
 
 /**
+ * 「勤怠集計」シート(RouteSearch.jsのROUTE_SEARCH_ATTENDANCE_FILE_NAME)の該当スタッフ・
+ * 該当日の行を、カレンダーから再計算して書き直す。
+ *
+ * 他の書き込みactionと違い、katahimo-app側から値を受け取らない(勤怠集計シートは1行=予定1件で、
+ * 種別・移動時間・距離・各ルートURLまでカレンダーとMapsから導く派生データのため。
+ * ATTENDANCE_SHEET_HEADER参照)。渡すのは対象スタッフ名と日付だけで、計算はGAS側で行う。
+ *
+ * 実質的にRouteSearch.jsのrefreshAttendanceForStaffOnDateからセッション検証・管理者チェックを
+ * 外したもの(katahimo-app側で権限チェック済みのため。読み取り側のbridgeSchedule_と同じ考え方)。
+ * 個別出勤簿への書き込みは行わない(それはwriteAttendanceDayが担当しており、こちらが
+ * writePastScheduleRowData_まで呼ぶとkatahimo-appが正としている出勤簿の値を
+ * カレンダー由来の値で上書きしてしまう)。
+ */
+function bridgeWriteAttendanceAggregate_(payload) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return { success: false, message: 'サーバーが混み合っています。しばらくしてから再試行してください。' };
+  }
+  try {
+    const staffName = payload.staffName || '';
+    const dateString = payload.businessDate;
+    if (!staffName || !dateString) {
+      return { success: false, message: 'staffName/businessDateが必要です。' };
+    }
+    const result = computeAttendanceRowDataForStaffOnDate_(staffName, dateString);
+    if (!result || result.success !== true) {
+      return { success: false, message: 'カレンダー予定の取得に失敗しました。' };
+    }
+    // 該当スタッフ・該当日の既存行を消してから書き直すため、同じ内容の再送で行が増えることはない。
+    writeAttendanceAggregateRows_(result.staffName, result.date, result.outputRows);
+    return { success: true, appointmentCount: (result.appointments || []).length };
+  } catch (e) {
+    return { success: false, message: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
  * ミラー書き込み用のリクエストハンドラ。doPost(e)から呼ばれる
  * (画像base64・自由記述テキストを本文JSONで受け取るため、読み取り側のGETとは分ける)。
  */
@@ -332,6 +371,8 @@ function handleBridgeWriteRequest_(e) {
       return bridgeJsonResponse_(bridgeWriteReceipt_(payload));
     case 'writeAttendanceDay':
       return bridgeJsonResponse_(bridgeWriteAttendanceDay_(payload));
+    case 'writeAttendanceAggregate':
+      return bridgeJsonResponse_(bridgeWriteAttendanceAggregate_(payload));
     default:
       return bridgeJsonResponse_({ success: false, message: '不明なactionです: ' + params.action });
   }

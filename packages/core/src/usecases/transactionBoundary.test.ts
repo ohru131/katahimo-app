@@ -200,6 +200,7 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
     const attendanceDeps: AttendanceDeps = {
       attendanceDays,
       mirror: new FailingMirrorPort(),
+      mirrorAttendanceAggregate: false,
       unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
     };
 

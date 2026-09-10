@@ -19,6 +19,7 @@ describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
     deps = {
       attendanceDays,
       mirror,
+      mirrorAttendanceAggregate: false,
       unitOfWork: new FakeUnitOfWork([attendanceDays, mirror]),
     };
   });

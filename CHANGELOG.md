@@ -2,6 +2,75 @@
 
 > 旧モノレポ `C001-cutest-internal/01_GAS/CHANGELOG.md`(全プロジェクト横断)から、katahimo-app に関するエントリ(Ver. 1.1.0〜1.1.23、Phase 0〜Phase 5継続)のみを抜粋・独立化したもの。それ以前(Ver. 1.0.x以前)は katahimo-app 誕生前の他 `gas-*` プロジェクトのエントリのため含めていない。Ver. 1.1.23 は `gas-childcare-visit-app`(GAS版、旧モノレポに残置)側の `Bridge.js` 変更も含む合同エントリだが、katahimo-app 側の変更点の文脈として必要なためそのまま残してある。今後この新リポジトリでの更新はこのファイルに追記していく。
 
+## [Ver. 1.1.25] - 2026-09-10
+
+### katahimo-app / gas-childcare-visit-app(Phase 5の積み残し: 勤怠集計シートのミラーを実装、カレンダーのミラーは対象外に確定)
+
+「Phase 5の積み残しがあれば実装してほしい」との依頼を受け、Ver. 1.1.23 で「次フェーズ」として
+残していたミラー2種類(`attendance_aggregate`・`calendar_event`)を調べ直したうえで、
+勤怠集計シートのミラーを実装し、カレンダーのミラーは対象外として`MirrorKind`から外した。
+
+- **`calendar_event`を対象外にした根拠**: GAS版はGoogleカレンダーを**読むだけで一度も書き込んで
+  いない**(`RouteSearch.js`の`CalendarApp`呼び出しは`getEvents`/`getMyStatus`のみ)。予定の
+  作り手はRESERVAの予約連携とスタッフの手動操作であり、新システムから書き戻す先そのものが
+  存在しない。ポート定義に置いていた種別が推測で先行していただけだったため、`MirrorKind`から
+  削除した。`CalendarPort`(実装を持たない型だけの状態)は、カレンダーを新システム側で編集する
+  要件が出たときの置き場所として残し、未使用であることをコメントに明記した。
+- **`attendance_aggregate`は「値を送らない」ミラーとして実装した**: 勤怠集計シートは
+  katahimo-appの入力値ではなく、カレンダーの予定とMapsのルート計算から導かれる派生データで、
+  1行=予定1件(種別・顧客名・開始/終了・移動時間・距離・各ルートURLの17列。
+  `ATTENDANCE_SHEET_HEADER`)という形をしており、`attendance_days`が持つ出勤簿の入力列とは
+  形も出自も違う。DBの値を書き写せないため、この種別だけは対象スタッフ名と日付だけを渡して
+  **GAS側に再計算をやり直させる**形にした(`AttendanceAggregateMirrorPayload`)。
+- **`gas-childcare-visit-app`側**: `Bridge.js`に`writeAttendanceAggregate` actionを追加。
+  `computeAttendanceRowDataForStaffOnDate_`で計算し`writeAttendanceAggregateRows_`で該当スタッフ・
+  該当日の既存行を消してから書き直す(GAS版`refreshAttendanceForStaffOnDate`からセッション検証・
+  管理者チェックを外したものと同じ。読み取り側の`bridgeSchedule_`と同じくkatahimo-app側の権限
+  チェックに委ねる)。個別出勤簿には触らない(`writePastScheduleRowData_`まで呼ぶと、
+  katahimo-appが正としている出勤簿の値をカレンダー由来の値で上書きしてしまうため)。
+- **既定では積まない**(`MIRROR_ATTENDANCE_AGGREGATE=false`): ジョブ1件ごとにGAS側でMapsの
+  ルート計算が走るため、勤怠の保存ごとに無条件で積むと編集の回数だけMapsを消費する。GAS版自身も
+  「この日をカレンダーから反映」ボタンと夜間トリガーの2経路だけで再計算しており、勤怠の保存ごとには
+  走らせていない。あわせてワーカーのブリッジ呼び出しタイムアウトを`GAS_BRIDGE_TIMEOUT_MS`
+  (既定20秒)で延ばせるようにした(勤怠集計の再計算は予定件数分のMaps呼び出しを含むため
+  他のactionより時間がかかる。打ち切られてもジョブは再試行待ちに戻るだけで、行を消してから
+  書き直す形なので再送で二重にならない)。
+- **スタッフ名が引けない場合は即デッドレター**: 勤怠集計シートの行はスタッフ名で突き合わせる
+  ため、`attendance_day`のミラーのように空文字へフォールバックすると、GAS側がどのスタッフの行を
+  消して書き直すか決められず他スタッフの行を巻き込みかねない。再試行しても引けるようにはならない
+  ので`PermanentMirrorError`で打ち切る。
+- **未知の種別の扱いを整理した**: `outbox_jobs.kind`はDBでは`text`列で`DrizzleOutboxRepository`が
+  `MirrorKind`へ無検査キャストしているため、`MirrorKind`に無い値(廃止した種別の積み残し等)が
+  ワーカーに届くことは実際に起こりうる。デッドレターに落とす分岐の根拠をこれに置き換え、
+  回帰テストも`calendar_event`ではなく未知の種別で固定するようにした。
+
+検証は次の3段で行った。
+
+1. **ワーカー側(usecase)**: `pnpm test` に勤怠集計のミラー3件を追加(積む/積まない/スタッフ名が
+   引けない場合のデッドレター)。全体で336件パス。
+2. **送信の実物(HTTP)**: `GasBridgeMirrorSenderPort`をBridge.jsの代わりのダミーHTTPサーバーへ
+   実際にPOSTさせ、`?api=1&action=writeAttendanceAggregate&secret=...`と本文
+   `{staffName, businessDate}`がBridge.js側が読むフィールド名と一致すること、GAS側の
+   `success:false`と到達不能がどちらも例外になること(=成功扱いでジョブを捨てない)を確認した。
+   GAS版はこのリポジトリの外にあり型で繋がらないため、回帰テストとして残した
+   (`packages/integrations/src/gas-bridge/gasBridgeMirrorSenderPort.test.ts`)。
+3. **Bridge.js側(GASコードをNodeで実行)**: `LockService`/`PropertiesService`/`ContentService`と
+   `computeAttendanceRowDataForStaffOnDate_`/`writeAttendanceAggregateRows_`/
+   `writePastScheduleRowData_`をスタブに差し替えて`Bridge.js`を`node:vm`で読み込み、
+   `bridgeWriteAttendanceAggregate_`の20項目を確認(正常系で勤怠集計に1回だけ書く・
+   **個別出勤簿には一度も書かない**・staffName/businessDate欠落や計算例外やロック取得失敗では
+   シートに部分反映せず`success:false`を返す・いずれの経路でもロックを解放する・`doPost`の
+   ルーティングとsecret検証)。全項目パス。
+
+`pnpm -r typecheck`は9パッケージすべてDone。`pnpm lint`はこの作業機(`core.autocrlf=true`)では
+作業ツリーがCRLFになりBiomeの既定(LF)と食い違って全ファイルが落ちるため、変更ファイルをLFに
+正規化して`biome check`を通した(変更前後で全体のエラー件数は273件のまま同数)。
+`packages/demo/src/cookieJar.test.ts`の7件の失敗は本変更前から出ている既存の失敗。
+
+**未検証**: 実際のGoogleスプレッドシート「勤怠集計」への反映と、ローカルPostgreSQLを通した
+`pending`→`done`の遷移。前者はBridge.jsの本番デプロイ承認待ち(他の書き込みactionと同じ)、
+後者はこの作業機に開発DBの資格情報(`.env`)が無いため。
+
 ## [Ver. 1.1.24] - 2026-09-10
 
 ### katahimo-app(データベース暗号化の見直し: フィールド暗号化を資格情報のみに縮小)

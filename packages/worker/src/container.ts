@@ -33,7 +33,11 @@ export function createWorkerContainer(env: WorkerEnv, db: Database): WorkerConta
   }
   const gasBridgeOptions =
     env.GAS_BRIDGE_URL && env.GAS_BRIDGE_SECRET
-      ? { baseUrl: env.GAS_BRIDGE_URL, secret: env.GAS_BRIDGE_SECRET }
+      ? {
+          baseUrl: env.GAS_BRIDGE_URL,
+          secret: env.GAS_BRIDGE_SECRET,
+          timeoutMs: env.GAS_BRIDGE_TIMEOUT_MS,
+        }
       : null;
 
   return {

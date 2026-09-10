@@ -4,6 +4,15 @@
  * GAS版は CalendarApp.getAllCalendars() で「デプロイユーザーが見られる全カレンダー」を
  * 横断していたが、サーバー実装には等価なAPIがない。新設計では「どのカレンダーを読むか」を
  * 呼び出し側(スタッフに紐づく calendar_id)が明示する。
+ *
+ * **このポートには実装が無く、まだどこからも使っていない**。予定の閲覧は SchedulePort
+ * (GAS版のカレンダー解析・ルート計算をBridge.js経由でそのまま使う)が担っており、書き込み
+ * (createEvent/updateEvent/deleteEvent)については移行元に相当する処理が存在しない
+ * ── GAS版はカレンダーを読むだけで一度も書き込んでいない(RouteSearch.js の CalendarApp
+ * 呼び出しは getEvents/getMyStatus のみ)。予定の作り手はRESERVAの予約連携とスタッフの
+ * 手動操作であり、新システムから書き戻す先が無いため、ミラーの種別からも外している
+ * (./mirror.ts の MirrorKind 参照)。カレンダーを新システム側で編集する要件が出たときの
+ * 置き場所として型だけ残してある。
  */
 export interface CalendarEventInput {
   title: string;

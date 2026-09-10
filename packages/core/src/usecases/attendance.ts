@@ -18,6 +18,16 @@ export interface AttendanceDeps {
   attendanceDays: AttendanceDayRepositoryPort;
   /** 出勤簿スプレッドシートへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
   mirror: MirrorPort;
+  /**
+   * 出勤簿のミラーに加えて「勤怠集計」シートの再計算(`attendance_aggregate`)も積むか
+   * (`MIRROR_ATTENDANCE_AGGREGATE`、既定false)。
+   *
+   * このジョブ1件ごとにGAS側でMapsのルート計算が走るため、保存のたびに無条件で積むと
+   * 編集の回数だけMapsを消費する(GAS版は「この日をカレンダーから反映」ボタンと夜間トリガーの
+   * 2経路だけで再計算しており、勤怠の保存ごとには走らせていない)。既定で切っておき、
+   * 勤怠集計シートを新システム側から更新したい運用に切り替えるときだけ有効にする。
+   */
+  mirrorAttendanceAggregate: boolean;
   /** 勤怠の保存とミラー要求のenqueueを、1つのトランザクションにまとめるために使う。 */
   unitOfWork: UnitOfWorkPort;
 }
@@ -65,6 +75,21 @@ export async function saveAttendanceDay(
       },
       scope,
     );
+    // 勤怠集計シートの再計算は別のジョブとして積む(冪等キーもkind込みで別になるため、
+    // 出勤簿のミラーと取り違えて片方が捨てられることはない)。出勤簿への書き込みが先に
+    // 済んでいる必要はない: GAS側の勤怠集計の書き込みは個別出勤簿に触らないため、
+    // どちらが先に処理されても結果は変わらない。
+    if (deps.mirrorAttendanceAggregate) {
+      await deps.mirror.enqueue(
+        {
+          tenantId,
+          kind: 'attendance_aggregate',
+          targetId: record.id,
+          idempotencyKey: buildMirrorIdempotencyKey('attendance_aggregate', record.id, record.updatedAt),
+        },
+        scope,
+      );
+    }
   });
   return { businessDate, rowData, derived: computeDayDerived(rowData) };
 }

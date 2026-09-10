@@ -43,9 +43,11 @@ export class PermanentMirrorError extends Error {
  * outbox_jobs1件分を実際にGAS版スプレッドシート/Driveへミラーする。DBの最新値を読み直し、
  * GAS側の列にそのまま書き込める形(MirrorSenderPortのペイロード)に整形する。
  *
- * 対応する種別は daily_report / accident_report / receipt / attendance_day の4つ(Phase 5の
- * うち先行実装分)。attendance_aggregate / calendar_event は未対応(将来のPhaseで追加する)ため、
- * 万一積まれていても再試行はせずデッドレターに落とす(PermanentMirrorError)。
+ * 対応する種別は MirrorKind の全て(daily_report / accident_report / receipt /
+ * attendance_day / attendance_aggregate)。outbox_jobs.kind はDBでは text 列で、リポジトリが
+ * MirrorKind へ無検査キャストしているため、ここに未知の値が届くことは実際に起こりうる
+ * (古いジョブが残ったまま種別を廃止した、行を手で入れた等)。その場合は何度試しても
+ * 結果が変わらないので、再試行はせずデッドレターに落とす(PermanentMirrorError)。
  * targetIdのレコードが既に存在しない場合(削除等)は何もしない(エラーにはしない)。
  */
 export async function processOutboxJob(
@@ -156,9 +158,32 @@ export async function processOutboxJob(
       return;
     }
 
+    case 'attendance_aggregate': {
+      // 他の種別と違い、DBの値は送らない(勤怠集計シートはカレンダー+Maps由来の派生データで、
+      // attendance_daysの入力列とは形も出自も違う)。対象のスタッフ名と日付だけを渡し、
+      // 再計算とシート書き込みはGAS側に任せる(ports/mirrorSender.tsの
+      // AttendanceAggregateMirrorPayload参照)。
+      const record = await deps.attendanceDays.findById(tenantId, job.targetId);
+      if (!record) return;
+      const staffRecord = await deps.staff.findById(tenantId, record.staffId);
+      // GAS側は勤怠集計シートの行をスタッフ名で突き合わせる(ATTENDANCE_SHEET_HEADERの
+      // 「スタッフ名」列)。名前が引けないまま送ると、どのスタッフの行を消して書き直すのかが
+      // 決まらず、他スタッフの行を巻き込みかねない。再試行しても引けるようにはならないので
+      // その場で打ち切る(attendance_dayのミラーは名前が空でも出勤簿を日付で特定できるため
+      // 空文字にフォールバックしているが、こちらは同じ扱いにできない)。
+      if (!staffRecord) {
+        throw new PermanentMirrorError(`勤怠集計のミラー対象スタッフが見つかりません: ${record.staffId}`);
+      }
+      await deps.sender.sendAttendanceAggregate({
+        staffName: staffRecord.name,
+        businessDate: record.businessDate,
+      });
+      return;
+    }
+
     default:
-      // attendance_aggregate/calendar_eventは未対応(将来のPhaseで追加する)。
-      // 何度試しても結果は変わらないので、再試行の対象にはしない。
+      // outbox_jobs.kindはtext列なので、MirrorKindに無い値が届くことがある(廃止した種別の
+      // 積み残し等)。何度試しても結果は変わらないので、再試行の対象にはしない。
       throw new PermanentMirrorError(`未対応のミラー種別です: ${job.kind}`);
   }
 }

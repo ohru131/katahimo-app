@@ -62,9 +62,20 @@ const envSchema = z.object({
   LOCAL_RECEIPT_STORAGE_DIR: z.string().default('./data/receipts'),
 
   // スプレッドシート脱却時はここを false にするだけでミラーが止まる。
-  // カレンダーのミラー(MirrorKind の calendar_event)はワーカー側が未実装のため、
-  // 対応するフラグも置いていない。
+  // Googleカレンダーへのミラーは対象外(GAS版がカレンダーへ一度も書き込んでいないため
+  // 書き戻し先が無い。packages/core/src/ports/mirror.ts の MirrorKind 参照)。
   MIRROR_TO_GOOGLE_SHEETS: z.coerce.boolean().default(false),
+
+  /**
+   * 勤怠の保存時に「勤怠集計」シートの再計算(MirrorKind の attendance_aggregate)も積むか。
+   * MIRROR_TO_GOOGLE_SHEETS が true のときだけ意味を持つ。
+   *
+   * 既定で false にしてあるのは、このジョブ1件ごとにGAS側でMapsのルート計算が走るため
+   * (GAS版は「この日をカレンダーから反映」ボタンと夜間トリガーだけで再計算しており、
+   * 勤怠の保存ごとには走らせていない)。勤怠集計シートを新システム側から更新する運用に
+   * 切り替えるときだけ有効にする。
+   */
+  MIRROR_ATTENDANCE_AGGREGATE: z.coerce.boolean().default(false),
 
   /**
    * 書き込み系APIを別オリジンから叩くことを許可するオリジン(カンマ区切り)。

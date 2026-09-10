@@ -1,5 +1,6 @@
 import type {
   AccidentReportMirrorPayload,
+  AttendanceAggregateMirrorPayload,
   AttendanceDayMirrorPayload,
   DailyReportMirrorPayload,
   MirrorSenderPort,
@@ -20,8 +21,8 @@ interface BridgeWriteResult {
  * 構造をそのまま知っている)に置き、こちらはペイロードを渡すだけにする。
  *
  * Bridge.js側の書き込みaction(writeDailyReport/writeAccidentReport/writeReceipt/
- * writeAttendanceDay)は、読み取り側のaction追加時と同じくデプロイ承認待ち
- * (CLAUDE.mdの運用ルール、doc/README参照)。
+ * writeAttendanceDay/writeAttendanceAggregate)は、読み取り側のaction追加時と同じく
+ * デプロイ承認待ち(CLAUDE.mdの運用ルール、doc/README参照)。
  */
 export class GasBridgeMirrorSenderPort implements MirrorSenderPort {
   private readonly client: GasBridgeClient;
@@ -52,6 +53,18 @@ export class GasBridgeMirrorSenderPort implements MirrorSenderPort {
   async sendAttendanceDay(payload: AttendanceDayMirrorPayload): Promise<void> {
     await this.post('writeAttendanceDay', payload);
   }
+
+  /**
+   * 勤怠集計シートの再計算。GAS側がカレンダー取得+Mapsのルート計算+シート書き込みまで行うため
+   * 他のactionより時間がかかる(予定件数に比例してMaps呼び出しが増える)。ブリッジ共通の
+   * タイムアウト(既定20秒)で足りない場合はワーカーの GAS_BRIDGE_TIMEOUT_MS を延ばす
+   * (打ち切られてもジョブは再試行待ちに戻るだけで、GAS側の書き込み自体は完了しうる。
+   * 勤怠集計の書き込みは該当スタッフ・該当日の行を消してから書き直す形なので、
+   * 再試行で二重に増えることはない)。
+   */
+  async sendAttendanceAggregate(payload: AttendanceAggregateMirrorPayload): Promise<void> {
+    await this.post('writeAttendanceAggregate', payload);
+  }
 }
 
 /** GAS_BRIDGE_URL/SECRET未設定時のフォールバック。何もせず成功扱いにする(ミラーはスキップ)。 */
@@ -60,4 +73,5 @@ export class NoopMirrorSenderPort implements MirrorSenderPort {
   async sendAccidentReport(): Promise<void> {}
   async sendReceipt(): Promise<void> {}
   async sendAttendanceDay(): Promise<void> {}
+  async sendAttendanceAggregate(): Promise<void> {}
 }

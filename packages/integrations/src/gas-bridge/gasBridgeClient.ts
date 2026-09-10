@@ -63,7 +63,8 @@ export class GasBridgeClient {
   }
 
   /**
-   * ミラー書き込み(daily_report/accident_report/receipt/attendance_day)用。領収書画像の
+   * ミラー書き込み(daily_report/accident_report/receipt/attendance_day/
+   * attendance_aggregate)用。領収書画像の
    * base64データ等、URLクエリに載せるには大きすぎる/不向きなペイロードをJSON POST本体で送る。
    * secret/actionはGET側と同じくURLクエリに載せる(Bridge.js側のdoPost(e).parameterで読む)。
    */

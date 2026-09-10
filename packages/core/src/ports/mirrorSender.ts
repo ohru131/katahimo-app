@@ -68,9 +68,33 @@ export interface AttendanceDayMirrorPayload {
   values: Record<string, string>;
 }
 
+/**
+ * 「勤怠集計」スプレッドシートの集約行。他の種別と違い**値を持たない**。
+ *
+ * 勤怠集計シートはkatahimo-appの入力値ではなく、Googleカレンダーの予定とMapsのルート計算から
+ * 導かれる派生データで、1行=予定1件(種別・顧客名・開始/終了・移動時間・距離・各ルートURLの17列。
+ * `RouteSearch.js` の `ATTENDANCE_SHEET_HEADER`)という形をしている。`attendance_days` が持つ
+ * 出勤簿の入力列とは形も出自も違うため、DBの値を書き写すことができない。
+ *
+ * そのため、この種別だけは「GAS側に対象スタッフ・対象日の再計算をやり直させる」指示として送る
+ * (Bridge.jsの`writeAttendanceAggregate`が`computeAttendanceRowDataForStaffOnDate_`で計算し、
+ * `writeAttendanceAggregateRows_`で該当スタッフ・該当日の既存行を消してから書き直す。GAS版の
+ * `refreshAttendanceForStaffOnDate`からセッション検証を除いたものと同じ)。個別出勤簿への
+ * 書き込みは行わないため、`attendance_day` のミラーが書いた行を上書きすることはない。
+ *
+ * **1件ごとにMapsのルート計算(GASのMapsサービス)を消費する**。そのため既定では積まない
+ * (`MIRROR_ATTENDANCE_AGGREGATE`。AttendanceDeps.mirrorAttendanceAggregate 参照)。
+ */
+export interface AttendanceAggregateMirrorPayload {
+  staffName: string;
+  /** 'YYYY-MM-DD' */
+  businessDate: string;
+}
+
 export interface MirrorSenderPort {
   sendDailyReport(payload: DailyReportMirrorPayload): Promise<void>;
   sendAccidentReport(payload: AccidentReportMirrorPayload): Promise<void>;
   sendReceipt(payload: ReceiptMirrorPayload): Promise<void>;
   sendAttendanceDay(payload: AttendanceDayMirrorPayload): Promise<void>;
+  sendAttendanceAggregate(payload: AttendanceAggregateMirrorPayload): Promise<void>;
 }

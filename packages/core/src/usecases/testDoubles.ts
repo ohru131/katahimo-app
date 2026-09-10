@@ -6,6 +6,7 @@ import type { MailerPort, MailMessage } from '../ports/mailer';
 import type { MirrorJob, OutboxJobRecord, OutboxRepositoryPort } from '../ports/mirror';
 import type {
   AccidentReportMirrorPayload,
+  AttendanceAggregateMirrorPayload,
   AttendanceDayMirrorPayload,
   DailyReportMirrorPayload,
   MirrorSenderPort,
@@ -844,6 +845,7 @@ export class FakeMirrorSenderPort implements MirrorSenderPort {
   readonly accidentReports: AccidentReportMirrorPayload[] = [];
   readonly receipts: ReceiptMirrorPayload[] = [];
   readonly attendanceDays: AttendanceDayMirrorPayload[] = [];
+  readonly attendanceAggregates: AttendanceAggregateMirrorPayload[] = [];
 
   async sendDailyReport(payload: DailyReportMirrorPayload): Promise<void> {
     this.dailyReports.push(payload);
@@ -856,6 +858,9 @@ export class FakeMirrorSenderPort implements MirrorSenderPort {
   }
   async sendAttendanceDay(payload: AttendanceDayMirrorPayload): Promise<void> {
     this.attendanceDays.push(payload);
+  }
+  async sendAttendanceAggregate(payload: AttendanceAggregateMirrorPayload): Promise<void> {
+    this.attendanceAggregates.push(payload);
   }
 }
 

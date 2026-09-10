@@ -111,6 +111,7 @@ export function createDemoContainer(deps: DemoContainerDeps): DemoContainer {
     schedule: new DemoSchedulePort(maps, deps.customerIdByName),
     // ミラー先のGoogleスプレッドシートが存在しないので、outboxには積まない。
     mirror: new NoopMirrorPort(),
+    mirrorAttendanceAggregate: false,
     unitOfWork: new DrizzleUnitOfWork(deps.db),
     audit,
   };

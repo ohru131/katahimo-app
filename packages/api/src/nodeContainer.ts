@@ -96,6 +96,7 @@ export function createContainer(env: Env, db: Database): Container {
     maps: gasBridgeOptions ? new GasBridgeMapsPort(gasBridgeOptions) : new NoopMapsPort(),
     schedule: gasBridgeOptions ? new GasBridgeSchedulePort(gasBridgeOptions) : new NoopSchedulePort(),
     mirror: env.MIRROR_TO_GOOGLE_SHEETS ? new DrizzleOutboxRepository(db) : new NoopMirrorPort(),
+    mirrorAttendanceAggregate: env.MIRROR_ATTENDANCE_AGGREGATE,
     unitOfWork: new DrizzleUnitOfWork(db),
     audit,
     legacyAuthSalt: env.LEGACY_AUTH_SALT,
