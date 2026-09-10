@@ -471,7 +471,8 @@ CREATE TABLE "trait_definitions" (
 	CONSTRAINT "trait_definitions_value_type_check" CHECK ("trait_definitions"."value_type" IN ('bool', 'scale', 'int', 'choice', 'text')),
 	CONSTRAINT "trait_definitions_scale_check" CHECK (("trait_definitions"."value_type" = 'scale' AND "trait_definitions"."scale_min" IS NOT NULL AND "trait_definitions"."scale_max" IS NOT NULL AND "trait_definitions"."scale_max" > "trait_definitions"."scale_min")
         OR ("trait_definitions"."value_type" <> 'scale' AND "trait_definitions"."scale_min" IS NULL AND "trait_definitions"."scale_max" IS NULL)),
-	CONSTRAINT "trait_definitions_choices_check" CHECK (("trait_definitions"."value_type" = 'choice' AND jsonb_typeof("trait_definitions"."choices") = 'array' AND jsonb_array_length("trait_definitions"."choices") > 0)
+	CONSTRAINT "trait_definitions_choices_check" CHECK (("trait_definitions"."value_type" = 'choice' AND "trait_definitions"."choices" IS NOT NULL
+            AND jsonb_typeof("trait_definitions"."choices") = 'array' AND jsonb_array_length("trait_definitions"."choices") > 0)
         OR ("trait_definitions"."value_type" <> 'choice' AND "trait_definitions"."choices" IS NULL)),
 	CONSTRAINT "trait_definitions_match_weight_check" CHECK ("trait_definitions"."match_weight" >= 0),
 	CONSTRAINT "trait_definitions_sort_order_check" CHECK ("trait_definitions"."sort_order" >= 0)

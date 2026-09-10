@@ -107,7 +107,7 @@ PostgreSQLは、`drizzle.__drizzle_migrations` に旧いマイグレーション
 `packages/demo/src/database.ts` の `REBUILD_REQUIRED_MIGRATIONS` により旧スキーマのIndexedDBを
 自動で作り直すため、この対応は不要)。
 
-2026-09に、将来機能のためのテーブルを17本追加した(スキーマ・制約・ドキュメントのみで、
+2026-09に、将来機能のためのテーブルを18本追加した(スキーマ・制約・ドキュメントのみで、
 リポジトリ実装・API・画面はまだ作っていない。DBの形を先に固めて有識者レビューを受けるため)。
 顧客カルテ(`customer_notes`/`customer_note_photos`)、予約(`service_menus`/`reservations`/
 `reservation_assignments`/`staff_availabilities`)、請求と決済(`customer_payment_profiles`/

@@ -95,9 +95,16 @@ export const traitDefinitions = pgTable(
         OR (${t.valueType} <> 'scale' AND ${t.scaleMin} IS NULL AND ${t.scaleMax} IS NULL)`,
     ),
     // 'choice' のときだけ選択肢を持ち、かつ空配列ではない。
+    //
+    // 第1項の `${t.choices} IS NOT NULL` は省略できない。jsonb_typeof(NULL) は false ではなく
+    // NULL を返すため、これが無いと valueType='choice' かつ choices=NULL の行で
+    // 第1項が NULL、第2項が false になり、式全体が NULL になる。PostgreSQL は
+    // **NULL に評価された CHECK 制約を「充足」とみなす**ので、選択肢の無い 'choice' の行が
+    // 素通りしてしまう(選択肢を作れない項目マスタができる)。実際にこれを踏んだ。
     check(
       'trait_definitions_choices_check',
-      sql`(${t.valueType} = 'choice' AND jsonb_typeof(${t.choices}) = 'array' AND jsonb_array_length(${t.choices}) > 0)
+      sql`(${t.valueType} = 'choice' AND ${t.choices} IS NOT NULL
+            AND jsonb_typeof(${t.choices}) = 'array' AND jsonb_array_length(${t.choices}) > 0)
         OR (${t.valueType} <> 'choice' AND ${t.choices} IS NULL)`,
     ),
     // 負の重みは「その特性を持つほど相性が良くなる」という逆向きの意味になり、

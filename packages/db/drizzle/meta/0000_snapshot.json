@@ -1,5 +1,5 @@
 {
-  "id": "3deca800-e943-465e-8e83-d923f94907ca",
+  "id": "a05f6526-4ef5-4a4c-b7fd-1c8174c1011f",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -4146,7 +4146,7 @@
         },
         "trait_definitions_choices_check": {
           "name": "trait_definitions_choices_check",
-          "value": "(\"trait_definitions\".\"value_type\" = 'choice' AND jsonb_typeof(\"trait_definitions\".\"choices\") = 'array' AND jsonb_array_length(\"trait_definitions\".\"choices\") > 0)\n        OR (\"trait_definitions\".\"value_type\" <> 'choice' AND \"trait_definitions\".\"choices\" IS NULL)"
+          "value": "(\"trait_definitions\".\"value_type\" = 'choice' AND \"trait_definitions\".\"choices\" IS NOT NULL\n            AND jsonb_typeof(\"trait_definitions\".\"choices\") = 'array' AND jsonb_array_length(\"trait_definitions\".\"choices\") > 0)\n        OR (\"trait_definitions\".\"value_type\" <> 'choice' AND \"trait_definitions\".\"choices\" IS NULL)"
         },
         "trait_definitions_match_weight_check": {
           "name": "trait_definitions_match_weight_check",
