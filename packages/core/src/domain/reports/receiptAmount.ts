@@ -21,6 +21,13 @@ export function computeReceiptAmount(amount: string | number | null | undefined)
   if (amount === undefined || amount === null || amount === '') {
     return { amountYen: null, amountRaw: null };
   }
+  // 空白だけの文字列("   "など)は未入力として扱う。normalizeAmount()は空文字ではなく
+  // Number('')===0由来の"0"を返してしまうため、ここで先に弾かないとamountYenが0になり、
+  // 「0円の領収書」と「金額未入力」が区別できなくなる(dedupeKeyの材料であるnormalizeAmount
+  // 自体はGAS版と一致させる必要があるため変更しない。ここはamountYen算出側だけの対処)。
+  if (typeof amount === 'string' && amount.trim() === '') {
+    return { amountYen: null, amountRaw: null };
+  }
   const normalized = normalizeAmount(amount);
   const n = Number(normalized);
   const amountYen = Number.isFinite(n) ? Math.round(n) : null;

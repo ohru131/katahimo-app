@@ -71,6 +71,13 @@ export async function saveAttendanceDay(
   rowData: AttendanceRowData,
 ): Promise<AttendanceDayView> {
   const validatedRowData = attendanceRowDataSchema.parse(rowData);
+  // toColumnRow()はMAX_VISITS/MAX_OFFICE_WORK超過で例外を投げる(API層で先に弾いているはずだが、
+  // usecaseを直接呼ぶ経路もあるための防御)。unitOfWork.runの後(return文)で呼んでいると、
+  // 勤怠行とoutboxジョブが既にコミットされたあとで例外が飛んでしまい、呼び出し側が
+  // リトライすると updatedAt が変わって別の冪等キーでジョブがもう1件積まれる
+  // (トランザクションの中身は正しいのに、外側だけ失敗した状態になる)。トランザクションの
+  // 外・書き込みより前に呼ぶことで、失敗するなら何も書き込まれない状態で失敗させる。
+  const columnRow = toColumnRow(validatedRowData);
   await deps.unitOfWork.run(tenantId, async (scope) => {
     const record = await deps.attendanceDays.upsert(tenantId, staffId, businessDate, validatedRowData, scope);
     await deps.mirror.enqueue(
@@ -101,7 +108,7 @@ export async function saveAttendanceDay(
   return {
     businessDate,
     rowData: validatedRowData,
-    derived: computeDayDerived(toColumnRow(validatedRowData)),
+    derived: computeDayDerived(columnRow),
   };
 }
 

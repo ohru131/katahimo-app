@@ -70,6 +70,20 @@ describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
     ).rejects.toThrow();
   });
 
+  it('訪問4件目以降(MAX_VISITS超過)はtoColumnRowが例外を投げ、トランザクションの前に失敗するので何も残らない', async () => {
+    // attendanceRowDataSchema自体は件数の上限を持たない(API層で先に弾く設計)ため、
+    // ここではschema.parse()は通り、toColumnRow()の上限チェックまで到達する。
+    // トランザクションの外・書き込みより前で失敗すれば、勤怠行もoutboxのジョブも残らないはず。
+    await expect(
+      saveAttendanceDay(deps, tenantId, staffId, '2026-08-01', {
+        visits: [{ place: '1' }, { place: '2' }, { place: '3' }, { place: '4' }],
+      }),
+    ).rejects.toThrow('訪問は3件までです');
+
+    expect(await deps.attendanceDays.findByStaffAndDate(tenantId, staffId, '2026-08-01')).toBeNull();
+    expect((deps.mirror as FakeOutboxRepository).listAllForTest()).toEqual([]);
+  });
+
   it('月次集計は対象月の日だけを集め、GAS版と同じcomputeMonthlyTotalsで合算する', async () => {
     await saveAttendanceDay(deps, tenantId, staffId, '2026-08-01', {
       visits: [{ start: '10:00', end: '12:00' }],

@@ -735,6 +735,77 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
     });
   });
 
+  describe('coupon_redemptions_discount_amount_yen_check / coupon_redemptions_discount_percent_check', () => {
+    /** coupon_redemptionsのcoupon_redemptions_tenant_coupon_fk用に、その場でクーポンを1件作る。 */
+    async function createCoupon(client: PGlite, tenantId: string, code: string): Promise<string> {
+      const {
+        rows: [row],
+      } = await client.query<{ id: string }>(
+        `INSERT INTO coupons (tenant_id, code, name, discount_kind, discount_amount_yen)
+         VALUES ($1, $2, 'テストクーポン', 'amount', 500) RETURNING id;`,
+        [tenantId, code],
+      );
+      if (!row) throw new Error('クーポンの準備に失敗しました');
+      return row.id;
+    }
+
+    it('正の金額・1〜100の率はそれぞれ通る(couponsマスタと同じ値域)', async () => {
+      const amountCouponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-RANGE-AMOUNT');
+      await expect(
+        fixture.client.query(
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_amount_yen)
+           VALUES ($1, $2, $3, 'amount', 500);`,
+          [fixture.tenantId, fixture.dailyReportId, amountCouponId],
+        ),
+      ).resolves.toBeDefined();
+
+      const percentCouponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-RANGE-PERCENT');
+      await expect(
+        fixture.client.query(
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_percent)
+           VALUES ($1, $2, $3, 'percent', 100);`,
+          [fixture.tenantId, fixture.dailyReportId, percentCouponId],
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('負のdiscount_amount_yenは拒否される(適用記録は請求に使うスナップショットなので値域もDBで縛る)', async () => {
+      const couponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-AMOUNT-NEG');
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_amount_yen)
+           VALUES ($1, $2, $3, 'amount', -1);`,
+          [fixture.tenantId, fixture.dailyReportId, couponId],
+        ),
+        'coupon_redemptions_discount_amount_yen_check',
+      );
+    });
+
+    it('discount_percentが0以下は拒否される', async () => {
+      const couponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-PERCENT-ZERO');
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_percent)
+           VALUES ($1, $2, $3, 'percent', 0);`,
+          [fixture.tenantId, fixture.dailyReportId, couponId],
+        ),
+        'coupon_redemptions_discount_percent_check',
+      );
+    });
+
+    it('discount_percentが101以上は拒否される', async () => {
+      const couponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-PERCENT-OVER');
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_percent)
+           VALUES ($1, $2, $3, 'percent', 101);`,
+          [fixture.tenantId, fixture.dailyReportId, couponId],
+        ),
+        'coupon_redemptions_discount_percent_check',
+      );
+    });
+  });
+
   describe('coupon_redemptions_report_coupon_uidx(同じ日報に同じクーポンを2回付けられない)', () => {
     it('同一(tenant_id, daily_report_id, coupon_id)の2回目のINSERTは拒否される', async () => {
       const {

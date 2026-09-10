@@ -8,14 +8,9 @@ import {
   saveDailyReport,
 } from '@katahimo/core';
 import type { AttendanceRowData } from '@katahimo/shared';
+import { MAX_MOVE_LEGS } from '@katahimo/shared';
 import { DEMO_FIGURES, DEMO_OFFICE, DEMO_STAFF, DEMO_TENANT } from './figures';
-import {
-  planVisitsForDate,
-  recentBusinessDates,
-  toJstDateIso,
-  upcomingWeekDates,
-  VISIT_SLOTS,
-} from './visitPlan';
+import { planVisitsForDate, recentBusinessDates, toJstDateIso, upcomingWeekDates } from './visitPlan';
 
 /**
  * 訪問履歴を作る期間(日)。
@@ -266,11 +261,24 @@ export async function seedDemoData(
   return { tenantId: tenant.id, customerIdByName, addressLatLng };
 }
 
+/** #1・#2訪問の「あとの移動」項目(MAX_MOVE_LEGS件目まで)。indexごとに値を変えて、月次の集計に多少の幅を持たせている。 */
+const MOVE_AFTER_VISIT: ReadonlyArray<{ plannedMoveMin: number; distanceKm: number }> = [
+  { plannedMoveMin: 35, distanceKm: 12.4 },
+  { plannedMoveMin: 30, distanceKm: 9.8 },
+];
+
 /**
  * 出勤簿1日分。doc/14 B項の段階1で永続形式(row_data)が意味のあるキーの配列(visits/officeWork)
  * になったのに合わせている(以前は列記号C/D/E…をキーにしたオブジェクトだった)。
- * 3件目の訪問(index 2)にはweatherAfter/plannedMoveMin/distanceKmを付けない
- * (columnRow.tsのコメント参照。元のスプレッドシートにも#3訪問の「あとの移動」を書く列は無い)。
+ *
+ * visitsは「計画された件数ぶんだけ」作る。visitPlan.tsのvisitCountForDateは土曜2件・日曜1件を
+ * 返すため、ここで常に3件分の枠を作ってしまうと、予定の無い枠にVISIT_SLOTS[0]の時刻だけが
+ * 入った「幻の訪問」ができる(placeが空なのにstart/endだけ埋まり、
+ * buildScheduleEventsFromRowDataが先頭訪問の時刻でイベントを出してしまう)。
+ *
+ * MAX_MOVE_LEGS件目より後の訪問(3件目)にはweatherAfter/plannedMoveMin/distanceKmを付けない
+ * (attendanceRowDataSchema/columnRow.tsのコメント参照。元のスプレッドシートにも#3訪問の
+ * 「あとの移動」を書く列は無く、付けるとtoColumnRowが例外を投げる)。
  */
 function buildAttendanceRow(
   visits: ReturnType<typeof planVisitsForDate>,
@@ -282,30 +290,21 @@ function buildAttendanceRow(
     const figure = DEMO_FIGURES[visit.figureIndex];
     return figure ? `${figure.familyName} ${figure.givenName}` : '';
   };
-  const slot = (i: number): { start: string; end: string } => visits[i] ?? VISIT_SLOTS[0];
   const weather = (i: number): string => WEATHER[(dateIndex + i) % WEATHER.length] ?? '晴れ';
   const note = dateIndex % 9 === 0 ? '道路工事による渋滞あり' : undefined;
 
   return {
-    visits: [
-      {
-        place: nameOf(0),
-        start: slot(0).start,
-        end: slot(0).end,
-        weatherAfter: weather(0),
-        plannedMoveMin: 35,
-        distanceKm: 12.4,
-      },
-      {
-        place: nameOf(1),
-        start: slot(1).start,
-        end: slot(1).end,
-        weatherAfter: weather(1),
-        plannedMoveMin: 30,
-        distanceKm: 9.8,
-      },
-      { place: nameOf(2), start: slot(2).start, end: slot(2).end },
-    ],
+    visits: visits.map((visit, i) => {
+      const move = i < MAX_MOVE_LEGS ? MOVE_AFTER_VISIT[i] : undefined;
+      return {
+        place: nameOf(i),
+        start: visit.start,
+        end: visit.end,
+        ...(move
+          ? { weatherAfter: weather(i), plannedMoveMin: move.plannedMoveMin, distanceKm: move.distanceKm }
+          : {}),
+      };
+    }),
     officeWork: [{ name: '記録作成', start: '17:15', end: '17:45' }],
     commuteDistanceKm: 7.2,
     returnDistanceKm: 15.1,

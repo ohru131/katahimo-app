@@ -24,4 +24,9 @@ describe('computeReceiptAmount', () => {
     expect(computeReceiptAmount(null)).toEqual({ amountYen: null, amountRaw: null });
     expect(computeReceiptAmount(undefined)).toEqual({ amountYen: null, amountRaw: null });
   });
+
+  it('空白だけの入力は未入力として扱う(0円と誤認しない)', () => {
+    expect(computeReceiptAmount('   ')).toEqual({ amountYen: null, amountRaw: null });
+    expect(computeReceiptAmount('\t\n')).toEqual({ amountYen: null, amountRaw: null });
+  });
 });

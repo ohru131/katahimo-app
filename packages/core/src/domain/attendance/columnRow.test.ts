@@ -1,3 +1,4 @@
+import { attendanceRowDataSchema, MAX_MOVE_LEGS } from '@katahimo/shared';
 import { describe, expect, it } from 'vitest';
 import { computeDayDerived } from './attendanceCalc';
 import { fromColumnRow, toColumnRow } from './columnRow';
@@ -81,27 +82,40 @@ describe('fromColumnRow(toColumnRow(x)) の往復(永続形式→列記号→永
     expect(result).not.toEqual(x);
     expect(result).toEqual({ officeWork: [{ name: 'MTG', start: '17:00', end: '18:00' }] });
   });
+});
 
-  it('【往復が成り立たない例3】3件目の訪問にweatherAfter/plannedMoveMin/distanceKmを持たせても消える', () => {
-    // GAS版のスプレッドシートには元々#3訪問の「あとの移動」を書く列(H/I/AGに相当するもの)が
-    // 無く、attendanceCalc.tsも#1→#2・#2→#3の2区間しか計算しない。したがって3件目の
-    // これらの項目はAttendanceColumnRowに表現する場所がそもそも無い。
+describe('toColumnRowは対応する移動列が無い訪問にweatherAfter/plannedMoveMin/distanceKmが入っていたら例外を投げる', () => {
+  // GAS版のスプレッドシートには元々#3訪問の「あとの移動」を書く列(H/I/AGに相当するもの)が
+  // 無く、attendanceCalc.tsも#1→#2・#2→#3の2区間しか計算しない。したがって3件目(index 2、
+  // MAX_MOVE_LEGS以降)のこれらの項目はAttendanceColumnRowに表現する場所がそもそも無い。
+  // 本来はattendanceRowDataSchemaのsuperRefineでAPI境界が先に拒否しているはずだが、
+  // usecase等から直接呼ばれてすり抜けた場合に黙って捨てて給与に関わるdistanceKmが
+  // 気付かれずに消えることが無いよう、toColumnRow自身も防御的に例外を投げる。
+  const baseVisits: AttendanceRowData['visits'] = [
+    { place: 'A', start: '9:00', end: '10:00' },
+    { place: 'B', start: '10:30', end: '11:00' },
+  ];
+
+  it.each([
+    ['weatherAfter', { weatherAfter: '雪' }],
+    ['plannedMoveMin', { plannedMoveMin: 10 }],
+    ['distanceKm', { distanceKm: 1 }],
+  ] as const)('3件目のweatherAfter/plannedMoveMin/distanceKmの%sだけでも例外になる', (_field, patch) => {
+    const x: AttendanceRowData = {
+      visits: [...baseVisits, { place: 'C', start: '11:30', end: '12:00', ...patch }],
+    };
+    expect(() => toColumnRow(x)).toThrow(/移動列が無い/);
+  });
+
+  it('MAX_MOVE_LEGS件目(index 1)までなら移動項目があっても例外にならない', () => {
     const x: AttendanceRowData = {
       visits: [
-        { place: 'A', start: '9:00', end: '10:00' },
-        { place: 'B', start: '10:30', end: '11:00' },
-        { place: 'C', start: '11:30', end: '12:00', weatherAfter: '雪', plannedMoveMin: 10, distanceKm: 1 },
+        { place: 'A', start: '9:00', end: '10:00', weatherAfter: '晴れ', plannedMoveMin: 10, distanceKm: 1 },
+        { place: 'B', start: '10:30', end: '11:00', weatherAfter: '晴れ', plannedMoveMin: 5, distanceKm: 2 },
       ],
     };
-    const result = fromColumnRow(toColumnRow(x));
-    expect(result).not.toEqual(x);
-    expect(result).toEqual({
-      visits: [
-        { place: 'A', start: '9:00', end: '10:00' },
-        { place: 'B', start: '10:30', end: '11:00' },
-        { place: 'C', start: '11:30', end: '12:00' },
-      ],
-    });
+    expect(() => toColumnRow(x)).not.toThrow();
+    expect(MAX_MOVE_LEGS).toBe(2);
   });
 });
 
@@ -219,5 +233,54 @@ describe('代表ケースをfromColumnRow→toColumnRow経由で計算しても�
     const directResult = computeDayDerived(rowData);
     const viaNewFormat = computeDayDerived(toColumnRow(fromColumnRow(rowData)));
     expect(viaNewFormat).toEqual(directResult);
+  });
+});
+
+/**
+ * attendanceRowDataSchema(@katahimo/shared)自体の検証。API境界・saveAttendanceDay usecase
+ * の両方がこのスキーマを直接使うので、ここで固定しておけばどちらの呼び出し経路にも効く。
+ */
+describe('attendanceRowDataSchema', () => {
+  it('MAX_MOVE_LEGS件目(index 1)までは移動項目(weatherAfter/plannedMoveMin/distanceKm)を許す', () => {
+    const result = attendanceRowDataSchema.safeParse({
+      visits: [
+        { place: 'A', weatherAfter: '晴れ', plannedMoveMin: 10, distanceKm: 1 },
+        { place: 'B', weatherAfter: '晴れ', plannedMoveMin: 5, distanceKm: 2 },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it.each([
+    ['weatherAfter', { weatherAfter: '雪' }],
+    ['plannedMoveMin', { plannedMoveMin: 10 }],
+    ['distanceKm', { distanceKm: 1 }],
+  ] as const)(
+    'MAX_MOVE_LEGS件目より後(index 2以降)に%sがあると、その添字とフィールドを指した検証エラーになる',
+    (field, patch) => {
+      const result = attendanceRowDataSchema.safeParse({
+        visits: [{ place: 'A' }, { place: 'B' }, { place: 'C', ...patch }],
+      });
+      expect(result.success).toBe(false);
+      if (result.success) return;
+      const issue = result.error.issues.find((i) => i.path.join('.') === `visits.2.${field}`);
+      expect(issue).toBeDefined();
+    },
+  );
+
+  it('未知のキーは.strict()で拒否される(黙って捨てない)', () => {
+    const result = attendanceRowDataSchema.safeParse({
+      visits: [{ place: 'A' }],
+      // typoや旧フォーマットの残骸(列記号Cなど)を想定。
+      unknownTopLevelKey: 'x',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('訪問の要素に未知のキーがあると.strict()で拒否される', () => {
+    const result = attendanceRowDataSchema.safeParse({
+      visits: [{ place: 'A', unknownVisitKey: 'x' }],
+    });
+    expect(result.success).toBe(false);
   });
 });

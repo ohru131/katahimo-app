@@ -8,9 +8,23 @@ import { setArraySlot } from './arraySlot';
  * 表示が"1"に戻ってしまう)。入力欄の表示はコンポーネント内のローカル文字列で持ち、
  * 「数値として確定できる状態(末尾が"."や"-"だけで終わっていない)」になった時点だけ
  * onCommitでrowDataへ反映する。空欄はundefined(=未入力。0とは別の意味)として即時反映する。
+ *
+ * このフィールドが扱う値(plannedMoveMin/distanceKm/commuteDistanceKm/returnDistanceKm/
+ * shoppingErrandCount)はattendanceRowDataSchema側でいずれも0以上しか許されない
+ * (nonNegativeNumberSchema/nonNegativeIntSchema)。"-5"のような負数の文字列はNumber()も
+ * NaNにならず末尾も"-"や"."で終わらないため、このチェックを素通りしてonCommitへ渡って
+ * しまっていた。保存APIの400で初めて気付くのでは遅いため、ここで先に弾く。
+ *
+ * 空白だけの文字列("  "等)も、Number('  ')===0になってしまうため未入力と区別できず
+ * 0を確定してしまう。呼び出し側(NumberFieldのonChange)で空文字と同様にtrim()して
+ * 「未入力」= undefined として扱う(空文字をundefinedにする既存の挙動と対称にする方が
+ * 自然なため)。ここでも念のため空白だけなら false を返す。
  */
 function isCommittableNumberString(raw: string): boolean {
-  return raw !== '' && !Number.isNaN(Number(raw)) && !/[.-]$/.test(raw);
+  if (raw.trim() === '') return false;
+  if (/[.-]$/.test(raw)) return false;
+  const n = Number(raw);
+  return !Number.isNaN(n) && n >= 0;
 }
 
 function NumberField({
@@ -38,7 +52,8 @@ function NumberField({
         onChange={(e) => {
           const next = e.target.value;
           setRaw(next);
-          if (next === '') {
+          // 空文字・空白だけは未入力として扱う(isCommittableNumberStringのコメント参照)。
+          if (next.trim() === '') {
             onCommit(undefined);
             return;
           }

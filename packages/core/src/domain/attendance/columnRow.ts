@@ -1,4 +1,4 @@
-import { MAX_OFFICE_WORK, MAX_VISITS } from '@katahimo/shared';
+import { MAX_MOVE_LEGS, MAX_OFFICE_WORK, MAX_VISITS } from '@katahimo/shared';
 import type { AttendanceColumnRow, AttendanceOfficeWork, AttendanceRowData, AttendanceVisit } from './types';
 
 /**
@@ -48,6 +48,11 @@ function columnStringToNum(s: string | undefined): number | undefined {
  * attendance.ts)で400として拒否しているため、ここに届くのは実装の誤りのときだけ。
  * 黙って4件目以降を切り捨てると給与に直結する値が気付かれずに失われるため、例外を投げて
  * 気付ける形にする(到達したらAPI側のチェック漏れを疑うこと)。
+ *
+ * 同様に、MAX_MOVE_LEGS件目以降の訪問に「あとの移動」(weatherAfter/plannedMoveMin/
+ * distanceKm)が入っている場合も例外を投げる。対応する移動列がそもそも無く表現できない
+ * ため、黙って捨てると距離集計(給与に関わる)からdistanceKmが気付かれずに消える
+ * (これも本来はattendanceRowDataSchemaのsuperRefineでAPI境界が先に拒否している)。
  */
 export function toColumnRow(rowData: AttendanceRowData): AttendanceColumnRow {
   const visits = rowData.visits ?? [];
@@ -63,6 +68,21 @@ export function toColumnRow(rowData: AttendanceRowData): AttendanceColumnRow {
       `事務作業は${MAX_OFFICE_WORK}件までです(勤怠計算がGAS版と一致することを保証している範囲。` +
         `${MAX_OFFICE_WORK + 1}件以上は段階2の正規化で対応する)`,
     );
+  }
+  // MAX_MOVE_LEGS件目以降の訪問には対応する移動列(H/I/AGに相当するもの)がそもそも無い
+  // (下のU/V/Wのコメント参照)。attendanceRowDataSchemaのsuperRefineでAPI境界では既に拒否して
+  // いるはずなので、ここに届くのは実装の誤り(スキーマ検証をすり抜けた呼び出し)のときだけ。
+  // 黙って切り捨てると給与に直結するdistanceKmが気付かれずに失われるため、例外を投げる。
+  for (let i = MAX_MOVE_LEGS; i < visits.length; i++) {
+    const v = visits[i];
+    if (v && (v.weatherAfter !== undefined || v.plannedMoveMin !== undefined || v.distanceKm !== undefined)) {
+      throw new Error(
+        `${i + 1}件目の訪問には対応する移動列が無いため` +
+          'weatherAfter/plannedMoveMin/distanceKmを指定できません' +
+          `(移動列があるのは${MAX_MOVE_LEGS}件目までです。本来はAPI境界のattendanceRowDataSchemaで` +
+          '拒否されているはずで、ここに届くのは実装の誤り)',
+      );
+    }
   }
 
   const v0 = visits[0];
@@ -85,9 +105,8 @@ export function toColumnRow(rowData: AttendanceRowData): AttendanceColumnRow {
     // 3件目の訪問(U/V/W)には対応する移動列(H/I/AGに相当するもの)がそもそも無い。
     // GAS版のスプレッドシートに元から#3→#4の移動を書く列が存在しない
     // (attendanceCalc.tsが#1→#2・#2→#3の2区間しか計算しない)ため、v2.weatherAfter/
-    // plannedMoveMin/distanceKmを入力されてもここには表現する場所が無く破棄される。
-    // これは今回の変更で新たに失われる情報ではなく、既存の計算モデルの制約をそのまま
-    // 引き継いだ結果(columnRow.test.tsの往復テストで明示的に確認している)。
+    // plannedMoveMin/distanceKmは上のMAX_MOVE_LEGSチェックで既に弾かれている(ここに
+    // 到達する時点でv2にこれらは無い)。place/start/endだけは3件目にも意味があるので書き出す。
     U: v2?.place,
     V: v2?.start,
     W: v2?.end,
@@ -173,13 +192,16 @@ function buildOfficeWork(
  * ようなデータは1件目相当の空オブジェクトを残さないと位置がずれてしまうことに対応するため。
  *
  * 往復(fromColumnRow(toColumnRow(x)) === x、toColumnRow(fromColumnRow(y)) === y)がどこまで
- * 成り立つかは columnRow.test.ts で実際に確認している。少なくとも次の2パターンは一致しない
- * ことが分かっている(「成り立つはず」で済ませず、テストで固定した上でここに書く):
+ * 成り立つかは columnRow.test.ts で実際に確認している。次のパターンは一致しないことが
+ * 分かっている(「成り立つはず」で済ませず、テストで固定した上でここに書く):
  *   - xの訪問/事務作業配列の末尾に空オブジェクト({}等)が含まれる場合
  *     (fromColumnRowでは「空」を「そもそも入力されていない」と区別できないため、
  *     末尾の空要素は復元時に失われる)
- *   - 3件目の訪問にweatherAfter/plannedMoveMin/distanceKmを持たせた場合
- *     (toColumnRowのコメント参照。対応する列がそもそも無い)
+ *
+ * なお、3件目の訪問にweatherAfter/plannedMoveMin/distanceKmを持たせたxはそもそも
+ * toColumnRow(x)の時点で例外になる(対応する列が無いため。toColumnRowのコメント参照)ので
+ * 「往復が成り立たない」ケースにすら含まれない。fromColumnRowが返すv2には元々これらの
+ * フィールドを設定しないため、fromColumnRowの側は影響を受けない。
  */
 export function fromColumnRow(columnRow: AttendanceColumnRow): AttendanceRowData {
   const v0 = buildVisit(

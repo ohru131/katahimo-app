@@ -153,6 +153,18 @@ export const couponRedemptions = pgTable(
       sql`(${t.discountKind} = 'amount'  AND ${t.discountAmountYen} IS NOT NULL AND ${t.discountPercent} IS NULL)
         OR (${t.discountKind} = 'percent' AND ${t.discountPercent} IS NOT NULL AND ${t.discountAmountYen} IS NULL)`,
     ),
+    // couponsマスタと同じ値域の制約(coupons_discount_amount_yen_check/
+    // coupons_discount_percent_check参照)。適用記録は請求に使うスナップショットであり、
+    // 種別と組み合わせだけを縛っても値域外(負の金額・0や100超の率)がDBレベルでは
+    // 拒否できていなかった。マスタ側と同じ理由でこちらにも足す。
+    check(
+      'coupon_redemptions_discount_amount_yen_check',
+      sql`${t.discountAmountYen} IS NULL OR ${t.discountAmountYen} >= 0`,
+    ),
+    check(
+      'coupon_redemptions_discount_percent_check',
+      sql`${t.discountPercent} IS NULL OR ${t.discountPercent} BETWEEN 1 AND 100`,
+    ),
     // クーポンごとの適用状況集計(「今月このクーポンが何回使われたか」)を索引だけで返すため。
     index('coupon_redemptions_tenant_coupon_idx').on(t.tenantId, t.couponId),
   ],

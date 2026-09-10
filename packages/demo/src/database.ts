@@ -62,13 +62,21 @@ export interface DemoMigration {
  * 判定されない)。0006も列挙しておけば、その次回起動で0006が未適用と分かり
  * 作り直し+シードのやり直しに入れる。
  *
- * 0011〜0013(doc/14 の改修)も同じ理由で対象に入れる。いずれも**列の型ではなく
- * 中身の表し方が変わる**ため、SQLを当てるだけでは既存行を引き継げない。
- * - 0011: receipts.amount(text)を落として amount_yen(integer)を足す。既存行の金額は空になる
- * - 0012: attendance_days.row_data のキーが列記号(C/D/E…)から visits/officeWork の配列に
- *   変わる。SQLの制約(jsonb_typeof='object')は古い形でも通ってしまうため、増分で当てると
- *   「DBには残っているのにアプリが読めない勤怠」が残り、勤怠タブが検証エラーで壊れる。
- *   **SQLの差分が小さいことは、データを引き継げることを意味しない**
+ * 0011〜0013(doc/14 の改修)は0005/0006と理由が違う点に注意: マイグレーションSQL自体
+ * (packages/db/drizzle/0011〜0013_*.sql)は既存行をDROP COLUMNの前にamount_raw/amount_yen・
+ * visits/officeWork・dob_date/dob_raw等へ移し替えるDML(UPDATE)を含んでおり、本番の
+ * PostgreSQLに増分で当てても値は失われない(CodeRabbit指摘対応)。
+ *
+ * それでもここに残しているのは、デモ側の事情のため: packages/demo/src/seed/seedDemoData.ts
+ * が作るシードデータ自体、0011〜0013より前は列記号形式(row_data)や結合済みのlatLng文字列など
+ * 「移行前の表し方」で書かれていたが、doc/14の改修に合わせてシード側も新しい表し方
+ * (visits/officeWorkの配列、dob文字列を渡すとparseDateOnly経由でdob_date/dob_rawに分かれる、
+ * 等)で書き直した。つまり「移行前の形で入っている架空のシードデータ」は元々デモにしか
+ * 存在せず、増分適用で救うべき実データがそもそも無い。中途半端に新旧が混ざった見せ方に
+ * なるくらいなら、既にデモを開いたことがある訪問者のIndexedDBも丸ごと作り直して
+ * 新しいシードを入れ直す方がシンプルで良い、という判断。
+ * - 0011: receipts.amount(text) → amount_yen(integer)/amount_raw(text)
+ * - 0012: attendance_days.row_data のキーが列記号(C/D/E…)から visits/officeWork の配列に変わる
  * - 0013: dob / target_dob / start_time / end_time / lat_lng を落として型のある列に置き換える
  */
 export const REBUILD_REQUIRED_MIGRATIONS: readonly string[] = [
