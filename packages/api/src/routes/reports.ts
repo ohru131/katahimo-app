@@ -12,6 +12,26 @@ import { getAuthenticatedSession, resolveReportTargetStaffId } from '../session'
 
 const HISTORY_LIMIT = 5;
 
+/**
+ * 事故報告/ヒヤリハットの種別。packages/db/src/schema/accidentReports.ts の
+ * accident_reports_report_type_check と一致させる(doc/14 D項)。DB側の制約は「最後の砦」で、
+ * ここで弾いておかないとGAS版のシートに任意の文字列がそのまま書き出されてしまう。
+ */
+export const ACCIDENT_REPORT_TYPES = ['事故報告', 'ヒヤリハット'] as const;
+export type AccidentReportType = (typeof ACCIDENT_REPORT_TYPES)[number];
+
+export function isAccidentReportType(value: unknown): value is AccidentReportType {
+  return (ACCIDENT_REPORT_TYPES as readonly unknown[]).includes(value);
+}
+
+/**
+ * PSI/満足度評価。packages/db/src/schema/dailyReports.ts の
+ * daily_reports_risk_rating_check/es_rating_check と一致させる(doc/14 D項)。
+ */
+export function isValidRating(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5;
+}
+
 export function createReportRoutes(container: Container) {
   const app = new Hono();
 
@@ -60,6 +80,13 @@ export function createReportRoutes(container: Container) {
     if (typeof body?.customerId !== 'string' || !body.customerId) {
       return c.json({ code: 'validation_failed', message: 'customerId が必要です' }, 400);
     }
+    // undefined/nullは「未評価」として許容する(DB側もNULLABLE)。値がある場合だけ範囲を見る。
+    if (body.riskRating != null && !isValidRating(body.riskRating)) {
+      return c.json({ code: 'validation_failed', message: 'riskRating は1〜5の整数にしてください' }, 400);
+    }
+    if (body.esRating != null && !isValidRating(body.esRating)) {
+      return c.json({ code: 'validation_failed', message: 'esRating は1〜5の整数にしてください' }, 400);
+    }
 
     const staffId = resolveReportTargetStaffId(session, body.staffId);
     try {
@@ -73,8 +100,8 @@ export function createReportRoutes(container: Container) {
         inputText: typeof body.inputText === 'string' ? body.inputText : '',
         internalText: typeof body.internalText === 'string' ? body.internalText : '',
         customerText: typeof body.customerText === 'string' ? body.customerText : '',
-        riskRating: typeof body.riskRating === 'number' ? body.riskRating : null,
-        esRating: typeof body.esRating === 'number' ? body.esRating : null,
+        riskRating: isValidRating(body.riskRating) ? body.riskRating : null,
+        esRating: isValidRating(body.esRating) ? body.esRating : null,
       });
       return c.json({ success: true, report });
     } catch (e) {
@@ -91,6 +118,17 @@ export function createReportRoutes(container: Container) {
     if (typeof body?.customerId !== 'string' || !body.customerId) {
       return c.json({ code: 'validation_failed', message: 'customerId が必要です' }, 400);
     }
+    // undefinedは「省略」として許容する(saveAccidentReport側で'事故報告'にフォールバックする)。
+    // 値がある場合は、文字列かどうかではなく許可された2値かどうかを見る(doc/14 D項)。
+    if (body.reportType !== undefined && !isAccidentReportType(body.reportType)) {
+      return c.json(
+        {
+          code: 'validation_failed',
+          message: `reportType は ${ACCIDENT_REPORT_TYPES.join('・')} のいずれかにしてください`,
+        },
+        400,
+      );
+    }
 
     const staffId = resolveReportTargetStaffId(session, body.staffId);
     try {
@@ -98,7 +136,7 @@ export function createReportRoutes(container: Container) {
         reportId: typeof body.reportId === 'string' ? body.reportId : undefined,
         staffId,
         customerId: body.customerId,
-        reportType: typeof body.reportType === 'string' ? body.reportType : undefined,
+        reportType: isAccidentReportType(body.reportType) ? body.reportType : undefined,
         targetName: typeof body.targetName === 'string' ? body.targetName : '',
         targetDob: typeof body.targetDob === 'string' ? body.targetDob : '',
         occurrenceTime: typeof body.occurrenceTime === 'string' ? body.occurrenceTime : '',

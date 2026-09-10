@@ -1,5 +1,15 @@
 import { sql } from 'drizzle-orm';
-import { foreignKey, integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  check,
+  foreignKey,
+  index,
+  integer,
+  pgPolicy,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { staff } from './staff';
@@ -65,5 +75,13 @@ export const dailyReports = pgTable(
       columns: [t.tenantId, t.customerId],
       foreignColumns: [customers.tenantId, customers.id],
     }),
+    // 「顧客の日報履歴」を開くたびに走る listByCustomer
+    // (WHERE customer_id=? ORDER BY occurred_at DESC LIMIT n)を索引だけで返すための複合索引。
+    // occurredAt を DESC で含めるのは、ORDER BY と向きを揃えて並べ替えを省くため(doc/14 C項)。
+    index('daily_reports_tenant_customer_occurred_idx').on(t.tenantId, t.customerId, t.occurredAt.desc()),
+    // risk_rating/es_ratingは「1〜5」という前提でUIやミラー送信のコードが書かれており、
+    // 範囲外の値が混入すると気付かないままスプレッドシートにも書き出される(doc/14 D項)。
+    check('daily_reports_risk_rating_check', sql`${t.riskRating} IS NULL OR ${t.riskRating} BETWEEN 1 AND 5`),
+    check('daily_reports_es_rating_check', sql`${t.esRating} IS NULL OR ${t.esRating} BETWEEN 1 AND 5`),
   ],
 ).enableRLS();

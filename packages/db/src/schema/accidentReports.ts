@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { foreignKey, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { check, foreignKey, index, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { staff } from './staff';
@@ -67,5 +67,10 @@ export const accidentReports = pgTable(
       columns: [t.tenantId, t.customerId],
       foreignColumns: [customers.tenantId, customers.id],
     }),
+    // dailyReports.tsと同じ理由(顧客の履歴表示が同じ形のクエリで走る)。
+    index('accident_reports_tenant_customer_occurred_idx').on(t.tenantId, t.customerId, t.occurredAt.desc()),
+    // 入口(API)・TypeScriptの型では値域を見ていなかった箇所(doc/14 D項)。GAS版と同じ表示文字列
+    // をそのまま値として使う方針は変えず(上のコメント参照)、値域だけDBで縛る。
+    check('accident_reports_report_type_check', sql`${t.reportType} IN ('事故報告', 'ヒヤリハット')`),
   ],
 ).enableRLS();

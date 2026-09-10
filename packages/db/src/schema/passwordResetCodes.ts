@@ -1,5 +1,15 @@
 import { sql } from 'drizzle-orm';
-import { foreignKey, index, integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  check,
+  foreignKey,
+  index,
+  integer,
+  pgPolicy,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { staff } from './staff';
 import { tenants } from './tenants';
@@ -46,5 +56,7 @@ export const passwordResetCodes = pgTable(
       columns: [t.tenantId, t.staffId],
       foreignColumns: [staff.tenantId, staff.id],
     }),
+    // staff.tsと同じ理由(負の試行回数は想定していない)。
+    check('password_reset_codes_failed_attempts_check', sql`${t.failedAttempts} >= 0`),
   ],
 ).enableRLS();

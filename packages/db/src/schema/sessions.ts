@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { foreignKey, pgPolicy, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  foreignKey,
+  index,
+  pgPolicy,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { staff } from './staff';
 import { tenants } from './tenants';
@@ -31,5 +40,7 @@ export const sessions = pgTable(
       columns: [t.tenantId, t.staffId],
       foreignColumns: [staff.tenantId, staff.id],
     }),
+    // deleteAllForStaff(DELETE WHERE tenant_id=? AND staff_id=?)を索引だけで返すため(doc/14 C項)。
+    index('sessions_tenant_staff_idx').on(t.tenantId, t.staffId),
   ],
 ).enableRLS();

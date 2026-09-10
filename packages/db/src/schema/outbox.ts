@@ -1,7 +1,34 @@
+import type { MirrorKind } from '@katahimo/core/ports';
 import { sql } from 'drizzle-orm';
-import { index, integer, pgPolicy, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  check,
+  index,
+  integer,
+  pgPolicy,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { tenants } from './tenants';
+
+/**
+ * outbox_jobs.kind のCHECK制約に使う許可値。doc/14 D項のDDLをそのまま書き写すと、
+ * MirrorKind(packages/core/src/ports/mirror.ts)側の変更(例: calendar_eventの廃止)に
+ * 追従できず、ズレに気付かないままDBが誤った値を許可/拒否し続ける。
+ * `Record<MirrorKind, true>` の形で持つことで、MirrorKindに追加/削除があれば
+ * ここが型エラーになり、追記漏れをコンパイル時に検知できるようにする。
+ */
+const MIRROR_KIND_SET: Record<MirrorKind, true> = {
+  attendance_day: true,
+  attendance_aggregate: true,
+  daily_report: true,
+  accident_report: true,
+  receipt: true,
+};
+const MIRROR_KINDS = Object.keys(MIRROR_KIND_SET) as MirrorKind[];
 
 /**
  * ミラー書き込み(DB → Googleスプレッドシート等)のジョブキュー。
@@ -49,5 +76,15 @@ export const outboxJobs = pgTable(
       t.nextAttemptAt,
       t.createdAt,
     ),
+    // statusはTypeScript上は enum({...}) で型付けているが、Drizzleはそこから
+    // CHECK制約を生成しない(doc/14 D項)。psqlから直接でたらめな値を書けてしまい、
+    // 書けばワーカーが永久に拾わない行になるため、DB側でも縛る。
+    check('outbox_jobs_status_check', sql`${t.status} IN ('pending', 'processing', 'done', 'failed')`),
+    // kindの許可値はMirrorKindと実行時にも一致させる(上のMIRROR_KINDS参照)。
+    check(
+      'outbox_jobs_kind_check',
+      sql`${t.kind} IN (${sql.raw(MIRROR_KINDS.map((k) => `'${k}'`).join(', '))})`,
+    ),
+    check('outbox_jobs_attempts_check', sql`${t.attempts} >= 0`),
   ],
 ).enableRLS();

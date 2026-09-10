@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { foreignKey, pgPolicy, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  foreignKey,
+  index,
+  pgPolicy,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { staff } from './staff';
@@ -72,5 +81,9 @@ export const receipts = pgTable(
     uniqueIndex('receipts_tenant_dedupe_key_uidx')
       .on(t.tenantId, t.dedupeKey)
       .where(sql`${t.dedupeKey} IS NOT NULL`),
+    // 顧客の領収書一覧を新しい順に返すクエリを索引だけで返すため(doc/14 C項)。
+    // customerIdはnull許容だが、それでも(tenant_id, customer_id, ...)の複合索引として作る
+    // (customerIdがnullの行はこの索引の対象外になるだけで、絞り込み自体は害にならない)。
+    index('receipts_tenant_customer_timestamp_idx').on(t.tenantId, t.customerId, t.receiptTimestamp.desc()),
   ],
 ).enableRLS();

@@ -1,4 +1,5 @@
-import { integer, pgPolicy, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { check, integer, pgPolicy, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { tenants } from './tenants';
 
@@ -57,5 +58,8 @@ export const tenantKeys = pgTable(
   (t) => [
     primaryKey({ columns: [t.tenantId, t.dekVersion] }),
     pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING }),
+    // 0未満/0の版は「ローテーションしていない初期状態」と区別できず、KeyManagementPortの
+    // 前提(世代は1始まり)を壊す(doc/14 D項)。
+    check('tenant_keys_version_check', sql`${t.dekVersion} >= 1 AND ${t.kekVersion} >= 1`),
   ],
 ).enableRLS();

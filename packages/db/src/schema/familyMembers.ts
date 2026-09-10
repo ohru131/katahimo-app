@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { foreignKey, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { foreignKey, index, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { tenants } from './tenants';
@@ -45,5 +45,7 @@ export const familyMembers = pgTable(
       columns: [t.tenantId, t.customerId],
       foreignColumns: [customers.tenantId, customers.id],
     }),
+    // listByCustomer(WHERE tenant_id=? AND customer_id=?)を索引だけで返すため(doc/14 C項)。
+    index('family_members_tenant_customer_idx').on(t.tenantId, t.customerId),
   ],
 ).enableRLS();
