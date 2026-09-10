@@ -1,3 +1,4 @@
+import { attendanceRowDataSchema } from '@katahimo/shared';
 import type {
   AttendanceDayDerived,
   AttendanceMonthlyTotals,
@@ -8,6 +9,7 @@ import {
   buildScheduleEventsFromRowData,
   computeDayDerived,
   computeMonthlyTotals,
+  toColumnRow,
 } from '../domain/attendance';
 import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
 import type { MirrorPort } from '../ports/mirror';
@@ -50,12 +52,16 @@ export async function getAttendanceDay(
 ): Promise<AttendanceDayView> {
   const record = await deps.attendanceDays.findByStaffAndDate(tenantId, staffId, businessDate);
   const rowData: AttendanceRowData = record ? record.rowData : {};
-  return { businessDate, rowData, derived: computeDayDerived(rowData) };
+  return { businessDate, rowData, derived: computeDayDerived(toColumnRow(rowData)) };
 }
 
 /**
  * 指定スタッフ・指定日の入力列(rowData)を丸ごと保存する。数式に相当する派生値は
  * AttendanceRowDataに存在しないため、呼び出し側が派生値を書き込むことは型上できない。
+ *
+ * 保存前に attendanceRowDataSchema で検証する。API層(packages/api/src/routes/attendance.ts)も
+ * 同じスキーマで検証しているが、usecaseはAPIを経由しない呼び出し(シード投入・将来のバッチ等)
+ * からも呼ばれ得るため、ここでも独立に検証しておく(doc/14 B項: 「アプリ境界でZodにより検証する」)。
  */
 export async function saveAttendanceDay(
   deps: AttendanceDeps,
@@ -64,8 +70,9 @@ export async function saveAttendanceDay(
   businessDate: string,
   rowData: AttendanceRowData,
 ): Promise<AttendanceDayView> {
+  const validatedRowData = attendanceRowDataSchema.parse(rowData);
   await deps.unitOfWork.run(tenantId, async (scope) => {
-    const record = await deps.attendanceDays.upsert(tenantId, staffId, businessDate, rowData, scope);
+    const record = await deps.attendanceDays.upsert(tenantId, staffId, businessDate, validatedRowData, scope);
     await deps.mirror.enqueue(
       {
         tenantId,
@@ -91,7 +98,11 @@ export async function saveAttendanceDay(
       );
     }
   });
-  return { businessDate, rowData, derived: computeDayDerived(rowData) };
+  return {
+    businessDate,
+    rowData: validatedRowData,
+    derived: computeDayDerived(toColumnRow(validatedRowData)),
+  };
 }
 
 export interface AttendanceMonthView {
@@ -112,11 +123,16 @@ export async function getAttendanceMonth(
   const days = records.map((r) => ({
     businessDate: r.businessDate,
     rowData: r.rowData,
-    derived: computeDayDerived(r.rowData),
+    derived: computeDayDerived(toColumnRow(r.rowData)),
   }));
   days.sort((a, b) => a.businessDate.localeCompare(b.businessDate));
 
-  const totals = computeMonthlyTotals(days.map((d) => ({ rowData: d.rowData, derived: d.derived })));
+  // computeMonthlyTotalsはattendanceCalc.ts側の内部実装(列記号のAttendanceColumnRow)を
+  // そのまま受け取るので、ここでもtoColumnRow()を通す(表示用のAttendanceMonthView.days自体は
+  // 永続形式のrowDataを保つ。列記号への変換はcomputeMonthlyTotalsに渡す直前だけ)。
+  const totals = computeMonthlyTotals(
+    days.map((d) => ({ rowData: toColumnRow(d.rowData), derived: d.derived })),
+  );
 
   return { yearMonth, days, totals };
 }

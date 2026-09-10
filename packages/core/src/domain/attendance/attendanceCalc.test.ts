@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeDayDerived, computeMonthlyTotals } from './attendanceCalc';
-import type { AttendanceDayDerived, AttendanceRowData } from './types';
+import type { AttendanceColumnRow, AttendanceDayDerived } from './types';
 
 /**
  * ここでのテストケースは、gas-childcare-visit-app/AttendanceCalc.js(GAS版・給与計算に
@@ -13,7 +13,7 @@ import type { AttendanceDayDerived, AttendanceRowData } from './types';
  */
 interface Case {
   label: string;
-  rowData: AttendanceRowData;
+  rowData: AttendanceColumnRow;
   expected: AttendanceDayDerived;
 }
 

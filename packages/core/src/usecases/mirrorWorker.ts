@@ -1,3 +1,6 @@
+import { attendanceRowDataSchema } from '@katahimo/shared';
+import type { AttendanceColumnRow } from '../domain/attendance';
+import { toColumnRow } from '../domain/attendance';
 import { nextOutboxRetryDelayMs } from '../domain/mirror/retry';
 import { formatJstDateTime } from '../domain/reports/jstTime';
 import type { OutboxJobRecord, OutboxRepositoryPort } from '../ports/mirror';
@@ -141,16 +144,28 @@ export async function processOutboxJob(
       const record = await deps.attendanceDays.findById(tenantId, job.targetId);
       if (!record) return;
       const staffRecord = await deps.staff.findById(tenantId, record.staffId);
-      // jsonb列から読んだ値なので、文字列以外が混ざっていないかを念のため確認する。
-      // undefinedはAttendanceRowDataの任意項目として許容するが、それ以外の非文字列値は
-      // データ破損の疑いがあるため再試行しても直らない -> デッドレターに落とす。
+      // jsonb列は保存前にAPI境界(attendanceRowDataSchema)を通っているはずだが、古いデータ・
+      // 手動でのDB操作等で壊れている可能性は残るため、送信直前にもう一度形を確認する。
+      // 再試行しても直らないのでデッドレターに落とす(PermanentMirrorError)。
+      const parsed = attendanceRowDataSchema.safeParse(record.rowData);
+      if (!parsed.success) {
+        throw new PermanentMirrorError(`勤怠rowDataの形式が不正です: ${parsed.error.message}`);
+      }
+      // toColumnRow()は必ず文字列(またはundefined)を返すので、以前あった「文字列以外が
+      // 混ざっていないかを確認するループ」は不要になった。ただしMAX_VISITS/MAX_OFFICE_WORKを
+      // 超えるデータ(API側のチェックをすり抜けた場合)は例外を投げるので、ここでも
+      // 拾ってデッドレターに倒す(こちらも再試行では直らない)。
+      let columnRow: AttendanceColumnRow;
+      try {
+        columnRow = toColumnRow(parsed.data);
+      } catch (e) {
+        throw new PermanentMirrorError(
+          `勤怠rowDataを列記号形式に変換できません: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
       const values: Record<string, string> = {};
-      for (const [key, value] of Object.entries(record.rowData)) {
-        if (value === undefined) continue;
-        if (typeof value !== 'string') {
-          throw new PermanentMirrorError(`勤怠rowDataの値が文字列ではありません: ${key}`);
-        }
-        values[key] = value;
+      for (const [key, value] of Object.entries(columnRow)) {
+        if (value !== undefined) values[key] = value;
       }
       await deps.sender.sendAttendanceDay({
         staffName: staffRecord?.name ?? '',

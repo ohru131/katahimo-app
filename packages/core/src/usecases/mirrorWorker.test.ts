@@ -240,9 +240,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
     };
 
     await saveAttendanceDay(attendanceDeps, tenantId, staffId, '2026-08-30', {
-      C: '訪問先A',
-      D: '09:00',
-      E: '10:00',
+      visits: [{ place: '訪問先A', start: '09:00', end: '10:00' }],
     });
 
     const workerDeps: MirrorWorkerDeps = {
@@ -259,6 +257,8 @@ describe('runOutboxBatch / processOutboxJob', () => {
     const result = await runOutboxBatch(workerDeps, tenantId);
 
     expect(result).toEqual({ processed: 1, failed: 0, deadLettered: 0 });
+    // ミラー送信(GAS版スプレッドシートの書き込み先)は列記号のワイヤ形式のまま
+    // (toColumnRow()を通す。AttendanceDayMirrorPayload.valuesは変えてはいけない)。
     expect(sender.attendanceDays).toEqual([
       {
         staffName: '佐藤 花子',
@@ -278,9 +278,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
     };
 
     await saveAttendanceDay(attendanceDeps, tenantId, staffId, '2026-08-30', {
-      C: '訪問先A',
-      D: '09:00',
-      E: '10:00',
+      visits: [{ place: '訪問先A', start: '09:00', end: '10:00' }],
     });
 
     // 出勤簿(attendance_day)と勤怠集計(attendance_aggregate)は別ジョブとして積まれる。
@@ -320,7 +318,9 @@ describe('runOutboxBatch / processOutboxJob', () => {
       unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
     };
 
-    await saveAttendanceDay(attendanceDeps, tenantId, staffId, '2026-08-30', { C: '訪問先A' });
+    await saveAttendanceDay(attendanceDeps, tenantId, staffId, '2026-08-30', {
+      visits: [{ place: '訪問先A' }],
+    });
 
     expect(outbox.listAllForTest().map((r) => r.kind)).toEqual(['attendance_day']);
   });
@@ -329,7 +329,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
     const attendanceDays = new FakeAttendanceDayRepository();
     // スタッフ台帳に存在しないIDの勤怠(スタッフ行が消された等)を直接作る。
     const record = await attendanceDays.upsert(tenantId, 'staff-missing', '2026-08-30', {
-      C: '訪問先A',
+      visits: [{ place: '訪問先A' }],
     });
     await outbox.enqueue({
       tenantId,
@@ -405,20 +405,22 @@ describe('runOutboxBatch / processOutboxJob', () => {
     expect(sender.receipts).toEqual([]);
   });
 
-  it('勤怠rowDataに文字列以外の値が混ざっている場合は再試行せず、その場でデッドレターに落とす', async () => {
+  it('勤怠rowDataの形式が不正な場合は再試行せず、その場でデッドレターに落とす', async () => {
     const attendanceDays = new FakeAttendanceDayRepository();
-    const attendanceDeps: AttendanceDeps = {
-      attendanceDays,
-      mirror: outbox,
-      mirrorAttendanceAggregate: false,
-      unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
-    };
 
-    // DBのjsonb列が何らかの理由で破損し、数値が混入した状況を再現する。
-    await saveAttendanceDay(attendanceDeps, tenantId, staffId, '2026-08-30', {
-      C: '訪問先A',
-      D: 900,
+    // DBのjsonb列が何らかの理由で破損し、start(本来"HH:mm"文字列)に数値が紛れ込んだ状況を
+    // 再現する。saveAttendanceDayは保存前にattendanceRowDataSchemaで検証してしまうため、
+    // 「検証を経ずに壊れたデータがDBに残っている」状況はリポジトリへ直接書き込むことでしか
+    // 再現できない(古いデータ・手動でのDB操作等を想定)。
+    const record = await attendanceDays.upsert(tenantId, staffId, '2026-08-30', {
+      visits: [{ place: '訪問先A', start: 900 }],
     } as unknown as AttendanceRowData);
+    await outbox.enqueue({
+      tenantId,
+      kind: 'attendance_day',
+      targetId: record.id,
+      idempotencyKey: 'attendance_day:broken:1',
+    });
 
     const workerDeps: MirrorWorkerDeps = {
       outbox,
@@ -436,7 +438,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
     expect(result).toEqual({ processed: 0, failed: 1, deadLettered: 1 });
     const row = outbox.listAllForTest().find((r) => r.kind === 'attendance_day');
     expect(row?.status).toBe('failed');
-    expect(row?.lastError).toContain('勤怠rowDataの値が文字列ではありません');
+    expect(row?.lastError).toContain('勤怠rowDataの形式が不正です');
     expect(sender.attendanceDays).toEqual([]);
   });
 

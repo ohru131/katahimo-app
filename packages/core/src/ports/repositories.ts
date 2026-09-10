@@ -363,9 +363,11 @@ export interface FamilyMemberRepositoryPort {
 }
 
 /**
- * 勤怠(出勤簿)1日分。rowDataは packages/core/src/domain/attendance/types.ts の
- * AttendanceRowData(入力列のみ)をそのままJSON(jsonb列)で持つ。労働時間・残業・距離集計等の
- * 派生値は保存しない(常にrowDataから都度計算する。packages/db/src/schema/attendanceDays.ts参照)。
+ * 勤怠(出勤簿)1日分。rowDataは @katahimo/shared の attendanceRowDataSchema が定める
+ * 永続形式(訪問・事務作業の配列 + 日次の距離/件数/備考。doc/14 B項)をそのままJSON(jsonb列)で
+ * 持つ。労働時間・残業・距離集計等の派生値は保存しない(常にrowDataから都度計算する。
+ * packages/db/src/schema/attendanceDays.ts参照。計算自体は列記号形式(AttendanceColumnRow)で
+ * 行うため、呼び出し側でtoColumnRow()を通す)。
  */
 export interface AttendanceDayRecord {
   id: string;

@@ -85,6 +85,13 @@
       "when": 1789047897998,
       "tag": "0011_receipt_amount_integer",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789049329867,
+      "tag": "0012_attendance_row_data_shape",
+      "breakpoints": true
     }
   ]
 }

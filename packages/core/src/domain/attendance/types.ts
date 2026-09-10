@@ -3,6 +3,14 @@
  * 移植元: gas-childcare-visit-app/AttendanceCalc.js のコメント、
  * PastSchedule.js の PAST_SCHEDULE_INPUT_COLUMNS。
  *
+ * 【これは内部表現であり、永続形式(DB・API)ではない】doc/14 B項の段階1で、DB(row_data)・
+ * APIが持つ形は意味のあるキーの AttendanceRowData(@katahimo/shared、このファイル下部で
+ * re-export)に変わった。しかし packages/core/src/domain/attendance/attendanceCalc.ts は
+ * GAS版との数値一致を19ケースで検証済みの唯一の資産であり、ここを書き換えるとその保証が
+ * 揺らぐため、計算ロジックは列記号のままこの型(旧 AttendanceRowData を改称した
+ * AttendanceColumnRow)を内部実装として温存している。境界(toColumnRow/fromColumnRow、
+ * columnRow.ts)でのみ変換する。
+ *
  * 列名(C/D/E等)はスプレッドシートの列記号をそのままキーにしている。読みにくく見えるが、
  * GAS版・webapp-poc版と全く同じキー名にしておくことで、実データを使った数値照合
  * (このオブジェクトをそのまま両実装に渡して出力を比較する)が row_data の変換なしにできる、
@@ -15,7 +23,7 @@
  *   AG = #1移動距離(km), AH = #2移動距離(km), AI = 出勤距離(km), AJ = 退勤距離(km)
  *   AN = 買物代行, AO = 備考
  */
-export interface AttendanceRowData {
+export interface AttendanceColumnRow {
   C?: string;
   D?: string;
   E?: string;
@@ -42,6 +50,15 @@ export interface AttendanceRowData {
   AN?: string;
   AO?: string;
 }
+
+/**
+ * 永続形式(DB row_data・API)の勤怠1日分。実体は @katahimo/shared の
+ * attendanceRowDataSchema から推論した型。api/webの両方から同じ形を参照できるように
+ * shared側に定義を置き、ここではdomain/attendanceからの既存のimport経路
+ * (`from '../domain/attendance'` / `from '@katahimo/core/domain'`)を壊さないためだけに
+ * re-exportしている。
+ */
+export type { AttendanceOfficeWork, AttendanceRowData, AttendanceVisit } from '@katahimo/shared';
 
 export interface MoveChainResult {
   moveStart: string;
@@ -84,8 +101,9 @@ export interface AttendanceDayDerived {
   visitCount: number;
 }
 
+/** attendanceCalc.ts(computeMonthlyTotals)の入力。列記号のまま(AttendanceColumnRow)。 */
 export interface AttendanceMonthlyDay {
-  rowData: AttendanceRowData;
+  rowData: AttendanceColumnRow;
   derived: AttendanceDayDerived;
 }
 

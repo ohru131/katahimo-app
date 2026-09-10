@@ -1,8 +1,8 @@
 import type {
+  AttendanceColumnRow,
   AttendanceDayDerived,
   AttendanceMonthlyDay,
   AttendanceMonthlyTotals,
-  AttendanceRowData,
   CoreAndOvertime,
   DistanceAggregates,
   LaborAndOvertime,
@@ -120,7 +120,7 @@ export function isMtgLabel(label: string | undefined): boolean {
 /**
  * AD(労働時間数)/AE(残業時間)相当。訪問3件+事務作業2件、計5つの時間帯を集計する。
  */
-export function computeLaborAndOvertime(rowData: AttendanceRowData): LaborAndOvertime {
+export function computeLaborAndOvertime(rowData: AttendanceColumnRow): LaborAndOvertime {
   const blocks = [
     { start: rowData.D, end: rowData.E, mtg: false },
     { start: rowData.M, end: rowData.N, mtg: false },
@@ -158,7 +158,7 @@ export function countOverThreshold(distances: Array<string | undefined>): number
  * AM(訪問等回数)相当: AH(#2移動距離)が数値なら3、AG(#1移動距離)が数値なら2、
  * AI/AJ(出勤/退勤距離)のどちらかが数値なら1、それ以外は0。
  */
-export function computeVisitCount(rowData: AttendanceRowData): number {
+export function computeVisitCount(rowData: AttendanceColumnRow): number {
   const ag = toNumberOrNull(rowData.AG);
   const ah = toNumberOrNull(rowData.AH);
   const ai = toNumberOrNull(rowData.AI);
@@ -173,7 +173,7 @@ export function computeVisitCount(rowData: AttendanceRowData): number {
  * AF/AK/AL/AM相当。leg1MoveMin/leg2MoveMinは天候補正後の値(J/S)を使う。
  */
 export function computeDistanceAggregates(
-  rowData: AttendanceRowData,
+  rowData: AttendanceColumnRow,
   leg1WeatherAdjustedMoveMin: number | '',
   leg2WeatherAdjustedMoveMin: number | '',
 ): DistanceAggregates {
@@ -195,7 +195,7 @@ export function computeDistanceAggregates(
 /**
  * 1日分のrow_dataから、テンプレートの数式列に相当する派生値をすべて計算する。
  */
-export function computeDayDerived(rowData: AttendanceRowData | undefined | null): AttendanceDayDerived {
+export function computeDayDerived(rowData: AttendanceColumnRow | undefined | null): AttendanceDayDerived {
   const data = rowData ?? {};
   const leg1 = computeMoveChain(data.E, data.H, data.I, data.M);
   const leg2 = computeMoveChain(data.N, data.Q, data.R, data.V);

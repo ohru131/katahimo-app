@@ -1,20 +1,25 @@
-import type { AttendanceRowData, ScheduleEvent } from '../api';
+import type { ScheduleEventSlot } from '../api';
 
-/** スロットキーと、対応するrowDataの名前/始業/終業キーの対応。GAS版PastSchedule.jsのbuildScheduleEventsFromRowData_と同じ対応。 */
-export const SLOT_FIELD_KEYS: Record<
-  ScheduleEvent['slotKey'],
-  {
-    name: keyof AttendanceRowData;
-    start: keyof AttendanceRowData;
-    end: keyof AttendanceRowData;
-    label: string;
-  }
-> = {
-  slot1: { name: 'C', start: 'D', end: 'E', label: '訪問その1' },
-  slot2: { name: 'L', start: 'M', end: 'N', label: '訪問その2' },
-  slot3: { name: 'U', start: 'V', end: 'W', label: '訪問その3' },
-  office1: { name: 'X', start: 'Y', end: 'Z', label: '事務作業その1' },
-  office2: { name: 'AA', start: 'AB', end: 'AC', label: '事務作業その2' },
-};
+/**
+ * 「勤怠を編集」の5枠(訪問その1〜3・事務作業その1〜2)の定義。
+ * doc/14 B項の段階1でrowDataが配列(visits/officeWork)になり、列記号(C/D/E…)への
+ * 対応表という形では表現できなくなったため、{ kind, index, label } の一覧に置き換えた。
+ * 表示上は従来どおり5枠固定のまま見せる(見た目は変えない)。
+ */
+export interface AttendanceSlotDef {
+  slot: ScheduleEventSlot;
+  label: string;
+}
 
-export const ALL_SLOT_KEYS: ScheduleEvent['slotKey'][] = ['slot1', 'slot2', 'slot3', 'office1', 'office2'];
+export const ATTENDANCE_SLOT_DEFS: AttendanceSlotDef[] = [
+  { slot: { kind: 'visit', index: 0 }, label: '訪問その1' },
+  { slot: { kind: 'visit', index: 1 }, label: '訪問その2' },
+  { slot: { kind: 'visit', index: 2 }, label: '訪問その3' },
+  { slot: { kind: 'office', index: 0 }, label: '事務作業その1' },
+  { slot: { kind: 'office', index: 1 }, label: '事務作業その2' },
+];
+
+/** React等の`key`に使う文字列(スロットの種類+添字で一意)。 */
+export function slotKeyString(slot: ScheduleEventSlot): string {
+  return `${slot.kind}-${slot.index}`;
+}

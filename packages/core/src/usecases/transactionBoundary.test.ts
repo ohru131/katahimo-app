@@ -205,7 +205,9 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
     };
 
     await expect(
-      saveAttendanceDay(attendanceDeps, tenantId, 'staff-1', '2026-08-30', { C: '訪問先A' }),
+      saveAttendanceDay(attendanceDeps, tenantId, 'staff-1', '2026-08-30', {
+        visits: [{ place: '訪問先A' }],
+      }),
     ).rejects.toThrow('outboxへの書き込みに失敗しました');
 
     expect(await attendanceDays.findByStaffAndDate(tenantId, 'staff-1', '2026-08-30')).toBeNull();

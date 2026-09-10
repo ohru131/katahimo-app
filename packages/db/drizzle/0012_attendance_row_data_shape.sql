@@ -1,0 +1,1 @@
+ALTER TABLE "attendance_days" ADD CONSTRAINT "attendance_days_row_data_object" CHECK (jsonb_typeof("attendance_days"."row_data") = 'object');

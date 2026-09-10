@@ -6,6 +6,7 @@ import {
   saveAttendanceDay,
   saveDailyReport,
 } from '@katahimo/core';
+import type { AttendanceRowData } from '@katahimo/shared';
 import { DEMO_FIGURES, DEMO_OFFICE, DEMO_STAFF, DEMO_TENANT } from './figures';
 import {
   planVisitsForDate,
@@ -235,11 +236,16 @@ export async function seedDemoData(
   return { tenantId: tenant.id, customerIdByName, addressLatLng };
 }
 
-/** 出勤簿1日分の入力列。列記号の意味は AttendanceRowData のコメント参照。 */
+/**
+ * 出勤簿1日分。doc/14 B項の段階1で永続形式(row_data)が意味のあるキーの配列(visits/officeWork)
+ * になったのに合わせている(以前は列記号C/D/E…をキーにしたオブジェクトだった)。
+ * 3件目の訪問(index 2)にはweatherAfter/plannedMoveMin/distanceKmを付けない
+ * (columnRow.tsのコメント参照。元のスプレッドシートにも#3訪問の「あとの移動」を書く列は無い)。
+ */
 function buildAttendanceRow(
   visits: ReturnType<typeof planVisitsForDate>,
   dateIndex: number,
-): Record<string, string> {
+): AttendanceRowData {
   const nameOf = (i: number): string => {
     const visit = visits[i];
     if (!visit) return '';
@@ -248,29 +254,32 @@ function buildAttendanceRow(
   };
   const slot = (i: number): { start: string; end: string } => visits[i] ?? VISIT_SLOTS[0];
   const weather = (i: number): string => WEATHER[(dateIndex + i) % WEATHER.length] ?? '晴れ';
+  const note = dateIndex % 9 === 0 ? '道路工事による渋滞あり' : undefined;
 
   return {
-    C: nameOf(0),
-    D: slot(0).start,
-    E: slot(0).end,
-    H: '35',
-    I: weather(0),
-    L: nameOf(1),
-    M: slot(1).start,
-    N: slot(1).end,
-    Q: '30',
-    R: weather(1),
-    U: nameOf(2),
-    V: slot(2).start,
-    W: slot(2).end,
-    X: '記録作成',
-    Y: '17:15',
-    Z: '17:45',
-    AG: '12.4',
-    AH: '9.8',
-    AI: '7.2',
-    AJ: '15.1',
-    AO: dateIndex % 9 === 0 ? '道路工事による渋滞あり' : '',
+    visits: [
+      {
+        place: nameOf(0),
+        start: slot(0).start,
+        end: slot(0).end,
+        weatherAfter: weather(0),
+        plannedMoveMin: 35,
+        distanceKm: 12.4,
+      },
+      {
+        place: nameOf(1),
+        start: slot(1).start,
+        end: slot(1).end,
+        weatherAfter: weather(1),
+        plannedMoveMin: 30,
+        distanceKm: 9.8,
+      },
+      { place: nameOf(2), start: slot(2).start, end: slot(2).end },
+    ],
+    officeWork: [{ name: '記録作成', start: '17:15', end: '17:45' }],
+    commuteDistanceKm: 7.2,
+    returnDistanceKm: 15.1,
+    ...(note ? { note } : {}),
   };
 }
 

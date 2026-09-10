@@ -229,7 +229,9 @@ describe('attendance_days.row_data(jsonb)の往復', () => {
     if (!staffId) throw new Error('スタッフの準備に失敗しました');
 
     const repo = new DrizzleAttendanceDayRepository(db);
-    const rowData = { C: '田中', D: '10:00' };
+    // doc/14 B項の段階1で row_data の形が列記号(C/D/E…)から意味のあるキーに変わったので、
+    // ここも新形式で固定する。
+    const rowData = { visits: [{ place: '田中', start: '10:00' }] };
     await repo.upsert(tenantId, staffId, '2026-09-01', rowData);
 
     const record = await repo.findByStaffAndDate(tenantId, staffId, '2026-09-01');

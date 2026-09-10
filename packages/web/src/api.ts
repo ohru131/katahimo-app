@@ -1,3 +1,7 @@
+import type { AttendanceRowData } from '@katahimo/shared';
+
+export type { AttendanceRowData };
+
 export interface StaffView {
   staffId?: string;
   id?: string;
@@ -319,35 +323,6 @@ export async function fetchCustomerDetail(customerId: string): Promise<CustomerD
   return body.customer;
 }
 
-/** 出勤簿テンプレートの入力列(PastSchedule.jsのPAST_SCHEDULE_INPUT_COLUMNSと同じ列記号)。 */
-export interface AttendanceRowData {
-  C?: string;
-  D?: string;
-  E?: string;
-  H?: string;
-  I?: string;
-  L?: string;
-  M?: string;
-  N?: string;
-  Q?: string;
-  R?: string;
-  U?: string;
-  V?: string;
-  W?: string;
-  X?: string;
-  Y?: string;
-  Z?: string;
-  AA?: string;
-  AB?: string;
-  AC?: string;
-  AG?: string;
-  AH?: string;
-  AI?: string;
-  AJ?: string;
-  AN?: string;
-  AO?: string;
-}
-
 export interface AttendanceDayDerived {
   leg1MoveStart: string;
   leg1MoveEnd: string;
@@ -430,9 +405,20 @@ export async function fetchAttendanceMonth(
 
 export type ScheduleEventType = 'CUSTOMER APPOINTMENT' | 'OFFICE WORK';
 
+/**
+ * どの枠のイベントかを、配列の種類と添字で表す。doc/14 B項の段階1で訪問・事務作業が固定5枠
+ * (slot1〜3, office1〜2)から配列になったのに合わせ、'slot1'のような固定キーではなく
+ * { kind, index } にした(packages/core/src/domain/attendance/scheduleEvents.tsのScheduleEventと
+ * 同じ形。@katahimo/coreはwebの依存に入っていないため、ここに複製している)。
+ */
+export interface ScheduleEventSlot {
+  kind: 'visit' | 'office';
+  index: number;
+}
+
 export interface ScheduleEvent {
   date: string;
-  slotKey: 'slot1' | 'slot2' | 'slot3' | 'office1' | 'office2';
+  slot: ScheduleEventSlot;
   title: string;
   eventType: ScheduleEventType;
   start: string;
