@@ -9,6 +9,7 @@ import {
   saveGoogleChatWebhookSettings,
 } from '../api';
 import { ChangePasswordModal } from './ChangePasswordModal';
+import { CouponAdminModal } from './CouponAdminModal';
 import { StaffAdminModal } from './StaffAdminModal';
 import { applyTextSize, getStoredTextSize, type TextSize } from './textSize';
 
@@ -65,6 +66,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
   const [textSize, setTextSize] = useState<TextSize>(() => getStoredTextSize());
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showStaffAdmin, setShowStaffAdmin] = useState(false);
+  const [showCouponAdmin, setShowCouponAdmin] = useState(false);
 
   const settingsQuery = useQuery({
     queryKey: ['admin-settings'],
@@ -213,9 +215,16 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
               <button
                 type="button"
                 onClick={() => setShowStaffAdmin(true)}
-                className="w-full py-2 mb-4 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200"
+                className="w-full py-2 mb-2 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200"
               >
                 スタッフ管理
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCouponAdmin(true)}
+                className="w-full py-2 mb-4 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200"
+              >
+                クーポン管理
               </button>
 
               <h4 className="text-sm font-bold text-red-600 mb-3">管理者設定</h4>
@@ -383,6 +392,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
           onClose={() => setShowStaffAdmin(false)}
         />
       )}
+      {showCouponAdmin && <CouponAdminModal onClose={() => setShowCouponAdmin(false)} />}
     </div>
   );
 }

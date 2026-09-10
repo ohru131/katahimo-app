@@ -1,6 +1,11 @@
-import type { AttendanceRowData } from '@katahimo/shared';
+import type {
+  AttendanceRowData,
+  CouponCreateRequest,
+  CouponDiscountKind,
+  CouponUpdateRequest,
+} from '@katahimo/shared';
 
-export type { AttendanceRowData };
+export type { AttendanceRowData, CouponCreateRequest, CouponDiscountKind, CouponUpdateRequest };
 
 export interface StaffView {
   staffId?: string;
@@ -443,6 +448,89 @@ export async function fetchAttendanceWeekEvents(
   return body.events;
 }
 
+// ── 割引クーポン(doc/14 4.1章。日報画面の選択UIと、管理者向けクーポン管理画面の両方で使う) ──
+// リクエストの形は@katahimo/sharedのzodスキーマ(CouponCreateRequest/CouponUpdateRequest、
+// ファイル冒頭でimport済み)をそのまま使う。web側で同じ形を再定義すると、DBのCHECK制約に
+// 合わせた値域(割引率1〜100等)の二重管理になってしまうため。
+
+/** 日報画面の「クーポンを選ぶ」セレクタ用の1件(GET /api/coupons)。core CouponSelectionViewと同じ形。 */
+export interface CouponSelectionView {
+  id: string;
+  code: string;
+  name: string;
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+}
+
+/** 管理者のクーポン管理画面用の1件(GET /api/coupons/admin)。廃止済み(active=false)も含む。 */
+export interface CouponView {
+  id: string;
+  code: string;
+  name: string;
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+  /** 有効期間の下限('YYYY-MM-DD')。nullは下限なし。 */
+  validFrom: string | null;
+  /** 有効期間の上限('YYYY-MM-DD')。nullは無期限。 */
+  validTo: string | null;
+  /** false=廃止済み。廃止しても行は消さない(doc/14 4.1章)ので一覧には引き続き出る。 */
+  active: boolean;
+  note: string | null;
+}
+
+/** 日報1件に適用済みのクーポン1件(保存結果・履歴表示で使う)。core DailyReportCouponViewと同じ形。 */
+export interface DailyReportCouponView {
+  couponId: string;
+  code: string;
+  name: string;
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+}
+
+/**
+ * 日報画面のクーポン選択用一覧。active かつ`date`('YYYY-MM-DD')の時点で有効なものだけが返る
+ * (doc/14 4.1章)。dateは日報の対象日を渡すこと(有効期間の判定が日付依存のため)。
+ */
+export async function fetchCouponsForSelection(date: string): Promise<CouponSelectionView[]> {
+  const res = await fetch(`/api/coupons?date=${encodeURIComponent(date)}`, { credentials: 'include' });
+  const body = await parseJsonOrThrow<{ coupons: CouponSelectionView[] }>(res);
+  return body.coupons;
+}
+
+/** 管理者のクーポン管理画面用。廃止済みも含む全件。 */
+export async function fetchCouponsForAdmin(): Promise<CouponView[]> {
+  const res = await fetch('/api/coupons/admin', { credentials: 'include' });
+  const body = await parseJsonOrThrow<{ coupons: CouponView[] }>(res);
+  return body.coupons;
+}
+
+/** クーポンを登録する。 */
+export async function createCoupon(input: CouponCreateRequest): Promise<void> {
+  const res = await fetch('/api/coupons/admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'クーポンの登録に失敗しました');
+}
+
+/** クーポンを部分更新する。有効/廃止の切り替え(active)もここから行う。 */
+export async function updateCoupon(couponId: string, patch: CouponUpdateRequest): Promise<void> {
+  const res = await fetch(`/api/coupons/admin/${encodeURIComponent(couponId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(patch),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'クーポンの更新に失敗しました');
+}
+
 // ── 日報/事故報告/活動記録/領収書登録(gas-childcare-visit-appの訪問先カード内モーダルに対応) ──
 
 export interface DailyReportDraft {
@@ -507,6 +595,8 @@ export interface SaveDailyReportInput {
   customerText: string;
   riskRating: number | null;
   esRating: number | null;
+  /** 適用する割引クーポンのID配列(doc/14 4.1章)。省略/空配列は「クーポン無し」。 */
+  couponIds?: string[];
 }
 
 export interface DailyReportView {
@@ -516,6 +606,8 @@ export interface DailyReportView {
   customerId: string;
   riskRating: number | null;
   esRating: number | null;
+  /** この日報に適用された割引クーポン(doc/14 4.1章)。 */
+  coupons: DailyReportCouponView[];
 }
 
 /** 「訪問完了」通知のみを送信する(DB書き込みなし)。GAS版sendVisitComplete相当。 */

@@ -1,5 +1,6 @@
 import type { Container } from '@katahimo/api';
 import {
+  createCoupon,
   createCustomer,
   registerStaff,
   saveAccidentReport,
@@ -105,6 +106,31 @@ export async function seedDemoData(
   if (!adminStaffId) throw new Error('デモ用スタッフの作成に失敗しました');
   const adminStaffName = DEMO_STAFF[0].name;
 
+  // 割引クーポン(doc/14 4.1章)。デモを開いた人が「クーポン管理」画面と、日報タブの
+  // クーポン選択の両方をすぐ触れるよう、金額引き/率引き・無期限/有効期間ありを1つずつ混ぜる。
+  onProgress({ message: 'クーポンを登録しています…', ratio: 0.1 });
+  const welcomeCoupon = await createCoupon(container, tenant.id, {
+    code: 'WELCOME500',
+    name: '紹介キャンペーン 500円引き',
+    discountKind: 'amount',
+    discountAmountYen: 500,
+    note: 'ご友人・ご家族からのご紹介で初回のご利用に適用',
+  });
+  if (!welcomeCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${welcomeCoupon.reason})`);
+
+  // 有効期間ありのクーポンも1件混ぜる。訪問履歴はHISTORY_DAYS(42日)ぶん遡って作るため、
+  // それより広い前後60日を有効期間にして、期間外エラーでシードそのものが失敗しないようにする。
+  const springCoupon = await createCoupon(container, tenant.id, {
+    code: 'SPRING10',
+    name: '春のキャンペーン 10%引き',
+    discountKind: 'percent',
+    discountPercent: 10,
+    validFrom: toJstDateIso(new Date(today.getTime() - 60 * 24 * 60 * 60 * 1000)),
+    validTo: toJstDateIso(new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000)),
+    note: '期間限定キャンペーン',
+  });
+  if (!springCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${springCoupon.reason})`);
+
   const customerIdByName = new Map<string, string>();
   const addressLatLng = new Map<string, { lat: number; lng: number }>();
   addressLatLng.set(DEMO_OFFICE.address, { lat: DEMO_OFFICE.lat, lng: DEMO_OFFICE.lng });
@@ -180,6 +206,10 @@ export async function seedDemoData(
         customerText: `本日は${visit.start}〜${visit.end}でご訪問しました。${note}`,
         riskRating: (visitCounter % 5) + 1,
         esRating: (visitCounter % 4) + 2,
+        // 最初の1件にだけ適用しておく(doc/14 4.1章の適用記録表示が、デモでは常に空という
+        // 状態にならないように)。2件とも渡すことで「1回の訪問に複数のクーポンを適用できる」
+        // ことも合わせて示す。
+        couponIds: visitCounter === 1 ? [welcomeCoupon.couponId, springCoupon.couponId] : undefined,
       });
 
       if (visitCounter % ACCIDENT_EVERY_N_VISITS === 0) {
