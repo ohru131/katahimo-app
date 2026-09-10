@@ -1,5 +1,6 @@
 export * from './attendance';
 export * from './auth';
+export * from './coupons';
 export * from './customers';
 export * from './mirrorWorker';
 export * from './passwordReset';

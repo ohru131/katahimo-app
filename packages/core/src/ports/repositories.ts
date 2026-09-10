@@ -3,10 +3,17 @@
  * (このパッケージはDBクライアントに依存しないという境界を守るため、インターフェースだけ持つ)。
  */
 
+import type { CouponDiscountKind } from '@katahimo/shared';
 import type { AttendanceRowData } from '../domain/attendance/types';
 import type { LoginThrottlePolicy } from '../domain/auth/loginThrottle';
 import type { AccidentReportContent, DailyReportContent } from '../domain/reports/types';
 import type { TransactionScope } from './unitOfWork';
+
+// CouponDiscountKind(型)とCOUPON_DISCOUNT_KINDS(許可値の配列)は @katahimo/shared が正
+// (doc/14 4.1章。DB・core・APIルート・画面の全てが同じ配列を参照することで許可値のズレを
+// 防ぐ、attendance.tsのMAX_VISITS/MAX_OFFICE_WORKと同じ方針)。ここでは型だけ再exportし、
+// このファイル内の他の型定義から従来通り `CouponDiscountKind` として参照できるようにする。
+export type { CouponDiscountKind } from '@katahimo/shared';
 
 /**
  * アプリ層で暗号化して保存する値(CryptoPort.encryptの結果)。使うのは app_settings の
@@ -479,6 +486,109 @@ export interface DailyReportRepositoryPort {
     before: Date | null,
     limit: number,
   ): Promise<DailyReportRecord[]>;
+}
+
+/**
+ * 割引クーポンの種別マスタ1件(doc/14 4.1章)。回数券(枚数を発行して減らしていくもの)は
+ * 運用に無いことを確認済みのため残枚数を持たない(packages/db/src/schema/coupons.ts参照)。
+ */
+export interface CouponRecord {
+  id: string;
+  tenantId: string;
+  /** 運用上の識別子(例 'INTRO500')。テナント内で一意。 */
+  code: string;
+  name: string;
+  discountKind: CouponDiscountKind;
+  /** discountKind='amount'のときのみ値を持つ。 */
+  discountAmountYen: number | null;
+  /** discountKind='percent'のときのみ値を持つ(1〜100)。 */
+  discountPercent: number | null;
+  /** 有効期間の下限('YYYY-MM-DD')。nullは下限なし。 */
+  validFrom: string | null;
+  /** 有効期間の上限('YYYY-MM-DD')。nullは無期限。 */
+  validTo: string | null;
+  /**
+   * false=廃止済み。廃止しても行は消さない(過去の適用記録coupon_redemptionsから
+   * 複合FKで参照されているため。消すと履歴が壊れる)。
+   */
+  active: boolean;
+  note: string | null;
+}
+
+export interface NewCouponInput {
+  tenantId: string;
+  code: string;
+  name: string;
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+  validFrom: string | null;
+  validTo: string | null;
+  active: boolean;
+  note: string | null;
+}
+
+/** 管理者によるクーポンの更新は「渡された項目だけ上書きする」部分更新(PATCH)方式。 */
+export type CouponPatchInput = Partial<Omit<NewCouponInput, 'tenantId'>>;
+
+export interface CouponRepositoryPort {
+  /** 管理者向けクーポン管理画面用。廃止済み(active=false)も含む全件。 */
+  listAll(tenantId: string): Promise<CouponRecord[]>;
+  findById(tenantId: string, couponId: string): Promise<CouponRecord | null>;
+  create(input: NewCouponInput): Promise<CouponRecord>;
+  /** 存在しない/他テナントのIDならnullを返す。 */
+  update(tenantId: string, couponId: string, patch: CouponPatchInput): Promise<CouponRecord | null>;
+}
+
+/**
+ * 日報1件への割引クーポン適用記録1件(doc/14 4.1章)。discountKind/discountAmountYen/
+ * discountPercentは、適用した瞬間のcouponsマスタの値を複製したスナップショット
+ * (あとでマスタの割引額を書き換えても、ここは動かない。packages/db/src/schema/coupons.ts
+ * のヘッダーコメント参照)。顧客IDは持たない(日報から引ける。二重に持つと日報側の顧客と
+ * 食い違う状態を作れてしまうため)。
+ */
+export interface CouponRedemptionRecord {
+  id: string;
+  tenantId: string;
+  dailyReportId: string;
+  couponId: string;
+  appliedAt: Date;
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+  note: string | null;
+}
+
+export interface NewCouponRedemptionInput {
+  tenantId: string;
+  dailyReportId: string;
+  couponId: string;
+  /** usecase側(saveDailyReport)がcouponsマスタから写して渡す。呼び出し側で改変しないこと。 */
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+  note?: string | null;
+}
+
+export interface CouponRedemptionRepositoryPort {
+  /**
+   * 指定日報の適用記録を「削除して入れ直す」。familyMembers.replaceForCustomerと同じ方針
+   * (usecases/reports.tsのsaveDailyReportのコメント参照)。差分更新(元々ある行を維持しつつ
+   * 増減だけ反映する)にしないのは、編集でクーポンを外した場合にその行が残ってしまう事故を
+   * 構造的に起こせなくするため。
+   *
+   * 日報の作成/更新と同じトランザクション(scope)で呼ぶこと。片方だけ確定する状態を
+   * 作らないため(unitOfWork.ts参照)。
+   */
+  replaceForDailyReport(
+    tenantId: string,
+    dailyReportId: string,
+    inputs: NewCouponRedemptionInput[],
+    scope?: TransactionScope,
+  ): Promise<CouponRedemptionRecord[]>;
+  listByDailyReportId(tenantId: string, dailyReportId: string): Promise<CouponRedemptionRecord[]>;
+  /** 日報履歴一覧のようにN件まとめて表示する画面向け(1件ずつ引くN+1を避ける)。 */
+  listByDailyReportIds(tenantId: string, dailyReportIds: string[]): Promise<CouponRedemptionRecord[]>;
 }
 
 /**

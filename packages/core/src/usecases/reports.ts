@@ -13,17 +13,23 @@ import type { MirrorPort } from '../ports/mirror';
 import type { NotifierPort } from '../ports/notifier';
 import type {
   AccidentReportRepositoryPort,
+  CouponRedemptionRepositoryPort,
+  CouponRepositoryPort,
   CustomerRepositoryPort,
   DailyReportRepositoryPort,
   StaffRepositoryPort,
 } from '../ports/repositories';
 import type { UnitOfWorkPort } from '../ports/unitOfWork';
+import type { DailyReportCouponView } from './coupons';
+import { buildDailyReportCouponViews, resolveCouponRedemptionSnapshots } from './coupons';
 
 export interface ReportDeps {
   dailyReports: DailyReportRepositoryPort;
   accidentReports: AccidentReportRepositoryPort;
   customers: CustomerRepositoryPort;
   staff: StaffRepositoryPort;
+  coupons: CouponRepositoryPort;
+  couponRedemptions: CouponRedemptionRepositoryPort;
   notifier: NotifierPort;
   /** GAS版「日報」「事故報告」シートへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
   mirror: MirrorPort;
@@ -60,6 +66,12 @@ export interface SaveDailyReportInput {
   customerText: string;
   riskRating: number | null;
   esRating: number | null;
+  /**
+   * 適用する割引クーポンのID配列(doc/14 4.1章)。省略/空配列は「クーポン無し」。
+   * 既存の適用記録は保存のたびに削除して入れ直す(saveDailyReport内のコメント参照)ため、
+   * 編集時にこの配列から外したクーポンは、保存後に自動的に消える。
+   */
+  couponIds?: string[];
 }
 
 export interface DailyReportView {
@@ -72,6 +84,8 @@ export interface DailyReportView {
   startedAt: Date | null;
   endedAt: Date | null;
   content: DailyReportContent;
+  /** この日報に適用された割引クーポン(doc/14 4.1章)。 */
+  coupons: DailyReportCouponView[];
 }
 
 /**
@@ -141,10 +155,22 @@ export async function saveDailyReport(
     content,
   };
 
-  // 保存とミラー要求のenqueueは1つのトランザクションで確定させる。分けると、日報は
-  // 保存できたのにスプレッドシートへ永久に反映されない行が、誰にも気づかれずに残る。
-  // 通知(外部サービス呼び出し)は、この外側で済ませておくこと(unitOfWork.ts参照)。
-  const record = await deps.unitOfWork.run(tenantId, async (scope) => {
+  // クーポンの検証(テナントのものか・activeか・reportDateの時点で有効期間内か)は、
+  // DB書き込みを一切伴わない読み取りなので、トランザクションの外で先に済ませておく
+  // (unitOfWork.tsの「run()に入る前に済ませておく」というルールに合わせる)。
+  // ここで弾いた入力は、DBのCHECK制約(23514)ではなく分かりやすいエラーとして失敗する。
+  const couponSnapshots = await resolveCouponRedemptionSnapshots(
+    deps,
+    tenantId,
+    input.couponIds ?? [],
+    reportDateStr,
+  );
+
+  // 保存とミラー要求のenqueue・クーポン適用記録の書き換えは1つのトランザクションで確定させる。
+  // 分けると、日報は保存できたのにスプレッドシートへ永久に反映されない行や、日報とクーポンの
+  // 適用記録が食い違ったままの行が、誰にも気づかれずに残る。通知(外部サービス呼び出し)は、
+  // この外側で済ませておくこと(unitOfWork.ts参照)。
+  const { record, couponRedemptions } = await deps.unitOfWork.run(tenantId, async (scope) => {
     const saved = input.reportId
       ? ((await deps.dailyReports.update(tenantId, input.reportId, newInput, scope)) ??
         (await deps.dailyReports.create(newInput, scope)))
@@ -158,8 +184,19 @@ export async function saveDailyReport(
       },
       scope,
     );
-    return saved;
+    // 既存の適用記録を「削除して入れ直す」(差分更新にしない理由は
+    // CouponRedemptionRepositoryPort.replaceForDailyReportのコメント参照。編集でクーポンを
+    // 外した場合に、その行が残ってしまう事故を構造的に起こせなくするため)。
+    const redemptions = await deps.couponRedemptions.replaceForDailyReport(
+      tenantId,
+      saved.id,
+      couponSnapshots.map((s) => ({ tenantId, dailyReportId: saved.id, ...s })),
+      scope,
+    );
+    return { record: saved, couponRedemptions: redemptions };
   });
+
+  const coupons = await buildDailyReportCouponViews(deps, tenantId, couponRedemptions);
 
   const { staffName, customerName } = await resolveNames(deps, tenantId, input.staffId, input.customerId);
   const notificationText = buildDailyReportNotificationText({
@@ -188,6 +225,7 @@ export async function saveDailyReport(
     startedAt: record.startedAt,
     endedAt: record.endedAt,
     content,
+    coupons,
   };
 }
 
@@ -335,6 +373,8 @@ export interface HistoryItem {
   es?: number | null;
   isAccident?: boolean;
   subtype?: string;
+  /** この日報に適用された割引クーポン(doc/14 4.1章)。日報(type: 'daily')にのみ持つ。 */
+  coupons?: DailyReportCouponView[];
 }
 
 /**
@@ -365,6 +405,22 @@ export async function getCustomerHistory(
     }),
   );
 
+  // 日報履歴にも適用済みクーポンを含める(doc/14 4.1章)。事故報告にはcoupon_redemptionsの
+  // FKが無い(日報にしか紐付かない)ため対象外。
+  const redemptions = await deps.couponRedemptions.listByDailyReportIds(
+    tenantId,
+    dailyRecords.map((r) => r.id),
+  );
+  const couponViews = await buildDailyReportCouponViews(deps, tenantId, redemptions);
+  const couponViewsByDailyReportId = new Map<string, DailyReportCouponView[]>();
+  redemptions.forEach((redemption, index) => {
+    const view = couponViews[index];
+    if (!view) return;
+    const list = couponViewsByDailyReportId.get(redemption.dailyReportId) ?? [];
+    list.push(view);
+    couponViewsByDailyReportId.set(redemption.dailyReportId, list);
+  });
+
   const dailyItems: HistoryItem[] = dailyRecords.map((r) => {
     const content = r.content;
     return {
@@ -378,6 +434,7 @@ export async function getCustomerHistory(
       customer: content.customerText,
       risk: r.riskRating,
       es: r.esRating,
+      coupons: couponViewsByDailyReportId.get(r.id) ?? [],
     };
   });
 

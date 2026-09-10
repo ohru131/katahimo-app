@@ -99,6 +99,13 @@
       "when": 1789051569940,
       "tag": "0013_typed_dates_and_coordinates",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789052087097,
+      "tag": "0014_coupons",
+      "breakpoints": true
     }
   ]
 }

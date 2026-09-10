@@ -8,6 +8,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
@@ -89,6 +90,12 @@ export const dailyReports = pgTable(
       columns: [t.tenantId, t.customerId],
       foreignColumns: [customers.tenantId, customers.id],
     }),
+    // doc/14 4.1章: coupon_redemptions.daily_report_id からの複合外部キー
+    // (tenant_id, daily_report_id)の参照先。customers.ts の customers_tenant_id_uk と同じ理由
+    // (RLSはFK制約をバイパスするため、単一列PKだけでは他テナントのdaily_report_idを誤って
+    // 参照してもDBが検知できない)。PostgreSQL的にも、複合FKの参照先には参照する列の組と
+    // 完全に一致するUNIQUE制約が必要(idだけのPKでは(tenant_id, id)を参照できない)。
+    unique('daily_reports_tenant_id_uk').on(t.tenantId, t.id),
     // 「顧客の日報履歴」を開くたびに走る listByCustomer
     // (WHERE customer_id=? ORDER BY occurred_at DESC LIMIT n)を索引だけで返すための複合索引。
     // occurredAt を DESC で含めるのは、ORDER BY と向きを揃えて並べ替えを省くため(doc/14 C項)。

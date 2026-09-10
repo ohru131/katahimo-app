@@ -10,6 +10,13 @@
  * Bridge.jsへPOSTする)。GAS_BRIDGE_URL/SECRET未設定時はNoopMirrorSenderPort(何もしない)。
  */
 
+/**
+ * 【doc/14 4.1章】適用済みクーポン(coupon_redemptions)は含めない。ReceiptMirrorPayloadの
+ * billingTypeと同じ扱い: gas-childcare-visit-appは稼働中の別システムで、GAS側「日報」シートに
+ * 列を増やすとデプロイが必要になるため、今回は既存列の範囲に収める方針にした(含めるだけ足して
+ * GAS側が無視する形にはしない。「送ったのに反映されない列がある」状態を作らないため)。
+ * クーポンの適用記録はkatahimo-app側のDB(coupons/coupon_redemptions)にのみ持つ。
+ */
 export interface DailyReportMirrorPayload {
   /** GAS側「日報」シートに追加する非表示の追跡列(KatahimoReportId)。既存行があれば上書き、無ければ追記する。 */
   reportId: string;

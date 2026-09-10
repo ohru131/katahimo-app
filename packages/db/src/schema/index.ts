@@ -1,6 +1,7 @@
 export * from './accidentReports';
 export * from './appSettings';
 export * from './attendanceDays';
+export * from './coupons';
 export * from './customers';
 export * from './dailyReports';
 export * from './familyMembers';

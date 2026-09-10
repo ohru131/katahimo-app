@@ -5,3 +5,4 @@
 export * from './contracts/attendance';
 export * from './contracts/auth';
 export * from './contracts/common';
+export * from './contracts/coupons';

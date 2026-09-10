@@ -15,6 +15,8 @@ import { saveAccidentReport, saveDailyReport } from './reports';
 import {
   FakeAccidentReportRepository,
   FakeAttendanceDayRepository,
+  FakeCouponRedemptionRepository,
+  FakeCouponRepository,
   FakeCustomerRepository,
   FakeDailyReportRepository,
   FakeFamilyMemberRepository,
@@ -73,14 +75,17 @@ describe('runOutboxBatch / processOutboxJob', () => {
   it('日報を保存するとoutboxに積まれ、ワーカーがGAS側へ送るペイロードに変換される', async () => {
     const dailyReports = new FakeDailyReportRepository();
     const accidentReports = new FakeAccidentReportRepository();
+    const couponRedemptions = new FakeCouponRedemptionRepository();
     const reportDeps: ReportDeps = {
       dailyReports,
       accidentReports,
       customers,
       staff,
+      coupons: new FakeCouponRepository(),
+      couponRedemptions,
       notifier: new FakeNotifierPort(),
       mirror: outbox,
-      unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, outbox]),
+      unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, couponRedemptions, outbox]),
     };
 
     const saved = await saveDailyReport(reportDeps, tenantId, {
@@ -130,14 +135,17 @@ describe('runOutboxBatch / processOutboxJob', () => {
   it('事故報告を保存するとoutboxに積まれ、ワーカーがGAS側へ送るペイロードに変換される', async () => {
     const accidentReports = new FakeAccidentReportRepository();
     const dailyReports = new FakeDailyReportRepository();
+    const couponRedemptions = new FakeCouponRedemptionRepository();
     const reportDeps: ReportDeps = {
       dailyReports,
       accidentReports,
       customers,
       staff,
+      coupons: new FakeCouponRepository(),
+      couponRedemptions,
       notifier: new FakeNotifierPort(),
       mirror: outbox,
-      unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, outbox]),
+      unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, couponRedemptions, outbox]),
     };
 
     const saved = await saveAccidentReport(reportDeps, tenantId, {

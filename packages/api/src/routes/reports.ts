@@ -6,6 +6,7 @@ import {
   saveDailyReport,
   sendVisitCompleteNotification,
 } from '@katahimo/core';
+import { couponIdsSchema } from '@katahimo/shared';
 import { Hono } from 'hono';
 import type { Container } from '../container';
 import { getAuthenticatedSession, resolveReportTargetStaffId } from '../session';
@@ -87,6 +88,19 @@ export function createReportRoutes(container: Container) {
     if (body.esRating != null && !isValidRating(body.esRating)) {
       return c.json({ code: 'validation_failed', message: 'esRating は1〜5の整数にしてください' }, 400);
     }
+    // couponIds(doc/14 4.1章)は「文字列かどうか」ではなく実際の形(UUID文字列の配列)を見る。
+    // 省略はサーバー側で「クーポン無し」として扱う(空配列)。
+    let couponIds: string[] = [];
+    if (body.couponIds !== undefined) {
+      const parsed = couponIdsSchema.safeParse(body.couponIds);
+      if (!parsed.success) {
+        return c.json(
+          { code: 'validation_failed', message: 'couponIds はUUID文字列の配列にしてください' },
+          400,
+        );
+      }
+      couponIds = parsed.data;
+    }
 
     const staffId = resolveReportTargetStaffId(session, body.staffId);
     try {
@@ -102,6 +116,7 @@ export function createReportRoutes(container: Container) {
         customerText: typeof body.customerText === 'string' ? body.customerText : '',
         riskRating: isValidRating(body.riskRating) ? body.riskRating : null,
         esRating: isValidRating(body.esRating) ? body.esRating : null,
+        couponIds,
       });
       return c.json({ success: true, report });
     } catch (e) {
