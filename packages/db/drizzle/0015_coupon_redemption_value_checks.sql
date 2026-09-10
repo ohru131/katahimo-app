@@ -1,2 +1,0 @@
-ALTER TABLE "coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_discount_amount_yen_check" CHECK ("coupon_redemptions"."discount_amount_yen" IS NULL OR "coupon_redemptions"."discount_amount_yen" >= 0);--> statement-breakpoint
-ALTER TABLE "coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_discount_percent_check" CHECK ("coupon_redemptions"."discount_percent" IS NULL OR "coupon_redemptions"."discount_percent" BETWEEN 1 AND 100);

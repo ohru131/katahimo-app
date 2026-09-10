@@ -4,5 +4,10 @@
 
 export * from './contracts/attendance';
 export * from './contracts/auth';
+export * from './contracts/billing';
 export * from './contracts/common';
 export * from './contracts/coupons';
+export * from './contracts/customerNotes';
+export * from './contracts/optimization';
+export * from './contracts/reservations';
+export * from './contracts/transport';

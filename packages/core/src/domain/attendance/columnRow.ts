@@ -7,7 +7,14 @@ import type { AttendanceColumnRow, AttendanceOfficeWork, AttendanceRowData, Atte
  * 犠牲にする必要が無い」を成立させている核。
  *
  *   toColumnRow()   … 計算(computeDayDerived/computeMonthlyTotals)とGASミラー送信で使う。
- *   fromColumnRow() … GAS版の実データ・既存テストの合成データを新形式へ持ち上げるのに使う。
+ *                     本番の経路(usecases/attendance.ts、usecases/mirrorWorker.ts)から呼ばれる。
+ *   fromColumnRow() … 列記号形式を永続形式へ持ち上げる。**本番のコードからは呼ばれていない。**
+ *                     使っているのは columnRow.test.ts だけで、そこでの役割は
+ *                     「GAS版と1件ずつ突き合わせて正解を固定した attendanceCalc.test.ts の
+ *                     列記号ケースを、永続形式に持ち上げてから計算し直しても
+ *                     結果が1円も変わらない」ことを確かめる橋渡し。
+ *                     給与計算の値がGAS版と一致することを担保する仕組みの一部なので、
+ *                     「呼び出し元が無いから消す」対象ではない(2026-09のコード整理で確認)。
  */
 
 /** vが「値が入っている」とみなせるか。''は「未入力」と同義として扱う

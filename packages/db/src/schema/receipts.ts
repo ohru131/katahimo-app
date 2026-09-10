@@ -8,6 +8,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -101,6 +102,9 @@ export const receipts = pgTable(
       columns: [t.tenantId, t.customerId],
       foreignColumns: [customers.tenantId, customers.id],
     }),
+    // invoice_lines.receipt_id からの複合外部キー(tenant_id, receipt_id)の参照先。
+    // customers.ts の customers_tenant_id_uk と同じ理由(RLSはFK制約をバイパスするため)。
+    unique('receipts_tenant_id_uk').on(t.tenantId, t.id),
     // findExistingDedupeKeys()の絞り込み(tenant_id + dedupe_key)を支えるインデックス。
     // 同時に同じ領収書が2リクエストで登録された場合にfindExistingDedupeKeysをすり抜けても
     // DB側で止めるため、dedupeKeyがある行に限定した一意インデックスにしている
