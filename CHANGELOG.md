@@ -2,6 +2,95 @@
 
 > 旧モノレポ `C001-cutest-internal/01_GAS/CHANGELOG.md`(全プロジェクト横断)から、katahimo-app に関するエントリ(Ver. 1.1.0〜1.1.23、Phase 0〜Phase 5継続)のみを抜粋・独立化したもの。それ以前(Ver. 1.0.x以前)は katahimo-app 誕生前の他 `gas-*` プロジェクトのエントリのため含めていない。Ver. 1.1.23 は `gas-childcare-visit-app`(GAS版、旧モノレポに残置)側の `Bridge.js` 変更も含む合同エントリだが、katahimo-app 側の変更点の文脈として必要なためそのまま残してある。今後この新リポジトリでの更新はこのファイルに追記していく。
 
+## [Ver. 1.1.26] - 2026-09-10
+
+### katahimo-app(`doc/14` A〜G項の実施: 金額・勤怠row_data・インデックス・CHECK制約・updated_atトリガー・日付型・緯度経度、および割引クーポン・領収書の請求区分)
+
+`doc/14_データベース改修方針.md` に記載した「相談を要さない確定分」の改修を、`0008`〜`0013` の
+6本のマイグレーションで実施した。あわせて利用者からの要望だった割引クーポンの適用記録を
+`0014` で追加した。
+
+- **直前のコミット(`2630299`)がレビューを通さず直接mainへpushされていた**ため、まずそこで
+  混入していた2件の問題を修正した(katahimo-appのCIが赤のまま残っていた)。
+  - `pnpm lint` のフォーマット違反でCIが落ちたままだった。`packages/worker/probeBridge.mts` の
+    フォーマット違反が唯一のエラーで、加えて `biome.json` の `$schema` が `2.3.0` を指しているのに
+    lockfileが解決するbiomeは `2.5.10` だったため、バージョン差による「手元では通るがCIで落ちる」
+    形式差が出ていた(`$schema` を `2.5.10` に揃えた)。ついでに `packages/demo/src/index.ts` の
+    未使用import、`packages/db/src/schema/appSettings.ts` の未使用引数も直した
+  - `z.coerce.boolean()` は中身が `Boolean(値)` なので、空文字列以外はすべて `true` になる。
+    `.env.example` が `MIRROR_ATTENDANCE_AGGREGATE=false` と勧めているとおりに書くと、オフの
+    つもりの設定が**そのまま有効化されていた**。`MIRROR_ATTENDANCE_AGGREGATE` はジョブ1件ごとに
+    GAS側でMapsのルート計算が走るため既定オフにしてある安全装置で、それが効かない状態だった。
+    `true`/`false`/`1`/`0` のみを受け付ける `booleanEnv()` に差し替え、それ以外の表記(`yes`/`on`等)
+    は黙って既定値に倒さず起動時に落とすようにした。`packages/api/src/env.test.ts` を新規追加し、
+    `"false"` が `false` になることを固定した
+- **A項: 領収書の金額を整数列にした**(`0011`)。`receipts.amount`(text)を `amount_yen`
+  (集計・請求用の整数)と `amount_raw`(OCRの生文字列)に分割。`dedupe_key` はGAS版 `buildKey`
+  と1文字も違えないよう従来どおり文字列正規化から作り、`amount_yen` を材料に使い替えていない
+- **B項: 勤怠 `row_data` を意味のあるキー・数値にした**(`0012`、段階1)。スプレッドシートの
+  列記号(`C`/`D`/`AG`…)を `visits`(訪問の配列)/`officeWork`(事務作業の配列)/`commuteDistanceKm`
+  等の意味のあるキーに変更。計算ロジック(`attendanceCalc.ts`、GAS版との数値一致を19ケースで
+  検証済み)は1行も変えず、境界に `toColumnRow()`/`fromColumnRow()` を置いて変換する。
+  **`doc/14` は「配列化で訪問3件・事務2件の上限が外れる」としていたが、`attendanceCalc.ts` 自体は
+  引き続き3件・2件までしか計算できないため、上限をデータ構造(jsonb・zodスキーマ)には持たせず、
+  アプリの入口(API)で明示的に400として拒否する形にした**(黙って4件目以降を捨てると、給与に
+  直結する値が気付かれずに失われるため)
+- **C項: 主要な検索経路にインデックスを張った**(`0008`)。PostgreSQLは外部キーの参照する側に
+  索引を自動作成しないため、`daily_reports`/`accident_reports`/`family_members` は主キーのみ、
+  という状態だった。「顧客の日報履歴」を開くたびに走る `listByCustomer` 等を索引だけで返せるよう、
+  `(tenant_id, customer_id, occurred_at DESC)` 等の複合インデックスを追加した
+- **D項: 値域をDBのCHECK制約で縛った**(`0009`)。Drizzleの `text({ enum: [...] })` は
+  TypeScript上の型付けにすぎずDBには何も生成されないため、`psql` から直接でたらめな値を
+  書き込めた(`outbox_jobs.status`・`accident_reports.report_type` 等)。マイグレーションで
+  CHECK制約を追加し、あわせて入口(API)側も許可された値かどうかで判定するよう直した
+- **E項: `updated_at` をDBトリガーで一元管理するようにした**(`0010`)。`customers` では実際に
+  アプリのコードが `updated_at` をセットし忘れており(`customerRepository.ts` の
+  `update()`/`deactivate()`)、行を作った時刻のまま永久に止まっていた。ミラー書き込みの冪等キーが
+  更新時刻を材料にしているため、この書き忘れが他のテーブルで再発すると編集内容がスプレッドシート
+  へ永久に反映されなくなる危険があった。`set_updated_at()` トリガーを対象9テーブルに張り、
+  張り忘れをCIで検出する静的検査(`updatedAtTriggers.test.ts`)を追加した
+- **F項: 日付・時刻の文字列を型のある列にした**(`0013`)。`family_members.dob`/
+  `accident_reports.target_dob`(text)を日付型+元表記の2列に、`daily_reports.start_time`/
+  `end_time`(text、未入力は空文字)を `started_at`/`ended_at`(timestamptz、未入力はNULL)に
+  変更。`occurred_at` と `started_at` は同じ情報の二重管理になるため、同じDateオブジェクトを
+  共有させて構造的に食い違いを起こせないようにした
+- **G項: 緯度経度を数値2列にした**(`0013`)。`customers.lat_lng`(text)はコードのどこでも
+  解析されず素通りしているだけだったが、秘密保持契約(案)第4条は「座標化して仙台市へ報告する」
+  と定めており矛盾していた。`lat`/`lng`(`numeric(9,6)`、範囲外はCHECKで拒否)+ `lat_lng_raw`
+  に分割し、RESERVA CSVの「緯度・経度」列を分解する `parseLatLng` を追加した
+- **H項(役割の重複したインデックスの削除)は `doc/14` 自身の誤りだった**。指摘していた
+  `outbox_jobs_tenant_status_created_at_idx` は `0002_outbox_retry.sql` で既に `DROP` 済みで、
+  `doc/14` は `0000` での作成だけを見て `0002` の `DROP INDEX` を読み落としていた。`0013` に
+  `DROP INDEX` は含めず、`doc/14` 側を訂正した
+- **(別枠)領収書に請求区分を持たせた**(`0011`)。「ガレージ代など、顧客に請求する分と会社が
+  立て替える分を分けたい」という要望に対応し、`receipts.billing_type`
+  (`customer_billable`/`company_expense`、既定は取りこぼしが安全側に転ぶ `company_expense`)を
+  追加した。顧客に紐付かない領収書は顧客請求にできないことをCHECK制約でも縛った
+- **(別枠)割引クーポンの適用記録を持てるようにした**(`0014`、これも利用者からの要望)。
+  `coupons`(テナントごとの種別マスタ)と `coupon_redemptions`(日報1件への適用記録)の2テーブルを
+  追加した。回数券(枚数を発行して減らしていくもの)は運用に無いことを確認できたため、
+  `doc/12` 相談⑧として保留していた「残枚数の持ち方」の分岐は消え、判断不要になった。適用記録
+  側には適用時点の割引条件をスナップショットして持たせる(マスタの書き換えで過去の記録が動かない
+  ようにするため)。日報の作成/更新と適用記録の保存は同じトランザクションで行う
+
+各マイグレーションでPGlite上の静的検査・挙動検証を追加している
+(`packages/demo/src/checkConstraints.test.ts`・`updatedAtTrigger.test.ts`・`typedColumns.test.ts`、
+`packages/db/src/updatedAtTriggers.test.ts`、`packages/core/src/domain/attendance/columnRow.test.ts`、
+`packages/core/src/usecases/coupons.test.ts` 等)。データ形式そのものが変わる破壊的マイグレーション
+(`0011`〜`0013`)は増分適用すると既存行を引き継げないため(SQLの差分は小さくても中身の表現が
+変わる)、公開デモの作り直し対象(`REBUILD_REQUIRED_MIGRATIONS`)にも追加した。
+
+`doc/09_データベース構造解説.md` を現在のスキーマに合わせて更新した(第1章にCHECK制約・
+`updated_at` トリガー・インデックスの方針を追加、第2章ER図・第4章テーブル一覧・第4.1節の
+`customers` 列一覧(35列→37列、`lat_lng`→`lat`/`lng`/`lat_lng_raw`)を更新)。
+
+検証: `pnpm lint`(300ファイル、エラー無し)/ `pnpm -r --parallel typecheck`(9パッケージすべて
+Done)/ `pnpm test`(54ファイル・522テストすべて成功。**`packages/demo/src/cookieJar.test.ts` は
+失敗しておらず、`doc/14` にあった「先に解消する」という記述は誤りだったため訂正した**)/
+`pnpm --filter @katahimo/web build` + `scripts/assertNoDemoInBuild.mjs`(デモ用コードの混入無し)/
+`pnpm --filter @katahimo/web build:demo`。ローカルPostgreSQL(Docker)を通した実機確認は、この
+作業環境にDockerデーモンが無いため未実施。
+
 ## [Ver. 1.1.25] - 2026-09-10
 
 ### katahimo-app / gas-childcare-visit-app(Phase 5の積み残し: 勤怠集計シートのミラーを実装、カレンダーのミラーは対象外に確定)
