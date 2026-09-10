@@ -1,10 +1,8 @@
 import { normalizeStaffName, splitJapaneseFullName } from '../domain';
-import type { CryptoPort } from '../ports/crypto';
 import type {
   CustomerPatchInput,
   CustomerRecord,
   CustomerRepositoryPort,
-  EncryptedField,
   FamilyMemberRecord,
   FamilyMemberRepositoryPort,
   NewCustomerInput,
@@ -14,25 +12,11 @@ import type {
 export interface CustomerDeps {
   customers: CustomerRepositoryPort;
   familyMembers: FamilyMemberRepositoryPort;
-  crypto: CryptoPort;
 }
 
-async function encryptIfPresent(
-  crypto: CryptoPort,
-  tenantId: string,
-  value: string | undefined | null,
-): Promise<EncryptedField | null> {
-  if (!value) return null;
-  return crypto.encrypt(tenantId, value);
-}
-
-async function decryptIfPresent(
-  crypto: CryptoPort,
-  tenantId: string,
-  value: EncryptedField | null,
-): Promise<string | null> {
-  if (!value) return null;
-  return crypto.decrypt(tenantId, value);
+/** 未入力(undefined/空文字)はnullとして保存する(空文字と未入力を区別しない)。 */
+function nullIfEmpty(value: string | undefined | null): string | null {
+  return value ? value : null;
 }
 
 export interface FamilyMemberInput {
@@ -84,29 +68,9 @@ export interface CreateCustomerInput {
   familyMembers?: FamilyMemberInput[];
 }
 
-async function buildCustomerRecordFields(
-  deps: CustomerDeps,
-  tenantId: string,
-  input: CreateCustomerInput,
-): Promise<NewCustomerInput> {
+function buildCustomerRecordFields(tenantId: string, input: CreateCustomerInput): NewCustomerInput {
   const familyName = input.familyName ?? splitJapaneseFullName(input.name).familyName;
   const givenName = input.givenName ?? splitJapaneseFullName(input.name).givenName;
-
-  const [
-    emergencyContactEnc,
-    emergencyContactRelationEnc,
-    evacuationSiteEnc,
-    memoEnc,
-    benefitMemberIdEnc,
-    latLngEnc,
-  ] = await Promise.all([
-    encryptIfPresent(deps.crypto, tenantId, input.emergencyContact),
-    encryptIfPresent(deps.crypto, tenantId, input.emergencyContactRelation),
-    encryptIfPresent(deps.crypto, tenantId, input.evacuationSite),
-    encryptIfPresent(deps.crypto, tenantId, input.memo),
-    encryptIfPresent(deps.crypto, tenantId, input.benefitMemberId),
-    encryptIfPresent(deps.crypto, tenantId, input.latLng),
-  ]);
 
   return {
     tenantId,
@@ -124,15 +88,15 @@ async function buildCustomerRecordFields(
     city: input.city ?? null,
     parkingArea: input.parkingArea ?? null,
     parkingDetail: input.parkingDetail ?? null,
-    emergencyContact: emergencyContactEnc,
-    emergencyContactRelation: emergencyContactRelationEnc,
-    evacuationSite: evacuationSiteEnc,
-    memo: memoEnc,
-    benefitMemberId: benefitMemberIdEnc,
+    emergencyContact: nullIfEmpty(input.emergencyContact),
+    emergencyContactRelation: nullIfEmpty(input.emergencyContactRelation),
+    evacuationSite: nullIfEmpty(input.evacuationSite),
+    memo: nullIfEmpty(input.memo),
+    benefitMemberId: nullIfEmpty(input.benefitMemberId),
     address2: input.address2 ?? null,
     address2StartDate: input.address2StartDate ?? null,
     address2EndDate: input.address2EndDate ?? null,
-    latLng: latLngEnc,
+    latLng: nullIfEmpty(input.latLng),
     memberType: input.memberType ?? null,
     memberStatus: input.memberStatus ?? null,
     paymentMethod: input.paymentMethod ?? null,
@@ -144,21 +108,18 @@ async function buildCustomerRecordFields(
   };
 }
 
-async function buildFamilyMemberInputs(
-  deps: CustomerDeps,
+function buildFamilyMemberInputs(
   tenantId: string,
   customerId: string,
   members: FamilyMemberInput[],
-): Promise<NewFamilyMemberInput[]> {
-  return Promise.all(
-    members.map(async (m) => ({
-      tenantId,
-      customerId,
-      name: await deps.crypto.encrypt(tenantId, m.name),
-      dob: await encryptIfPresent(deps.crypto, tenantId, m.dob),
-      info: await encryptIfPresent(deps.crypto, tenantId, m.info),
-    })),
-  );
+): NewFamilyMemberInput[] {
+  return members.map((m) => ({
+    tenantId,
+    customerId,
+    name: m.name,
+    dob: nullIfEmpty(m.dob),
+    info: nullIfEmpty(m.info),
+  }));
 }
 
 /**
@@ -170,11 +131,11 @@ export async function createCustomer(
   deps: CustomerDeps,
   input: CreateCustomerInput,
 ): Promise<CustomerRecord> {
-  const record = await buildCustomerRecordFields(deps, input.tenantId, input);
+  const record = buildCustomerRecordFields(input.tenantId, input);
   const created = await deps.customers.create(record);
 
   if (input.familyMembers && input.familyMembers.length > 0) {
-    const memberInputs = await buildFamilyMemberInputs(deps, input.tenantId, created.id, input.familyMembers);
+    const memberInputs = buildFamilyMemberInputs(input.tenantId, created.id, input.familyMembers);
     await deps.familyMembers.createMany(memberInputs);
   }
 
@@ -191,12 +152,12 @@ export async function updateCustomer(
   customerId: string,
   input: CreateCustomerInput,
 ): Promise<CustomerRecord> {
-  const record = await buildCustomerRecordFields(deps, tenantId, input);
+  const record = buildCustomerRecordFields(tenantId, input);
   const patch: CustomerPatchInput = record;
   const updated = await deps.customers.update(tenantId, customerId, patch);
 
   if (input.familyMembers) {
-    const memberInputs = await buildFamilyMemberInputs(deps, tenantId, customerId, input.familyMembers);
+    const memberInputs = buildFamilyMemberInputs(tenantId, customerId, input.familyMembers);
     await deps.familyMembers.replaceForCustomer(tenantId, customerId, memberInputs);
   }
 
@@ -235,7 +196,7 @@ export interface CustomerListResult {
 }
 
 /**
- * 有効な顧客を全件、復号した状態で返す。GAS版Main.js fetchDataFromSheetが顧客DB全件を
+ * 有効な顧客を全件返す。GAS版Main.js fetchDataFromSheetが顧客DB全件を
  * 一度にクライアントへ返し、以後の名前の部分一致検索・地区絞り込み・並び替えは全てブラウザ側の
  * 処理(index.htmlのfilterCustomers())だったのと同じ設計にするための一覧取得。
  * (searchCustomersByFamilyNameの苗字完全一致検索とは別の用途で、
@@ -260,7 +221,7 @@ export interface FamilyMemberView {
   info: string | null;
 }
 
-/** 顧客の全項目(RESERVA CSV由来の全フィールド)を復号した詳細ビュー。 */
+/** 顧客の全項目(RESERVA CSV由来の全フィールド)をそのまま返す詳細ビュー。 */
 export interface CustomerDetailView {
   id: string;
   externalSource: string | null;
@@ -295,20 +256,11 @@ export interface CustomerDetailView {
   familyMembers: FamilyMemberView[];
 }
 
-async function decryptFamilyMember(
-  crypto: CryptoPort,
-  tenantId: string,
-  row: FamilyMemberRecord,
-): Promise<FamilyMemberView> {
-  return {
-    id: row.id,
-    name: await crypto.decrypt(tenantId, row.name),
-    dob: await decryptIfPresent(crypto, tenantId, row.dob),
-    info: await decryptIfPresent(crypto, tenantId, row.info),
-  };
+function toFamilyMemberView(row: FamilyMemberRecord): FamilyMemberView {
+  return { id: row.id, name: row.name, dob: row.dob, info: row.info };
 }
 
-/** 顧客1件の全項目を復号し、世帯構成員一覧とあわせて返す(詳細画面用)。 */
+/** 顧客1件の全項目を、世帯構成員一覧とあわせて返す(詳細画面用)。 */
 export async function getCustomerDetail(
   deps: CustomerDeps,
   tenantId: string,
@@ -318,24 +270,6 @@ export async function getCustomerDetail(
   if (!row) return null;
 
   const familyRows = await deps.familyMembers.listByCustomerId(tenantId, customerId);
-
-  const [
-    emergencyContact,
-    emergencyContactRelation,
-    evacuationSite,
-    memo,
-    benefitMemberId,
-    latLng,
-    familyMembers,
-  ] = await Promise.all([
-    decryptIfPresent(deps.crypto, tenantId, row.emergencyContact),
-    decryptIfPresent(deps.crypto, tenantId, row.emergencyContactRelation),
-    decryptIfPresent(deps.crypto, tenantId, row.evacuationSite),
-    decryptIfPresent(deps.crypto, tenantId, row.memo),
-    decryptIfPresent(deps.crypto, tenantId, row.benefitMemberId),
-    decryptIfPresent(deps.crypto, tenantId, row.latLng),
-    Promise.all(familyRows.map((f) => decryptFamilyMember(deps.crypto, tenantId, f))),
-  ]);
 
   return {
     id: row.id,
@@ -350,15 +284,15 @@ export async function getCustomerDetail(
     city: row.city,
     parkingArea: row.parkingArea,
     parkingDetail: row.parkingDetail,
-    emergencyContact,
-    emergencyContactRelation,
-    evacuationSite,
-    memo,
-    benefitMemberId,
+    emergencyContact: row.emergencyContact,
+    emergencyContactRelation: row.emergencyContactRelation,
+    evacuationSite: row.evacuationSite,
+    memo: row.memo,
+    benefitMemberId: row.benefitMemberId,
     address2: row.address2,
     address2StartDate: row.address2StartDate,
     address2EndDate: row.address2EndDate,
-    latLng,
+    latLng: row.latLng,
     memberType: row.memberType,
     memberStatus: row.memberStatus,
     paymentMethod: row.paymentMethod,
@@ -368,7 +302,7 @@ export async function getCustomerDetail(
     registeredAt: row.registeredAt,
     externalLastUpdatedAt: row.externalLastUpdatedAt,
     deactivatedAt: row.deactivatedAt,
-    familyMembers,
+    familyMembers: familyRows.map(toFamilyMemberView),
   };
 }
 

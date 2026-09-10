@@ -21,7 +21,6 @@ import {
   GasBridgeMapsPort,
   GasBridgeSchedulePort,
   GeminiAiPort,
-  LocalBlindIndexPort,
   LocalCryptoPort,
   LocalFileStoragePort,
   LocalKmsPort,
@@ -43,6 +42,8 @@ import type { Env } from './env';
  * ブラウザ向けの組み立ては packages/demo にある。
  */
 export function createContainer(env: Env, db: Database): Container {
+  // app_settingsの資格情報(Gemini APIキー・Webhook URL)を暗号化/復号するためだけの構成。
+  // 業務データは平文列なので、CryptoPortが必要なのは settings/reportAi/notifier の解決だけ。
   const kms = new LocalKmsPort(env.LOCAL_DEV_KEK);
   const tenantKeys = new DrizzleTenantKeyRepository(db);
   const audit = new ConsoleAuditLogPort();
@@ -66,7 +67,6 @@ export function createContainer(env: Env, db: Database): Container {
     receipts: new DrizzleReceiptRepository(db),
     appSettings,
     crypto,
-    blindIndex: new LocalBlindIndexPort(env.LOCAL_DEV_MASTER_KEY),
     passwordHasher: argon2PasswordHasher,
     storage: new LocalFileStoragePort(env.LOCAL_RECEIPT_STORAGE_DIR),
     notifier: new WebhookNotifierPort({

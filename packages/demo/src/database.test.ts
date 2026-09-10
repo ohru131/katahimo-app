@@ -2,9 +2,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import { DrizzleAttendanceDayRepository } from '@katahimo/db/repositories';
+import * as schema from '@katahimo/db/schema';
+import { serializeTransactions } from '@katahimo/db/serialize-transactions';
+import type { Database } from '@katahimo/db/tenant-scope';
+import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DemoMigration } from './database';
-import { applyPendingMigrations } from './database';
+import { applyPendingMigrations, REBUILD_REQUIRED_MIGRATIONS } from './database';
 
 const DRIZZLE_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../db/drizzle');
 
@@ -71,23 +76,55 @@ describe('applyPendingMigrations', () => {
   });
 
   it('台帳があって未適用が残っているDBには、その分だけを当てる(既存データは残す)', async () => {
-    // 「0000だけ当たっている状態」を作る。これが本来の増分適用の対象。
-    const [first, ...rest] = migrations;
-    if (!first) throw new Error('マイグレーションが空です');
-    const isFresh = await applyPendingMigrations(client, [first]);
+    // 「今の全マイグレーションが当たっている状態」に、次のリリースで1件増えた状況を再現する。
+    // (0000だけ当ててから残りを当てる形だと、作り直し対象の 0005 が未適用なので
+    // 増分ではなく再構築の経路に入ってしまい、増分適用の検証にならない。)
+    const isFresh = await applyPendingMigrations(client, migrations);
     expect(isFresh).toBe(true);
-    expect(await tableExists(client, 'password_reset_codes')).toBe(false);
     await client.exec("INSERT INTO tenants (name, slug) VALUES ('テスト法人', 'demo');");
+    const probe: DemoMigration = { tag: '9999_probe', sql: 'CREATE TABLE probe (id int);' };
+    expect(await tableExists(client, 'probe')).toBe(false);
+
+    const secondRun = await applyPendingMigrations(client, [...migrations, probe]);
+
+    // 追加分だけが当たり、シード投入は要求されず、入力済みのデータも残る。
+    expect(secondRun).toBe(false);
+    expect(await appliedTags(client)).toEqual([...migrations.map((m) => m.tag), probe.tag].sort());
+    expect(await tableExists(client, 'probe')).toBe(true);
+    const { rows } = await client.query<{ slug: string }>('SELECT slug FROM tenants;');
+    expect(rows).toEqual([{ slug: 'demo' }]);
+  });
+
+  it('台帳はあるが作り直し対象(0005)が未適用なら、作り直してシード投入を要求する', async () => {
+    // 暗号化列を持つ旧スキーマまで当たっていて、暗号文の行が残っているデモDBを再現する。
+    const [firstRebuildTag] = REBUILD_REQUIRED_MIGRATIONS;
+    if (!firstRebuildTag) throw new Error('REBUILD_REQUIRED_MIGRATIONS が空です');
+    const rebuildIndex = migrations.findIndex((m) => m.tag === firstRebuildTag);
+    expect(rebuildIndex).toBeGreaterThan(0);
+    const legacy = migrations.slice(0, rebuildIndex);
+    // 旧スキーマを当てる段階では作り直しルールを外す(そうしないとガードに引っかかる)。
+    const firstRun = await applyPendingMigrations(client, legacy, []);
+    expect(firstRun).toBe(true);
+    await client.exec("INSERT INTO tenants (name, slug) VALUES ('テスト法人', 'demo');");
+    expect(await appliedTags(client)).not.toContain(firstRebuildTag);
 
     const secondRun = await applyPendingMigrations(client, migrations);
 
-    // 追加分が当たり、シード投入は要求されず、入力済みのデータも残る。
-    expect(secondRun).toBe(false);
+    // 増分ではなく作り直し: 既存行は消え、全マイグレーションが当たり、シード投入が必要になる。
+    expect(secondRun).toBe(true);
     expect(await appliedTags(client)).toEqual(migrations.map((m) => m.tag));
-    expect(await tableExists(client, 'password_reset_codes')).toBe(true);
-    const { rows } = await client.query<{ slug: string }>('SELECT slug FROM tenants;');
-    expect(rows).toEqual([{ slug: 'demo' }]);
-    for (const migration of rest) expect(await appliedTags(client)).toContain(migration.tag);
+    const { rows } = await client.query<{ count: string }>('SELECT count(*)::text AS count FROM tenants;');
+    expect(rows[0]?.count).toBe('0');
+  });
+
+  it('作り直し対象のタグが実在しなければ起動を止める(タイポで黙って無効にならない)', async () => {
+    await expect(applyPendingMigrations(client, migrations, ['nonexistent'])).rejects.toThrow(
+      /'nonexistent' が見つかりません/,
+    );
+    // 既定の REBUILD_REQUIRED_MIGRATIONS 自体が実在するタグだけで構成されていることも固定する。
+    for (const tag of REBUILD_REQUIRED_MIGRATIONS) {
+      expect(migrations.map((m) => m.tag)).toContain(tag);
+    }
   });
 
   it('台帳が無い時代のDBは作り直す(古いスキーマのまま使わせない)', async () => {
@@ -130,7 +167,8 @@ describe('applyPendingMigrations', () => {
       sql: 'CREATE TABLE marker (id int);',
     };
 
-    await expect(applyPendingMigrations(client, [rejected])).rejects.toThrow();
+    // 合成マイグレーションだけを渡すので、作り直しルール(実在チェック)は外しておく。
+    await expect(applyPendingMigrations(client, [rejected], [])).rejects.toThrow();
 
     // 記録に失敗した以上、テーブルも作られていないこと。
     expect(await tableExists(client, 'marker')).toBe(false);
@@ -141,5 +179,48 @@ describe('applyPendingMigrations', () => {
     await expect(applyPendingMigrations(client, [])).rejects.toThrow(
       'マイグレーションSQLを読み込めませんでした',
     );
+  });
+});
+
+/**
+ * attendance_days.row_data は本リポジトリで初めて使う jsonb 列。drizzle の PgJsonb は書き込みで
+ * JSON.stringify し、読み出しは「文字列なら parse、オブジェクトならそのまま」なので、
+ * ドライバ(PGlite)がどちらを返しても壊れないはずだが、二重に文字列化されたり
+ * 文字列のまま返ってきたりしないことを本物のPostgresで固定する。
+ */
+describe('attendance_days.row_data(jsonb)の往復', () => {
+  it('upsertしたオブジェクトが同じ形で読み戻せる', async () => {
+    const client = new PGlite();
+    await client.waitReady;
+    await applyPendingMigrations(client, loadMigrations());
+    const db = serializeTransactions(
+      drizzle(client, { schema, casing: 'snake_case' }) as unknown as Database,
+    );
+
+    const { rows: tenants } = await client.query<{ id: string }>(
+      "INSERT INTO tenants (name, slug) VALUES ('テスト法人', 'demo') RETURNING id;",
+    );
+    const tenantId = tenants[0]?.id;
+    if (!tenantId) throw new Error('テナントの準備に失敗しました');
+    const { rows: staff } = await client.query<{ id: string }>(
+      "INSERT INTO staff (tenant_id, name, email) VALUES ($1, 'スタッフ', 's@example.test') RETURNING id;",
+      [tenantId],
+    );
+    const staffId = staff[0]?.id;
+    if (!staffId) throw new Error('スタッフの準備に失敗しました');
+
+    const repo = new DrizzleAttendanceDayRepository(db);
+    const rowData = { C: '田中', D: '10:00' };
+    await repo.upsert(tenantId, staffId, '2026-09-01', rowData);
+
+    const record = await repo.findByStaffAndDate(tenantId, staffId, '2026-09-01');
+    if (!record) throw new Error('勤怠が見つかりません');
+    expect(typeof record.rowData).toBe('object');
+    expect(record.rowData).toEqual(rowData);
+
+    const month = await repo.listByStaffAndMonth(tenantId, staffId, '2026-09');
+    expect(month.map((r) => r.rowData)).toEqual([rowData]);
+
+    await client.close();
   });
 });

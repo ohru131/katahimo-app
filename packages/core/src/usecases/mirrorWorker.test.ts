@@ -14,7 +14,6 @@ import { saveAccidentReport, saveDailyReport } from './reports';
 import {
   FakeAccidentReportRepository,
   FakeAttendanceDayRepository,
-  FakeCryptoPort,
   FakeCustomerRepository,
   FakeDailyReportRepository,
   FakeFamilyMemberRepository,
@@ -35,14 +34,12 @@ describe('runOutboxBatch / processOutboxJob', () => {
   const tenantId = 'tenant-1';
   let staff: FakeStaffRepository;
   let customers: FakeCustomerRepository;
-  let crypto: FakeCryptoPort;
   let outbox: FakeOutboxRepository;
   let sender: FakeMirrorSenderPort;
   let staffId: string;
   let customerId: string;
 
   beforeEach(async () => {
-    crypto = new FakeCryptoPort();
     staff = new FakeStaffRepository();
     customers = new FakeCustomerRepository();
     outbox = new FakeOutboxRepository();
@@ -67,7 +64,6 @@ describe('runOutboxBatch / processOutboxJob', () => {
     const customerDeps: CustomerDeps = {
       customers,
       familyMembers: new FakeFamilyMemberRepository(),
-      crypto,
     };
     const createdCustomer = await createCustomer(customerDeps, { tenantId, name: '田中 一郎' });
     customerId = createdCustomer.id;
@@ -81,7 +77,6 @@ describe('runOutboxBatch / processOutboxJob', () => {
       accidentReports,
       customers,
       staff,
-      crypto,
       notifier: new FakeNotifierPort(),
       mirror: outbox,
       unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, outbox]),
@@ -107,7 +102,6 @@ describe('runOutboxBatch / processOutboxJob', () => {
       attendanceDays: new FakeAttendanceDayRepository(),
       staff,
       customers,
-      crypto,
       storage: new FakeStoragePort(),
       sender,
     };
@@ -140,7 +134,6 @@ describe('runOutboxBatch / processOutboxJob', () => {
       accidentReports,
       customers,
       staff,
-      crypto,
       notifier: new FakeNotifierPort(),
       mirror: outbox,
       unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, outbox]),
@@ -170,7 +163,6 @@ describe('runOutboxBatch / processOutboxJob', () => {
       attendanceDays: new FakeAttendanceDayRepository(),
       staff,
       customers,
-      crypto,
       storage: new FakeStoragePort(),
       sender,
     };
@@ -194,12 +186,6 @@ describe('runOutboxBatch / processOutboxJob', () => {
       receipts,
       staff,
       customers,
-      crypto,
-      blindIndex: {
-        async compute(_tenantId: string, normalizedValue: string) {
-          return `blind:${normalizedValue}`;
-        },
-      },
       storage,
       notifier: new FakeNotifierPort(),
       mirror: outbox,
@@ -227,7 +213,6 @@ describe('runOutboxBatch / processOutboxJob', () => {
       attendanceDays: new FakeAttendanceDayRepository(),
       staff,
       customers,
-      crypto,
       storage,
       sender,
     };
@@ -248,7 +233,6 @@ describe('runOutboxBatch / processOutboxJob', () => {
     const attendanceDays = new FakeAttendanceDayRepository();
     const attendanceDeps: AttendanceDeps = {
       attendanceDays,
-      crypto,
       mirror: outbox,
       unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
     };
@@ -267,7 +251,6 @@ describe('runOutboxBatch / processOutboxJob', () => {
       attendanceDays,
       staff,
       customers,
-      crypto,
       storage: new FakeStoragePort(),
       sender,
     };
@@ -290,12 +273,6 @@ describe('runOutboxBatch / processOutboxJob', () => {
       receipts,
       staff,
       customers,
-      crypto,
-      blindIndex: {
-        async compute(_tenantId: string, normalizedValue: string) {
-          return `blind:${normalizedValue}`;
-        },
-      },
       storage,
       notifier: new FakeNotifierPort(),
       mirror: outbox,
@@ -325,7 +302,6 @@ describe('runOutboxBatch / processOutboxJob', () => {
       attendanceDays: new FakeAttendanceDayRepository(),
       staff,
       customers,
-      crypto,
       storage,
       sender,
     };
@@ -351,7 +327,6 @@ describe('runOutboxBatch / processOutboxJob', () => {
       attendanceDays: new FakeAttendanceDayRepository(),
       staff,
       customers,
-      crypto,
       storage: new FakeStoragePort(),
       sender,
     };

@@ -3,7 +3,6 @@ import type {
   AppSettingsRepositoryPort,
   AttendanceDayRepositoryPort,
   AuditLogPort,
-  BlindIndexPort,
   CryptoPort,
   CustomerRepositoryPort,
   DailyReportRepositoryPort,
@@ -54,9 +53,12 @@ export interface Container {
   accidentReports: AccidentReportRepositoryPort;
   receipts: ReceiptRepositoryPort;
   appSettings: AppSettingsRepositoryPort;
+  /**
+   * app_settingsの資格情報(Gemini APIキー・Google Chat Webhook URL)の暗号化/復号にだけ使う。
+   * 顧客・日報等の業務データは平文列なので、ここを通らない(packages/core/src/ports/crypto.ts)。
+   */
   crypto: CryptoPort;
-  blindIndex: BlindIndexPort;
-  /** 復号と、認証・権限まわりのイベントの監査ログ(packages/core/src/ports/audit.ts)。 */
+  /** 資格情報の復号と、認証・権限まわりのイベントの監査ログ(packages/core/src/ports/audit.ts)。 */
   audit: AuditLogPort;
   passwordHasher: PasswordHasherPort;
   storage: StoragePort;

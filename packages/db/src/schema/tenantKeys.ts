@@ -5,7 +5,11 @@ import { tenants } from './tenants';
 /**
  * テナントごとのデータ暗号化鍵(DEK)。エンベロープ暗号化の要。
  *
- * 実データ列(*_ciphertext)を直接暗号化する鍵は、マスターキーからの決定的導出(旧実装、
+ * 2026-09 の見直しで、アプリ層のフィールド暗号化は app_settings の資格情報(Gemini APIキー・
+ * Google Chat Webhook URL)だけに縮小した。顧客・日報等の業務データは平文列なので、
+ * このDEKが守るのは資格情報の暗号文のみ。
+ *
+ * 暗号化列(app_settings の *_ciphertext)を直接暗号化する鍵は、マスターキーからの決定的導出(旧実装、
  * 2026-08 データベース構造レビューで指摘)ではなく、テナントごとにランダム生成した
  * DEKそのものを使う。DEKは平文のままでは保存せず、KEK(Key Encryption Key。ローカル開発は
  * 環境変数、本番はCloud KMS想定)でラップ(暗号化)した状態でのみ永続化する
@@ -16,8 +20,10 @@ import { tenants } from './tenants';
  * DEKをテナントごとに独立して生成・保管することで、
  * - KEKが漏洩しても、攻撃者は「ラップされたDEKの実体」まで別途盗む必要がある(単一の
  *   決定的関数だけでは全テナントの鍵を再現できない)
- * - テナント解約時は本レコードを削除するだけで、そのテナントの暗号文はバックアップに
- *   残っていても二度と復号できなくなる(暗号学的削除。revoke()参照)
+ * - テナント解約時は本レコードを削除するだけで、そのテナントの暗号文(app_settings の資格情報)
+ *   はバックアップに残っていても二度と復号できなくなる(暗号学的削除。revoke()参照)。
+ *   ただしこれが及ぶのは暗号化された資格情報だけで、顧客・日報等の業務データは平文列のため、
+ *   テナント削除はテナント単位の物理 DELETE(+バックアップ保持期間の経過)で行う
  * - 本番のCloud KMS移行時は、KeyManagementPortの実装を差し替えるだけで済む(wrappedDek列の
  *   形式(base64)自体は変えずに済む)
  * が実現できる。
@@ -42,7 +48,10 @@ export const tenantKeys = pgTable(
     kekVersion: integer().notNull().default(1),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-    /** 暗号学的削除の実行日時。設定後はunwrapできない(=そのテナントの全PIIが永久に復号不能)。 */
+    /**
+     * 暗号学的削除の実行日時。設定後はunwrapできない(=そのテナントの app_settings の暗号化済み
+     * 資格情報が永久に復号不能)。平文列の業務データには及ばない(テナント単位の物理 DELETE で消す)。
+     */
     revokedAt: timestamp({ withTimezone: true }),
   },
   (t) => [

@@ -5,7 +5,6 @@ import { runOutboxBatch } from './mirrorWorker';
 import {
   FakeAccidentReportRepository,
   FakeAttendanceDayRepository,
-  FakeCryptoPort,
   FakeCustomerRepository,
   FakeDailyReportRepository,
   FakeMirrorSenderPort,
@@ -38,7 +37,6 @@ describe('ミラージョブの再試行', () => {
     outbox = new FakeOutboxRepository(now);
     sender = new FakeMirrorSenderPort();
     dailyReports = new FakeDailyReportRepository();
-    const crypto = new FakeCryptoPort();
     const report = await dailyReports.create({
       tenantId,
       staffId: 'staff-1',
@@ -46,7 +44,7 @@ describe('ミラージョブの再試行', () => {
       occurredAt: new Date('2026-08-30T01:00:00.000Z'),
       riskRating: null,
       esRating: null,
-      content: await crypto.encrypt(tenantId, JSON.stringify({ startTime: '09:00' })),
+      content: { startTime: '09:00', endTime: '', inputText: '', internalText: '', customerText: '' },
     });
     await outbox.enqueue({
       tenantId,
@@ -63,7 +61,6 @@ describe('ミラージョブの再試行', () => {
       attendanceDays: new FakeAttendanceDayRepository(),
       staff: new FakeStaffRepository(),
       customers: new FakeCustomerRepository(),
-      crypto,
       storage: new FakeStoragePort(),
       sender,
     };

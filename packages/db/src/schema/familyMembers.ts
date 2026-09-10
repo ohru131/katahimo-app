@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { foreignKey, integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { foreignKey, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { tenants } from './tenants';
@@ -9,8 +9,12 @@ import { tenants } from './tenants';
  *
  * RESERVA CSVの「世帯全員の情報」欄(自由記述)を parseFamilyInfo() で構造化した結果を
  * そのまま保存する(packages/core/src/domain/legacyImport/parseFamilyInfo.ts)。
- * 氏名・生年月日・職業/アレルギー等の付帯情報は全て個人特定につながるため暗号化する。
- * 現時点で世帯構成員を検索する要件は無いため、blindIndexは持たない。
+ *
+ * 【保存方針(2026-09 データベース暗号化の見直し)】
+ * 氏名・生年月日・付帯情報は平文列で保存する(以前はアプリ層で暗号化していたが、フィールド
+ * 単位の暗号化は app_settings の資格情報だけに縮小した)。保護はDB/バックアップの保存時暗号化
+ * + RLS + アクセス制御で行い、平文にすることで検索や将来の分析・AI活用にSQLから直接使える。
+ * 既存の暗号化済みデータは引き継がない(DBは作り直す前提)。
  */
 export const familyMembers = pgTable(
   'family_members',
@@ -21,16 +25,14 @@ export const familyMembers = pgTable(
       .references(() => tenants.id),
     customerId: uuid().notNull(),
 
-    nameCiphertext: text().notNull(),
-    nameKeyVersion: integer().notNull(),
+    /** 氏名。DEFAULT '' は行が残っているDBでも ADD COLUMN ... NOT NULL が失敗しないようにするため。 */
+    name: text().notNull().default(''),
 
-    /** 生年月日(normalizeDateStrで正規化済みの "YYYY/M/D" 形式)。未取得の場合は空文字のこともある。 */
-    dobCiphertext: text(),
-    dobKeyVersion: integer(),
+    /** 生年月日(normalizeDateStrで正規化済みの "YYYY/M/D" 形式)。未取得の場合はnull。 */
+    dob: text(),
 
     /** 職業・アレルギー・その他共有事項などの自由記述(parseFamilyInfoのinfo)。 */
-    infoCiphertext: text(),
-    infoKeyVersion: integer(),
+    info: text(),
 
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

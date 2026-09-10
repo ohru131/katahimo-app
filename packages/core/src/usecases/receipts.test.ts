@@ -6,7 +6,6 @@ import { createCustomer } from './customers';
 import type { ReceiptDeps } from './receipts';
 import { uploadReceipts } from './receipts';
 import {
-  FakeCryptoPort,
   FakeCustomerRepository,
   FakeFamilyMemberRepository,
   FakeNotifierPort,
@@ -28,7 +27,6 @@ describe('uploadReceipts', () => {
   let customerId: string;
 
   beforeEach(async () => {
-    const crypto = new FakeCryptoPort();
     const staff = new FakeStaffRepository();
     const customers = new FakeCustomerRepository();
 
@@ -51,7 +49,6 @@ describe('uploadReceipts', () => {
     const customerDeps: CustomerDeps = {
       customers,
       familyMembers: new FakeFamilyMemberRepository(),
-      crypto,
     };
     const createdCustomer = await createCustomer(customerDeps, { tenantId, name: '田中 一郎' });
     customerId = createdCustomer.id;
@@ -62,12 +59,6 @@ describe('uploadReceipts', () => {
       receipts: receiptRepository,
       staff,
       customers,
-      crypto,
-      blindIndex: {
-        async compute(_tenantId: string, normalizedValue: string) {
-          return `blind:${normalizedValue}`;
-        },
-      },
       storage: new FakeStoragePort(),
       notifier: new FakeNotifierPort(),
       mirror,

@@ -1,8 +1,9 @@
 /**
  * 領収書の重複判定キー組み立て。GAS版Main.js processReceiptImagesの
- * normalizeAmount/normalizeText/buildKeyと完全に同一のロジック
- * (このキーの正規化前の値をそのままBlindIndexPortに渡すと、登録時と照合時で
- * インデックスがずれるため、必ずこの関数を通した文字列を渡すこと)。
+ * normalizeAmount/normalizeText/buildKeyと完全に同一のロジック。
+ * 返した文字列は receipts.dedupe_key にそのまま(平文で)保存し、等値一致で照合する。
+ * 登録時と照合時で正規化がずれると同じ領収書なのに一致しなくなるため、書き込み側・
+ * 照合側の両方で必ずこの関数を通した文字列を使うこと。
  */
 export function normalizeAmount(val: string | number | null | undefined): string {
   if (val === null || val === undefined || val === '') return '';

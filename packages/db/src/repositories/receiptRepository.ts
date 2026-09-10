@@ -1,5 +1,4 @@
 import type {
-  EncryptedField,
   NewReceiptInput,
   ReceiptRecord,
   ReceiptRepositoryPort,
@@ -12,10 +11,6 @@ import { withTenant } from '../tenantScope';
 
 type ReceiptRow = typeof receipts.$inferSelect;
 
-function encField(ciphertext: string | null, keyVersion: number | null): EncryptedField | null {
-  return ciphertext && keyVersion != null ? { ciphertext, keyVersion } : null;
-}
-
 function toRecord(row: ReceiptRow): ReceiptRecord {
   return {
     id: row.id,
@@ -23,9 +18,9 @@ function toRecord(row: ReceiptRow): ReceiptRecord {
     staffId: row.staffId,
     customerId: row.customerId,
     receiptTimestamp: row.receiptTimestamp,
-    amount: encField(row.amountCiphertext, row.amountKeyVersion),
-    storeName: encField(row.storeNameCiphertext, row.storeNameKeyVersion),
-    handoffText: encField(row.handoffTextCiphertext, row.handoffTextKeyVersion),
+    amount: row.amount,
+    storeName: row.storeName,
+    handoffText: row.handoffText,
     fileKey: row.fileKey,
     contentType: row.contentType,
     createdAt: row.createdAt,
@@ -47,13 +42,10 @@ export class DrizzleReceiptRepository implements ReceiptRepositoryPort {
             staffId: input.staffId,
             customerId: input.customerId,
             receiptTimestamp: input.receiptTimestamp,
-            dedupeBlindIndex: input.dedupeBlindIndex,
-            amountCiphertext: input.amount?.ciphertext ?? null,
-            amountKeyVersion: input.amount?.keyVersion ?? null,
-            storeNameCiphertext: input.storeName?.ciphertext ?? null,
-            storeNameKeyVersion: input.storeName?.keyVersion ?? null,
-            handoffTextCiphertext: input.handoffText?.ciphertext ?? null,
-            handoffTextKeyVersion: input.handoffText?.keyVersion ?? null,
+            dedupeKey: input.dedupeKey,
+            amount: input.amount,
+            storeName: input.storeName,
+            handoffText: input.handoffText,
             fileKey: input.fileKey,
             contentType: input.contentType,
           })
@@ -74,16 +66,14 @@ export class DrizzleReceiptRepository implements ReceiptRepositoryPort {
     });
   }
 
-  async findExistingDedupeIndexes(tenantId: string, dedupeBlindIndexes: string[]): Promise<Set<string>> {
-    if (dedupeBlindIndexes.length === 0) return new Set();
+  async findExistingDedupeKeys(tenantId: string, dedupeKeys: string[]): Promise<Set<string>> {
+    if (dedupeKeys.length === 0) return new Set();
     return withTenant(this.db, tenantId, async (tx) => {
       const rows = await tx
-        .select({ dedupeBlindIndex: receipts.dedupeBlindIndex })
+        .select({ dedupeKey: receipts.dedupeKey })
         .from(receipts)
-        .where(
-          and(isNotNull(receipts.dedupeBlindIndex), inArray(receipts.dedupeBlindIndex, dedupeBlindIndexes)),
-        );
-      return new Set(rows.map((r) => r.dedupeBlindIndex).filter((v): v is string => v !== null));
+        .where(and(isNotNull(receipts.dedupeKey), inArray(receipts.dedupeKey, dedupeKeys)));
+      return new Set(rows.map((r) => r.dedupeKey).filter((v): v is string => v !== null));
     });
   }
 }

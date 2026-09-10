@@ -1,7 +1,7 @@
-import { createHash, createHmac } from 'node:crypto';
+import type { AttendanceRowData } from '../domain/attendance';
 import type { LoginThrottlePolicy } from '../domain/auth/loginThrottle';
 import { applyFailedLogin } from '../domain/auth/loginThrottle';
-import type { BlindIndexPort, CryptoPort, EncryptedValue } from '../ports/crypto';
+import type { CryptoPort, EncryptedValue } from '../ports/crypto';
 import type { MailerPort, MailMessage } from '../ports/mailer';
 import type { MirrorJob, OutboxJobRecord, OutboxRepositoryPort } from '../ports/mirror';
 import type {
@@ -28,7 +28,6 @@ import type {
   CustomerRepositoryPort,
   DailyReportRecord,
   DailyReportRepositoryPort,
-  EncryptedField,
   FamilyMemberRecord,
   FamilyMemberRepositoryPort,
   IssuePasswordResetCodeInput,
@@ -61,7 +60,8 @@ import type { PasswordHasherPort } from './auth';
 
 /**
  * usecasesのテスト用インメモリ実装群。実DBやKMSを使わず、ports契約だけを満たす形で
- * ドメインロジック(特に「登録時と検索時でブラインドインデックスの正規化が一致しているか」)
+ * ドメインロジック(特に「登録時と照合時で検索キーの正規化が一致しているか」や
+ * 「ドメインの書き込みとoutboxへのenqueueが同じトランザクションに乗っているか」)
  * を検証するためのもの。テスト専用であり、本番コードから参照してはいけない。
  */
 
@@ -103,21 +103,13 @@ export class FakeUnitOfWork implements UnitOfWorkPort {
   }
 }
 
-/** 暗号化は行わず`ENC:平文`のタグを付けるだけの、検証しやすいフェイク実装。 */
+/** 暗号化は行わず`ENC:平文`のタグを付けるだけの、検証しやすいフェイク実装(app_settingsの資格情報用)。 */
 export class FakeCryptoPort implements CryptoPort {
   async encrypt(_tenantId: string, plaintext: string): Promise<EncryptedValue> {
     return { ciphertext: `ENC:${plaintext}`, keyVersion: 1 };
   }
   async decrypt(_tenantId: string, value: EncryptedValue): Promise<string> {
     return value.ciphertext.replace(/^ENC:/, '');
-  }
-}
-
-/** 本物同様HMAC-SHA256を使う(正規化ミスを検出したいので、ここだけは本物と同じ計算にする)。 */
-export class FakeBlindIndexPort implements BlindIndexPort {
-  async compute(tenantId: string, normalizedValue: string): Promise<string> {
-    const key = createHash('sha256').update('test-fixed-key').update(tenantId).digest();
-    return createHmac('sha256', key).update(normalizedValue, 'utf8').digest('hex');
   }
 }
 
@@ -496,7 +488,7 @@ export class FakeAttendanceDayRepository implements AttendanceDayRepositoryPort,
     tenantId: string,
     staffId: string,
     businessDate: string,
-    rowData: EncryptedField,
+    rowData: AttendanceRowData,
   ): Promise<AttendanceDayRecord> {
     const existing = this.rows.find(
       (r) => r.tenantId === tenantId && r.staffId === staffId && r.businessDate === businessDate,
@@ -694,7 +686,7 @@ export class FakeAccidentReportRepository
 
 interface StoredReceipt {
   record: ReceiptRecord;
-  dedupeBlindIndex: string | null;
+  dedupeKey: string | null;
 }
 
 export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransactionParticipant {
@@ -715,7 +707,7 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
       contentType: input.contentType,
       createdAt: new Date(),
     };
-    this.rows.push({ record, dedupeBlindIndex: input.dedupeBlindIndex });
+    this.rows.push({ record, dedupeKey: input.dedupeKey });
     return record;
   }
 
@@ -723,12 +715,12 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
     return this.rows.find((r) => r.record.tenantId === tenantId && r.record.id === id)?.record ?? null;
   }
 
-  async findExistingDedupeIndexes(tenantId: string, dedupeBlindIndexes: string[]): Promise<Set<string>> {
-    const keys = new Set(dedupeBlindIndexes);
+  async findExistingDedupeKeys(tenantId: string, dedupeKeys: string[]): Promise<Set<string>> {
+    const keys = new Set(dedupeKeys);
     return new Set(
       this.rows
-        .filter((r) => r.record.tenantId === tenantId && r.dedupeBlindIndex && keys.has(r.dedupeBlindIndex))
-        .map((r) => r.dedupeBlindIndex as string),
+        .filter((r) => r.record.tenantId === tenantId && r.dedupeKey && keys.has(r.dedupeKey))
+        .map((r) => r.dedupeKey as string),
     );
   }
 

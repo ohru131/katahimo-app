@@ -5,9 +5,10 @@ import * as shim from './nodeCryptoShim';
 /**
  * シムの出力が node:crypto と1バイトも違わないことを保証する。
  *
- * ここがずれると、デモのブラウザ内で作った暗号文・ブラインドインデックスが本番の
- * コードで復号/照合できなくなる。「デモだから多少違ってもいい」ものではなく、
- * 同じ実装を差し替えて動かしている以上、暗号まわりの等価性は明示的に検証しておく。
+ * ここがずれると、デモのブラウザ内で作った資格情報の暗号文(app_settings)や
+ * パスワード再設定コードの検証子(HMAC)・セッショントークンのハッシュが本番のコードと
+ * 食い違う。「デモだから多少違ってもいい」ものではなく、同じ実装を差し替えて動かしている
+ * 以上、暗号まわりの等価性は明示的に検証しておく。
  */
 describe('node:cryptoシム', () => {
   const key = Buffer.alloc(32, 7);
@@ -22,15 +23,11 @@ describe('node:cryptoシム', () => {
   });
 
   it('update()を複数回に分けても連結した入力と同じ結果になる', () => {
-    // LocalBlindIndexPort が .update(masterKey).update(':blind-index:').update(tenantId) と
-    // 3回に分けて呼ぶため、分割呼び出しの等価性が必要。
-    const chained = shim.createHash('sha256').update(key).update(':blind-index:').update('tenant-1').digest();
-    const expected = node
-      .createHash('sha256')
-      .update(key)
-      .update(':blind-index:')
-      .update('tenant-1')
-      .digest();
+    // 本番コード側は入力を1回で渡す前提を置いていない(auth/KMS の createHash、
+    // passwordReset.ts の createHmac が将来分割して呼んでも壊れないように)。
+    // Node の Hash と同じく、分割呼び出しは連結した入力と同じ結果でなければならない。
+    const chained = shim.createHash('sha256').update(key).update(':separator:').update('tenant-1').digest();
+    const expected = node.createHash('sha256').update(key).update(':separator:').update('tenant-1').digest();
     expect(chained.equals(expected)).toBe(true);
   });
 

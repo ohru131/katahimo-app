@@ -3,15 +3,12 @@ import { z } from 'zod';
 /**
  * ワーカー(outboxミラー・夜間同期・CSV取込ポーリング)用の環境変数検証。
  * APIサーバー(packages/api/src/env.ts)と役割が異なるため、必要な変数だけを最小限持つ
- * (LOCAL_DEV_MASTER_KEY等、認証・ブラインドインデックス関連はワーカーには不要)。
+ * (認証関連や、app_settingsの資格情報を復号するためのLOCAL_DEV_KEKはワーカーには不要。
+ * ミラー対象の日報・領収書・勤怠は平文列なので、ワーカーは復号を一切行わない)。
  */
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL が必要です'),
-
-  // CryptoPortが使うテナントDEKをラップするKEK。packages/api/src/env.tsのLOCAL_DEV_KEKと同じ値
-  // (テナントごとのDEKはDB(tenant_keys)に保存されているため、API/ワーカー間で共有する)。
-  LOCAL_DEV_KEK: z.string().regex(/^[0-9a-f]{64}$/i, 'LOCAL_DEV_KEK は32バイト(64桁の16進数)にしてください'),
 
   // 領収書画像の保存先。packages/api/src/env.tsのLOCAL_RECEIPT_STORAGE_DIRと同じ値にすること
   // (ワーカーはAPIサーバーが保存したファイルを読み直してGAS版Driveへミラーする)。

@@ -39,7 +39,7 @@ describe('listActiveStaffForAdmin', () => {
     };
   });
 
-  it('氏名を復号し、単純な文字列比較で並び替えて返す', async () => {
+  it('氏名を単純な文字列比較で並び替えて返す', async () => {
     await registerStaff(authDeps, {
       tenantId,
       name: '鈴木 三郎',

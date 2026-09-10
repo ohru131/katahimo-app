@@ -2,7 +2,6 @@ import type {
   CustomerPatchInput,
   CustomerRecord,
   CustomerRepositoryPort,
-  EncryptedField,
   NewCustomerInput,
 } from '@katahimo/core/ports';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -11,10 +10,6 @@ import type { Database } from '../tenantScope';
 import { withTenant } from '../tenantScope';
 
 type CustomerRow = typeof customers.$inferSelect;
-
-function encField(ciphertext: string | null, keyVersion: number | null): EncryptedField | null {
-  return ciphertext && keyVersion != null ? { ciphertext, keyVersion } : null;
-}
 
 function toRecord(row: CustomerRow): CustomerRecord {
   return {
@@ -33,18 +28,15 @@ function toRecord(row: CustomerRow): CustomerRecord {
     city: row.city,
     parkingArea: row.parkingArea,
     parkingDetail: row.parkingDetail,
-    emergencyContact: encField(row.emergencyContactCiphertext, row.emergencyContactKeyVersion),
-    emergencyContactRelation: encField(
-      row.emergencyContactRelationCiphertext,
-      row.emergencyContactRelationKeyVersion,
-    ),
-    evacuationSite: encField(row.evacuationSiteCiphertext, row.evacuationSiteKeyVersion),
-    memo: encField(row.memoCiphertext, row.memoKeyVersion),
-    benefitMemberId: encField(row.benefitMemberIdCiphertext, row.benefitMemberIdKeyVersion),
+    emergencyContact: row.emergencyContact,
+    emergencyContactRelation: row.emergencyContactRelation,
+    evacuationSite: row.evacuationSite,
+    memo: row.memo,
+    benefitMemberId: row.benefitMemberId,
     address2: row.address2,
     address2StartDate: row.address2StartDate,
     address2EndDate: row.address2EndDate,
-    latLng: encField(row.latLngCiphertext, row.latLngKeyVersion),
+    latLng: row.latLng,
     memberType: row.memberType,
     memberStatus: row.memberStatus,
     paymentMethod: row.paymentMethod,
@@ -70,21 +62,15 @@ function toColumnValues(input: NewCustomerInput) {
     city: input.city ?? null,
     parkingArea: input.parkingArea ?? null,
     parkingDetail: input.parkingDetail ?? null,
-    emergencyContactCiphertext: input.emergencyContact?.ciphertext ?? null,
-    emergencyContactKeyVersion: input.emergencyContact?.keyVersion ?? null,
-    emergencyContactRelationCiphertext: input.emergencyContactRelation?.ciphertext ?? null,
-    emergencyContactRelationKeyVersion: input.emergencyContactRelation?.keyVersion ?? null,
-    evacuationSiteCiphertext: input.evacuationSite?.ciphertext ?? null,
-    evacuationSiteKeyVersion: input.evacuationSite?.keyVersion ?? null,
-    memoCiphertext: input.memo?.ciphertext ?? null,
-    memoKeyVersion: input.memo?.keyVersion ?? null,
-    benefitMemberIdCiphertext: input.benefitMemberId?.ciphertext ?? null,
-    benefitMemberIdKeyVersion: input.benefitMemberId?.keyVersion ?? null,
+    emergencyContact: input.emergencyContact ?? null,
+    emergencyContactRelation: input.emergencyContactRelation ?? null,
+    evacuationSite: input.evacuationSite ?? null,
+    memo: input.memo ?? null,
+    benefitMemberId: input.benefitMemberId ?? null,
     address2: input.address2 ?? null,
     address2StartDate: input.address2StartDate ?? null,
     address2EndDate: input.address2EndDate ?? null,
-    latLngCiphertext: input.latLng?.ciphertext ?? null,
-    latLngKeyVersion: input.latLng?.keyVersion ?? null,
+    latLng: input.latLng ?? null,
     memberType: input.memberType ?? null,
     memberStatus: input.memberStatus ?? null,
     paymentMethod: input.paymentMethod ?? null,
@@ -117,33 +103,17 @@ function toPatchColumnValues(patch: CustomerPatchInput) {
     ...(patch.city !== undefined && { city: patch.city }),
     ...(patch.parkingArea !== undefined && { parkingArea: patch.parkingArea }),
     ...(patch.parkingDetail !== undefined && { parkingDetail: patch.parkingDetail }),
-    ...(patch.emergencyContact !== undefined && {
-      emergencyContactCiphertext: patch.emergencyContact?.ciphertext ?? null,
-      emergencyContactKeyVersion: patch.emergencyContact?.keyVersion ?? null,
-    }),
+    ...(patch.emergencyContact !== undefined && { emergencyContact: patch.emergencyContact }),
     ...(patch.emergencyContactRelation !== undefined && {
-      emergencyContactRelationCiphertext: patch.emergencyContactRelation?.ciphertext ?? null,
-      emergencyContactRelationKeyVersion: patch.emergencyContactRelation?.keyVersion ?? null,
+      emergencyContactRelation: patch.emergencyContactRelation,
     }),
-    ...(patch.evacuationSite !== undefined && {
-      evacuationSiteCiphertext: patch.evacuationSite?.ciphertext ?? null,
-      evacuationSiteKeyVersion: patch.evacuationSite?.keyVersion ?? null,
-    }),
-    ...(patch.memo !== undefined && {
-      memoCiphertext: patch.memo?.ciphertext ?? null,
-      memoKeyVersion: patch.memo?.keyVersion ?? null,
-    }),
-    ...(patch.benefitMemberId !== undefined && {
-      benefitMemberIdCiphertext: patch.benefitMemberId?.ciphertext ?? null,
-      benefitMemberIdKeyVersion: patch.benefitMemberId?.keyVersion ?? null,
-    }),
+    ...(patch.evacuationSite !== undefined && { evacuationSite: patch.evacuationSite }),
+    ...(patch.memo !== undefined && { memo: patch.memo }),
+    ...(patch.benefitMemberId !== undefined && { benefitMemberId: patch.benefitMemberId }),
     ...(patch.address2 !== undefined && { address2: patch.address2 }),
     ...(patch.address2StartDate !== undefined && { address2StartDate: patch.address2StartDate }),
     ...(patch.address2EndDate !== undefined && { address2EndDate: patch.address2EndDate }),
-    ...(patch.latLng !== undefined && {
-      latLngCiphertext: patch.latLng?.ciphertext ?? null,
-      latLngKeyVersion: patch.latLng?.keyVersion ?? null,
-    }),
+    ...(patch.latLng !== undefined && { latLng: patch.latLng }),
     ...(patch.memberType !== undefined && { memberType: patch.memberType }),
     ...(patch.memberStatus !== undefined && { memberStatus: patch.memberStatus }),
     ...(patch.paymentMethod !== undefined && { paymentMethod: patch.paymentMethod }),

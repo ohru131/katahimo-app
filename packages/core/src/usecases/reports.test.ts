@@ -6,7 +6,6 @@ import { createCustomer } from './customers';
 import type { ReportDeps } from './reports';
 import { sendVisitCompleteNotification } from './reports';
 import {
-  FakeCryptoPort,
   FakeCustomerRepository,
   FakeFamilyMemberRepository,
   FakeNotifierPort,
@@ -27,7 +26,6 @@ describe('sendVisitCompleteNotification', () => {
   let customerId: string;
 
   beforeEach(async () => {
-    const crypto = new FakeCryptoPort();
     const staff = new FakeStaffRepository();
     const customers = new FakeCustomerRepository();
     notifier = new FakeNotifierPort();
@@ -51,7 +49,6 @@ describe('sendVisitCompleteNotification', () => {
     const customerDeps: CustomerDeps = {
       customers,
       familyMembers: new FakeFamilyMemberRepository(),
-      crypto,
     };
     const createdCustomer = await createCustomer(customerDeps, { tenantId, name: '田中 一郎' });
     customerId = createdCustomer.id;
@@ -62,7 +59,6 @@ describe('sendVisitCompleteNotification', () => {
       accidentReports: {} as ReportDeps['accidentReports'],
       customers,
       staff,
-      crypto,
       notifier,
       mirror: new FakeOutboxRepository(),
       unitOfWork: new FakeUnitOfWork([]),

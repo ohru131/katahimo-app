@@ -12,7 +12,6 @@ import { saveAccidentReport, saveDailyReport } from './reports';
 import {
   FakeAccidentReportRepository,
   FakeAttendanceDayRepository,
-  FakeCryptoPort,
   FakeCustomerRepository,
   FakeDailyReportRepository,
   FakeMailer,
@@ -59,7 +58,6 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
     dailyReports = new FakeDailyReportRepository();
     accidentReports = new FakeAccidentReportRepository();
     outbox = new FakeOutboxRepository();
-    const crypto = new FakeCryptoPort();
     const staff = new FakeStaffRepository();
     const customers = new FakeCustomerRepository();
 
@@ -86,7 +84,6 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
       accidentReports,
       customers,
       staff,
-      crypto,
       notifier: new FakeNotifierPort(),
       mirror: new FailingMirrorPort(),
       unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, outbox]),
@@ -202,7 +199,6 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
     const attendanceDays = new FakeAttendanceDayRepository();
     const attendanceDeps: AttendanceDeps = {
       attendanceDays,
-      crypto: new FakeCryptoPort(),
       mirror: new FailingMirrorPort(),
       unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
     };
@@ -221,12 +217,6 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
       receipts,
       staff: new FakeStaffRepository(),
       customers: new FakeCustomerRepository(),
-      crypto: new FakeCryptoPort(),
-      blindIndex: {
-        async compute(_tenantId: string, normalizedValue: string) {
-          return `blind:${normalizedValue}`;
-        },
-      },
       storage,
       notifier: new FakeNotifierPort(),
       mirror: new FailingMirrorPort(),

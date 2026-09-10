@@ -1,3 +1,4 @@
+import type { AccidentReportContent } from '@katahimo/core/domain';
 import type {
   AccidentReportRecord,
   AccidentReportRepositoryPort,
@@ -11,6 +12,42 @@ import { withTenant } from '../tenantScope';
 
 type AccidentReportRow = typeof accidentReports.$inferSelect;
 
+/**
+ * AccidentReportContent ↔ accident_reports の項目別平文列(1:1)の詰め替え。
+ * 列を足したら両方向を同時に更新する(schema/accidentReports.ts 参照)。
+ */
+function toContentColumns(content: AccidentReportContent) {
+  return {
+    targetName: content.targetName,
+    targetDob: content.targetDob,
+    occurrenceTime: content.occurrenceTime,
+    location: content.location,
+    accidentContent: content.accidentContent,
+    situation: content.situation,
+    immediateResponse: content.immediateResponse,
+    parentCorrespondence: content.parentCorrespondence,
+    diagnosisTreatment: content.diagnosisTreatment,
+    prevention: content.prevention,
+    inputText: content.inputText,
+  };
+}
+
+function toContent(row: AccidentReportRow): AccidentReportContent {
+  return {
+    targetName: row.targetName,
+    targetDob: row.targetDob,
+    occurrenceTime: row.occurrenceTime,
+    location: row.location,
+    accidentContent: row.accidentContent,
+    situation: row.situation,
+    immediateResponse: row.immediateResponse,
+    parentCorrespondence: row.parentCorrespondence,
+    diagnosisTreatment: row.diagnosisTreatment,
+    prevention: row.prevention,
+    inputText: row.inputText,
+  };
+}
+
 function toRecord(row: AccidentReportRow): AccidentReportRecord {
   return {
     id: row.id,
@@ -19,7 +56,7 @@ function toRecord(row: AccidentReportRow): AccidentReportRecord {
     customerId: row.customerId,
     occurredAt: row.occurredAt,
     reportType: row.reportType,
-    content: { ciphertext: row.contentCiphertext, keyVersion: row.contentKeyVersion },
+    content: toContent(row),
     updatedAt: row.updatedAt,
   };
 }
@@ -40,8 +77,7 @@ export class DrizzleAccidentReportRepository implements AccidentReportRepository
             customerId: input.customerId,
             occurredAt: input.occurredAt,
             reportType: input.reportType,
-            contentCiphertext: input.content.ciphertext,
-            contentKeyVersion: input.content.keyVersion,
+            ...toContentColumns(input.content),
           })
           .returning();
         const row = rows[0];
@@ -67,8 +103,7 @@ export class DrizzleAccidentReportRepository implements AccidentReportRepository
           .set({
             occurredAt: input.occurredAt,
             reportType: input.reportType,
-            contentCiphertext: input.content.ciphertext,
-            contentKeyVersion: input.content.keyVersion,
+            ...toContentColumns(input.content),
             updatedAt: new Date(),
           })
           .where(eq(accidentReports.id, id))

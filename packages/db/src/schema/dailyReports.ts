@@ -9,10 +9,17 @@ import { tenants } from './tenants';
  * 保育日報。GAS版の「日報」シート(REPORT_SHEET_NAME)に対応(Main.js saveReport/getCustomerReports)。
  *
  * occurredAtは訪問日時(reportDate+startTimeから算出。GAS版のTimestamp列と同じ)で、履歴の並び替え・
- * 絞り込みに使うためciphertextにはせず平文で持つ(単なる日時であり、attendance_daysのbusinessDateと
- * 同様の扱い)。PSI/ES評価も検索/集計に使わないが小さな数値なので平文。自由記述(開始/終了時刻の文脈、
- * メモ・社内向け/保護者向けレポート本文)は個人の生活状況が色濃く出るため、attendance_daysのrowDataと
- * 同じ考え方でJSONにまとめて1本のciphertextに暗号化する(フィールド単位の検索が不要なため)。
+ * 絞り込みに使う。PSI/ES評価は小さな数値。
+ *
+ * 【保存方針(2026-09 データベース暗号化の見直し)】
+ * 本文(開始/終了時刻、メモ、社内向け/保護者向けレポート)は packages/core/src/domain/reports/types.ts
+ * の DailyReportContent と1:1の平文 text 列に分けて保存する。以前はJSONにまとめて1本の暗号文に
+ * していたが、フィールド単位の暗号化は app_settings の資格情報だけに縮小した。
+ * - 項目ごとの列にするのは、SQLで直接検索・集計(将来は全文検索インデックス付与)できるようにするため。
+ *   日報テキストは将来の分析・AI活用の主対象であり、平文でSQLから扱える方が匿名化・統計化も実装しやすい。
+ * - 保護はDB/バックアップの保存時暗号化 + RLS + アクセス制御で行う。
+ * - 各列の DEFAULT '' は、行が残っているDBでも ADD COLUMN ... NOT NULL が失敗しないようにするため
+ *   (既存行の本文は空になる=既存の暗号化済みデータは引き継がない、という決定に沿う)。
  */
 export const dailyReports = pgTable(
   'daily_reports',
@@ -30,8 +37,15 @@ export const dailyReports = pgTable(
     /** 満足度(ES)評価(1〜5)。未評価はnull。 */
     esRating: integer(),
 
-    contentCiphertext: text().notNull(),
-    contentKeyVersion: integer().notNull(),
+    /** 'HH:mm'。未入力は空文字(GAS版のStartTime/EndTime列と同じ)。 */
+    startTime: text().notNull().default(''),
+    endTime: text().notNull().default(''),
+    /** 保育日報のメモ(口語入力。AI生成前の元テキスト)。GAS版のInputText列。 */
+    inputText: text().notNull().default(''),
+    /** 社内向けレポート本文。GAS版のInternalReport列。 */
+    internalText: text().notNull().default(''),
+    /** 保護者向けレポート本文。GAS版のCustomerReport列。 */
+    customerText: text().notNull().default(''),
 
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

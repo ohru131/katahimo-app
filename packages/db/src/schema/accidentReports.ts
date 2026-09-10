@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { foreignKey, integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { foreignKey, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { staff } from './staff';
@@ -10,9 +10,17 @@ import { tenants } from './tenants';
  * (Main.js saveAccidentReport/getCustomerReports)。
  *
  * occurredAtは保存日時(GAS版は常にnew Date()で、訪問日時の指定はできない)。reportTypeは
- * '事故報告'/'ヒヤリハット'の分類でしかないため平文。対象児の氏名・生年月日、発生状況・対応内容など
- * 自由記述の項目は個人の受傷歴・生活状況を含むため、daily_reportsと同じくJSONにまとめて
- * 1本のciphertextに暗号化する。
+ * '事故報告'/'ヒヤリハット'の分類。
+ *
+ * 【保存方針(2026-09 データベース暗号化の見直し)】
+ * 対象児の氏名・生年月日、発生状況・対応内容などの本文は packages/core/src/domain/reports/types.ts
+ * の AccidentReportContent と1:1の平文 text 列に分けて保存する。以前はJSONにまとめて1本の暗号文に
+ * していたが、フィールド単位の暗号化は app_settings の資格情報だけに縮小した。
+ * - 項目ごとの列にするのは、SQLで直接検索・集計(将来は全文検索インデックス付与)できるようにするため。
+ *   事故報告の本文も将来の分析・AI活用の対象で、平文でSQLから扱える方が匿名化・統計化も実装しやすい。
+ * - 保護はDB/バックアップの保存時暗号化 + RLS + アクセス制御で行う。
+ * - 各列の DEFAULT '' は、行が残っているDBでも ADD COLUMN ... NOT NULL が失敗しないようにするため
+ *   (既存行の本文は空になる=既存の暗号化済みデータは引き継がない、という決定に沿う)。
  */
 export const accidentReports = pgTable(
   'accident_reports',
@@ -28,8 +36,20 @@ export const accidentReports = pgTable(
     /** '事故報告' | 'ヒヤリハット'。GAS版のReportType列と同じ値をそのまま使う。 */
     reportType: text().notNull(),
 
-    contentCiphertext: text().notNull(),
-    contentKeyVersion: integer().notNull(),
+    /** 対象児(世帯構成員)の氏名。GAS版のTargetName列。 */
+    targetName: text().notNull().default(''),
+    /** 'yyyy/MM/dd'。GAS版のTargetDob列。 */
+    targetDob: text().notNull().default(''),
+    occurrenceTime: text().notNull().default(''),
+    location: text().notNull().default(''),
+    accidentContent: text().notNull().default(''),
+    situation: text().notNull().default(''),
+    immediateResponse: text().notNull().default(''),
+    parentCorrespondence: text().notNull().default(''),
+    diagnosisTreatment: text().notNull().default(''),
+    prevention: text().notNull().default(''),
+    /** 元のメモ(口語入力)。GAS版のOriginalInput列。 */
+    inputText: text().notNull().default(''),
 
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

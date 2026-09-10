@@ -2,7 +2,6 @@ import { sql } from 'drizzle-orm';
 import {
   date,
   index,
-  integer,
   pgPolicy,
   pgTable,
   text,
@@ -20,20 +19,20 @@ import { tenants } from './tenants';
  * RESERVA(外部予約システム)の顧客CSVを1件も情報を落とさず取り込めるよう、CSVの全列に
  * 対応するカラムを持つ(packages/ingestion の reservaCsv パーサー参照)。
  *
- * 【暗号化方針(2026-08 データベース構造レビューで見直し)】
- * 当初は個人特定につながる項目を全てランダム化暗号(ciphertext+keyVersion)で保存していたが、
- * 「DB個別の暗号化は過剰、バックアップの暗号化で十分」という有識者指摘を踏まえ、対象を
- * 要配慮性の高い項目(第三者情報・位置情報・自由記述・識別子)に絞った(doc/09参照)。
- * - 平文のまま(TDE+RLS+アクセス制御で保護): 氏名・かな・メール・電話・住所・駐車場情報
- * - 引き続き暗号化(ciphertext+keyVersion): 緊急連絡先(第三者情報)・避難場所(通学先を
- *   特定しうる)・メモ(自由記述で内容予測不可)・Benefit会員ID(識別子)・緯度経度(自宅の
- *   正確な位置情報)
+ * 【保存方針(2026-09 データベース暗号化の見直し)】
+ * 本テーブルの列は全て平文で保存する。以前は緊急連絡先・避難場所・メモ・Benefit会員ID・
+ * 緯度経度をアプリ層で暗号化(ciphertext+keyVersion)していたが、フィールド単位の暗号化を
+ * 資格情報(app_settings のAPIキー・Webhook URL)だけに縮小した。
+ * - 保護はDB/バックアップの保存時暗号化(Cloud SQL等)+ TLS + RLS + アクセス制御で行う。
+ *   秘密保持契約が求める「アクセス制限、通信および保存時の暗号化」はこの組み合わせで満たす。
+ * - 平文にする理由は検索性と、将来の分析・AI活用でSQLから直接扱えるようにするため。
+ * - 既存の暗号化済みデータは引き継がない(DBは作り直す前提)。
  *
  * 唯一の例外: CSVの「パスワード」列(RESERVA側のログインパスワード)は取り込まない。
  * この値は本アプリの認証に一切使わず、他システムの認証情報を不必要に複製する理由がないため
  * (漏洩時の被害範囲を広げるだけになる)。
  *
- * 氏名は「苗字だけで検索する」現場運用があるため、familyName/givenNameを平文で別カラムに持つ
+ * 氏名は「苗字だけで検索する」現場運用があるため、familyName/givenNameを別カラムに持つ
  * (packages/core/src/domain/pii/japaneseName.ts の splitJapaneseFullName で分割し、
  * normalizeStaffNameで正規化済みの値を保存する)。
  * externalSource/externalIdは、氏名の文字列一致ではなく外部システムのIDで顧客を一意に
@@ -73,35 +72,29 @@ export const customers = pgTable(
     /** 駐車場番号・指定場所の詳細など。 */
     parkingDetail: text(),
 
-    /** 第三者(緊急連絡先本人)の情報のため引き続き暗号化する。 */
-    emergencyContactCiphertext: text(),
-    emergencyContactKeyVersion: integer(),
+    /** 緊急連絡先(氏名・電話番号等)。RESERVA CSVの「緊急連絡先」列。 */
+    emergencyContact: text(),
     /** 緊急連絡先の方(申請者との関係性)。例: "父"。 */
-    emergencyContactRelationCiphertext: text(),
-    emergencyContactRelationKeyVersion: integer(),
+    emergencyContactRelation: text(),
 
-    /** 災害時の避難場所(最寄りの小中学校)。通学先の特定につながりうるため暗号化する。 */
-    evacuationSiteCiphertext: text(),
-    evacuationSiteKeyVersion: integer(),
+    /** 災害時の避難場所(最寄りの小中学校)。 */
+    evacuationSite: text(),
 
-    /** 自由記述で内容が予測できないため暗号化する。 */
-    memoCiphertext: text(),
-    memoKeyVersion: integer(),
+    /** 自由記述のメモ。 */
+    memo: text(),
 
-    /** Benefit会員ID。他システムの会員証番号のため、識別子として保守的に暗号化する。 */
-    benefitMemberIdCiphertext: text(),
-    benefitMemberIdKeyVersion: integer(),
+    /** Benefit会員ID(他システムの会員証番号)。 */
+    benefitMemberId: text(),
 
     /** 住所2(単身赴任先等、期間限定の別住所)。 */
     address2: text(),
     address2StartDate: date(),
     address2EndDate: date(),
 
-    /** 緯度・経度。自宅の正確な位置情報のため暗号化する。 */
-    latLngCiphertext: text(),
-    latLngKeyVersion: integer(),
+    /** 緯度・経度(RESERVA CSVの文字列をそのまま保持)。 */
+    latLng: text(),
 
-    // ── 以下は個人特定に直結しない運用・分類情報のため平文で保持する ──
+    // ── 以下は運用・分類情報 ──
     /** 会員種別(例: Family Sitter 会員)。 */
     memberType: text(),
     /** 会員状況(有効／無効)。 */
@@ -112,7 +105,7 @@ export const customers = pgTable(
     paymentStatus: text(),
     /** 性別。 */
     gender: text(),
-    /** 年代(例: "30代")。生年月日そのものではなく既に丸められた区分のため平文で扱う。 */
+    /** 年代(例: "30代")。生年月日そのものではなく既に丸められた区分。 */
     ageBracket: text(),
 
     /** RESERVA側の登録日時(CSVのExcelシリアル日時から変換)。 */

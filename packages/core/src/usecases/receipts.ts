@@ -8,7 +8,6 @@ import {
   parseJstTimestampString,
 } from '../domain';
 import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
-import type { BlindIndexPort, CryptoPort } from '../ports/crypto';
 import type { MirrorPort } from '../ports/mirror';
 import type { NotifierPort } from '../ports/notifier';
 import type {
@@ -23,8 +22,6 @@ export interface ReceiptDeps {
   receipts: ReceiptRepositoryPort;
   staff: StaffRepositoryPort;
   customers: CustomerRepositoryPort;
-  crypto: CryptoPort;
-  blindIndex: BlindIndexPort;
   storage: StoragePort;
   notifier: NotifierPort;
   /** 領収書ログシート+Driveフォルダへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
@@ -79,8 +76,8 @@ function decodeDataUrl(dataUrl: string): { contentType: string; bytes: Uint8Arra
 
 /**
  * 領収書画像をアップロードする。GAS版Main.jsのprocessReceiptImages/uploadReceiptsOnlyに対応。
- * 「スタッフ・顧客・日時・金額・店舗名」が全て一致するものはブラインドインデックスで重複検出し
- * 登録をブロックする(金額または店舗名が未入力の画像は判定対象外。GAS版canCheckDuplicateと同じ)。
+ * 「スタッフ・顧客・日時・金額・店舗名」が全て一致するものは重複判定キー(receipts.dedupe_key)の
+ * 等値一致で検出し登録をブロックする(金額または店舗名が未入力の画像は判定対象外。GAS版canCheckDuplicateと同じ)。
  * 登録成功が1件以上あればGoogle Chatへ通知する。
  */
 export async function uploadReceipts(
@@ -98,30 +95,25 @@ export async function uploadReceipts(
     };
   }
 
-  const perImage = await Promise.all(
-    input.images.map(async (img, index) => {
-      const timestamp = normalizeText(img.receiptDate) || input.fallbackTimestamp;
-      const canCheck = canCheckReceiptDuplicate({ amount: img.amount, storeName: img.storeName });
-      const dedupeBlindIndex = canCheck
-        ? await deps.blindIndex.compute(
-            tenantId,
-            buildReceiptDedupeKey({
-              timestamp,
-              staffId: input.staffId,
-              customerId: input.customerId ?? '',
-              amount: img.amount,
-              storeName: img.storeName,
-            }),
-          )
-        : null;
-      return { index, img, timestamp, dedupeBlindIndex };
-    }),
-  );
+  const perImage = input.images.map((img, index) => {
+    const timestamp = normalizeText(img.receiptDate) || input.fallbackTimestamp;
+    const canCheck = canCheckReceiptDuplicate({ amount: img.amount, storeName: img.storeName });
+    const dedupeKey = canCheck
+      ? buildReceiptDedupeKey({
+          timestamp,
+          staffId: input.staffId,
+          customerId: input.customerId ?? '',
+          amount: img.amount,
+          storeName: img.storeName,
+        })
+      : null;
+    return { index, img, timestamp, dedupeKey };
+  });
 
-  const candidateIndexes = perImage.map((p) => p.dedupeBlindIndex).filter((v): v is string => v !== null);
+  const candidateKeys = perImage.map((p) => p.dedupeKey).filter((v): v is string => v !== null);
   const existing =
-    candidateIndexes.length > 0
-      ? await deps.receipts.findExistingDedupeIndexes(tenantId, candidateIndexes)
+    candidateKeys.length > 0
+      ? await deps.receipts.findExistingDedupeKeys(tenantId, candidateKeys)
       : new Set<string>();
 
   const duplicates: ReceiptDuplicateInfo[] = [];
@@ -129,7 +121,7 @@ export async function uploadReceipts(
   let uploadedCount = 0;
 
   for (const p of perImage) {
-    if (p.dedupeBlindIndex && existing.has(p.dedupeBlindIndex)) {
+    if (p.dedupeKey && existing.has(p.dedupeKey)) {
       duplicates.push({
         index: p.index,
         timestamp: p.timestamp,
@@ -145,15 +137,13 @@ export async function uploadReceipts(
     const fileKey = `${tenantId}/receipts/${randomUUID()}.jpg`;
     await deps.storage.put(fileKey, decoded.contentType, decoded.bytes);
 
-    const [amountEnc, storeNameEnc, handoffEnc] = await Promise.all([
+    // 金額・店舗名・申し送りは正規化済みの平文で保存する(未入力はnull)。
+    const amount =
       p.img.amount !== undefined && p.img.amount !== null && p.img.amount !== ''
-        ? deps.crypto.encrypt(tenantId, String(p.img.amount))
-        : Promise.resolve(null),
-      p.img.storeName ? deps.crypto.encrypt(tenantId, p.img.storeName) : Promise.resolve(null),
-      input.handoffText && input.handoffText.trim()
-        ? deps.crypto.encrypt(tenantId, input.handoffText.trim())
-        : Promise.resolve(null),
-    ]);
+        ? normalizeAmount(p.img.amount) || null
+        : null;
+    const storeName = p.img.storeName ? normalizeText(p.img.storeName) || null : null;
+    const handoffText = input.handoffText?.trim() || null;
 
     // 行の作成とミラー要求のenqueueは1つのトランザクションで確定させる(片方だけ確定すると
     // 領収書がスプレッドシートに永久に現れない)。画像はオブジェクトストレージ側なので
@@ -166,10 +156,10 @@ export async function uploadReceipts(
             staffId: input.staffId,
             customerId: input.customerId,
             receiptTimestamp: parseJstTimestampString(p.timestamp),
-            dedupeBlindIndex: p.dedupeBlindIndex,
-            amount: amountEnc,
-            storeName: storeNameEnc,
-            handoffText: handoffEnc,
+            dedupeKey: p.dedupeKey,
+            amount,
+            storeName,
+            handoffText,
             fileKey,
             contentType: decoded.contentType,
           },
@@ -191,7 +181,7 @@ export async function uploadReceipts(
     }
 
     // バッチ内の後続画像が同じ内容なら重複として検出できるよう、今回登録した分もexistingに加える。
-    if (p.dedupeBlindIndex) existing.add(p.dedupeBlindIndex);
+    if (p.dedupeKey) existing.add(p.dedupeKey);
 
     registeredImages.push({
       amount: normalizeText(String(p.img.amount ?? '')),

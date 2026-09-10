@@ -8,7 +8,7 @@ import {
   searchCustomersByFamilyName,
   updateCustomer,
 } from './customers';
-import { FakeCryptoPort, FakeCustomerRepository, FakeFamilyMemberRepository } from './testDoubles';
+import { FakeCustomerRepository, FakeFamilyMemberRepository } from './testDoubles';
 
 describe('createCustomer / searchCustomersByFamilyName', () => {
   let deps: CustomerDeps;
@@ -18,7 +18,6 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     deps = {
       customers: new FakeCustomerRepository(),
       familyMembers: new FakeFamilyMemberRepository(),
-      crypto: new FakeCryptoPort(),
     };
   });
 
@@ -44,7 +43,7 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     expect(await searchCustomersByFamilyName(deps, tenantId, '田中')).toEqual([]);
   });
 
-  it('電話・市区町村は復号された値で返る', async () => {
+  it('電話・市区町村は登録した値のまま返る', async () => {
     await createCustomer(deps, { tenantId, name: '佐藤 花子', phone: '090-1111-2222', city: '渋谷区' });
     const [result] = await searchCustomersByFamilyName(deps, tenantId, '佐藤');
     expect(result?.phone).toBe('090-1111-2222');
@@ -56,7 +55,7 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     expect(await searchCustomersByFamilyName(deps, tenantId, '佐藤')).toEqual([]);
   });
 
-  it('世帯構成員(子ども等)を登録すると、詳細取得で復号された状態で返る', async () => {
+  it('世帯構成員(子ども等)を登録すると、詳細取得で登録した内容のまま返る', async () => {
     const created = await createCustomer(deps, {
       tenantId,
       name: '佐藤 花子',
@@ -118,7 +117,7 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     expect(detail?.deactivatedAt).not.toBeNull();
   });
 
-  it('listCustomersは有効な顧客全件を復号して返し、地区の重複無し・五十音順一覧も返す', async () => {
+  it('listCustomersは有効な顧客全件を返し、地区の重複無し・五十音順一覧も返す', async () => {
     const deactivated = await createCustomer(deps, { tenantId, name: '田中 一郎', city: '港区' });
     await createCustomer(deps, { tenantId, name: '佐藤 花子', city: '渋谷区' });
     await createCustomer(deps, { tenantId, name: '鈴木 三郎', city: '渋谷区' });

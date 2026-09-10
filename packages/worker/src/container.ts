@@ -8,15 +8,11 @@ import {
   DrizzleOutboxRepository,
   DrizzleReceiptRepository,
   DrizzleStaffRepository,
-  DrizzleTenantKeyRepository,
   DrizzleTenantRepository,
 } from '@katahimo/db/repositories';
 import {
-  ConsoleAuditLogPort,
   GasBridgeMirrorSenderPort,
-  LocalCryptoPort,
   LocalFileStoragePort,
-  LocalKmsPort,
   NoopMirrorSenderPort,
 } from '@katahimo/integrations';
 import type { WorkerEnv } from './env';
@@ -26,9 +22,6 @@ export interface WorkerContainer extends MirrorWorkerDeps {
 }
 
 export function createWorkerContainer(env: WorkerEnv, db: Database): WorkerContainer {
-  const kms = new LocalKmsPort(env.LOCAL_DEV_KEK);
-  const tenantKeys = new DrizzleTenantKeyRepository(db);
-  const crypto = new LocalCryptoPort(tenantKeys, kms, new ConsoleAuditLogPort());
   if (Boolean(env.GAS_BRIDGE_URL) !== Boolean(env.GAS_BRIDGE_SECRET)) {
     // 片方だけ設定されている場合は入力ミスの可能性が高い。ここでNoopMirrorSenderPortに
     // フォールバックすると出力の見た目上は成功扱いのままミラー送信されなくなり、
@@ -52,7 +45,6 @@ export function createWorkerContainer(env: WorkerEnv, db: Database): WorkerConta
     attendanceDays: new DrizzleAttendanceDayRepository(db),
     staff: new DrizzleStaffRepository(db),
     customers: new DrizzleCustomerRepository(db),
-    crypto,
     storage: new LocalFileStoragePort(env.LOCAL_RECEIPT_STORAGE_DIR),
     sender: gasBridgeOptions ? new GasBridgeMirrorSenderPort(gasBridgeOptions) : new NoopMirrorSenderPort(),
   };

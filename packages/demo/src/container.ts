@@ -19,7 +19,7 @@ import { DrizzleUnitOfWork } from '@katahimo/db/unit-of-work';
 // LocalFileStoragePort(node:fs)まで巻き込まれ、ブラウザ向けビルドが通らなくなる。
 import { ConsoleAuditLogPort } from '@katahimo/integrations/audit';
 import { GeminiAiPort, listAvailableGeminiModels } from '@katahimo/integrations/gemini';
-import { LocalBlindIndexPort, LocalCryptoPort } from '@katahimo/integrations/local-crypto';
+import { LocalCryptoPort } from '@katahimo/integrations/local-crypto';
 import { LocalKmsPort } from '@katahimo/integrations/local-kms';
 import { NoopMirrorPort } from '@katahimo/integrations/mirror';
 import { BrowserStoragePort } from './ports/browserStoragePort';
@@ -32,17 +32,19 @@ import { demoPasswordHasher } from './ports/demoPasswordHasher';
 import { type CustomerIdByName, DemoSchedulePort } from './ports/demoSchedulePort';
 
 /**
- * デモ用の鍵。
+ * デモ用のKEK(テナントDEKをラップする鍵)。
  *
- * 本番のKEK/マスターキーとは無関係の固定値で、公開ビルドに含まれるため誰でも読める。
- * この鍵で守られるのはシードで作った架空データだけなので、公開されていること自体は問題ない。
+ * 本番のLOCAL_DEV_KEKとは無関係の固定値で、公開ビルドに含まれるため誰でも読める。
+ * 暗号化の対象は本番と同じく app_settings の資格情報(Gemini APIキー・Webhook URL)だけで、
+ * 顧客・日報などの業務データは平文列。デモが守っているのはシードで作った架空データだけ
+ * なので、この鍵が公開されていること自体は問題ない。
  *
  * 逆に言えば、この鍵で暗号化したものは実質平文と変わらない。訪問者が入力した本物の秘密
  * (Gemini APIキー等)をこの鍵で暗号化して保存すると「暗号化しているから安全」という
- * 誤った保証を与えることになるため、秘密項目はDemoAppSettingsRepositoryが永続化を止めている。
+ * 誤った保証を与えることになるため、秘密項目はDemoAppSettingsRepositoryが永続化を止めている
+ * (メモリに留めるだけで、IndexedDBには書かない)。
  */
 const DEMO_KEK = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
-const DEMO_BLIND_INDEX_KEY = 'ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100';
 /**
  * パスワード再設定コードの検証子を計算する鍵。DEMO_KEKと同じく公開ビルドに含まれる固定値。
  *
@@ -70,7 +72,7 @@ export interface DemoContainer extends Container {
  *
  * 差し替えているのはNodeでしか動かない実装(argon2・ファイルシステム)と、
  * 公開デモにAPIキーを置けない実装(Google Maps・Googleカレンダー・Gemini)だけ。
- * 暗号化・ブラインドインデックス・リポジトリ・usecasesは本番と同一のコードが動く。
+ * 資格情報の暗号化・リポジトリ・usecasesは本番と同一のコードが動く。
  */
 export function createDemoContainer(deps: DemoContainerDeps): DemoContainer {
   const kms = new LocalKmsPort(DEMO_KEK);
@@ -92,7 +94,6 @@ export function createDemoContainer(deps: DemoContainerDeps): DemoContainer {
     // 訪問者が入力したAPIキー/Webhook URLはメモリに留め、IndexedDBには書かない。
     appSettings: new DemoAppSettingsRepository(new DrizzleAppSettingsRepository(deps.db)),
     crypto,
-    blindIndex: new LocalBlindIndexPort(DEMO_BLIND_INDEX_KEY),
     passwordHasher: demoPasswordHasher,
     storage: new BrowserStoragePort(),
     notifier: new DemoNotifierPort(),
