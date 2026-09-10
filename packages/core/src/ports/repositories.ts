@@ -3,9 +3,16 @@
  * (このパッケージはDBクライアントに依存しないという境界を守るため、インターフェースだけ持つ)。
  */
 
+import type { AttendanceRowData } from '../domain/attendance/types';
 import type { LoginThrottlePolicy } from '../domain/auth/loginThrottle';
+import type { AccidentReportContent, DailyReportContent } from '../domain/reports/types';
 import type { TransactionScope } from './unitOfWork';
 
+/**
+ * アプリ層で暗号化して保存する値(CryptoPort.encryptの結果)。使うのは app_settings の
+ * 資格情報(Gemini APIキー・Webhook URL)だけで、顧客・日報等の業務データは平文列で持つ
+ * (packages/core/src/ports/crypto.ts のヘッダー参照)。
+ */
 export interface EncryptedField {
   ciphertext: string;
   keyVersion: number;
@@ -136,7 +143,7 @@ export interface StaffRepositoryPort {
   /**
    * 退職済み(retirementDateが今日以前)を除いた全スタッフ。GAS版PastSchedule.js
    * getActiveStaffNames_に対応(管理者が「対象スタッフ」を選ぶセレクタ用)。
-   * 氏名は暗号化されているため並び替えは呼び出し側(usecase)で復号後に行う。
+   * 並び替えは呼び出し側(usecase)で行う。
    */
   listActive(tenantId: string): Promise<ActiveStaffRecord[]>;
 }
@@ -248,16 +255,9 @@ export interface TenantRepositoryPort {
  * 顧客プロファイル。RESERVA CSVの全列(パスワード列を除く)に対応するフィールドを持つ
  * (packages/db/src/schema/customers.ts参照)。
  *
- * 2026-08のデータベース構造レビュー(「DB個別暗号化は過剰、バックアップ暗号化で十分」という
- * 有識者指摘)を踏まえ、暗号化対象を要配慮性の高い項目(第三者情報・位置情報・自由記述・
- * 識別子)に絞った。氏名・連絡先・住所等の通常の個人情報はプレーンな文字列として保持し、
- * DB/バックアップの透過的暗号化(TDE)+Row Level Security+アクセス制御で保護する
- * (doc/09_データベース構造解説.md参照)。
- *
- * 平文: familyNameKana/givenNameKana/email/phone/addressDetail/city/parkingArea/parkingDetail/address2
- * 暗号化(EncryptedField)を維持: emergencyContact(第三者の連絡先)/emergencyContactRelation/
- * evacuationSite(最寄り校を特定しうる)/memo(自由記述で内容予測不可)/benefitMemberId(識別子)/
- * latLng(自宅の正確な位置情報)
+ * 全項目を平文の文字列として保持する。個人情報はDB/バックアップの保存時暗号化(TDE相当)+
+ * Row Level Security+アクセス制御で保護し、アプリ層のフィールド暗号化は掛けない
+ * (2026-09の見直し。検索性と将来の分析・AI活用を優先。doc/09_データベース構造解説.md 1.3節参照)。
  */
 export interface CustomerProfileFields {
   externalSource: string | null;
@@ -270,15 +270,15 @@ export interface CustomerProfileFields {
   city: string | null;
   parkingArea: string | null;
   parkingDetail: string | null;
-  emergencyContact: EncryptedField | null;
-  emergencyContactRelation: EncryptedField | null;
-  evacuationSite: EncryptedField | null;
-  memo: EncryptedField | null;
-  benefitMemberId: EncryptedField | null;
+  emergencyContact: string | null;
+  emergencyContactRelation: string | null;
+  evacuationSite: string | null;
+  memo: string | null;
+  benefitMemberId: string | null;
   address2: string | null;
   address2StartDate: string | null;
   address2EndDate: string | null;
-  latLng: EncryptedField | null;
+  latLng: string | null;
   memberType: string | null;
   memberStatus: string | null;
   paymentMethod: string | null;
@@ -336,17 +336,19 @@ export interface FamilyMemberRecord {
   id: string;
   tenantId: string;
   customerId: string;
-  name: EncryptedField;
-  dob: EncryptedField | null;
-  info: EncryptedField | null;
+  name: string;
+  /** 'YYYY/M/D'(normalizeDateStrで正規化済み)。未取得ならnull。 */
+  dob: string | null;
+  /** 職業・アレルギー等の自由記述。 */
+  info: string | null;
 }
 
 export interface NewFamilyMemberInput {
   tenantId: string;
   customerId: string;
-  name: EncryptedField;
-  dob: EncryptedField | null;
-  info: EncryptedField | null;
+  name: string;
+  dob: string | null;
+  info: string | null;
 }
 
 export interface FamilyMemberRepositoryPort {
@@ -362,7 +364,7 @@ export interface FamilyMemberRepositoryPort {
 
 /**
  * 勤怠(出勤簿)1日分。rowDataは packages/core/src/domain/attendance/types.ts の
- * AttendanceRowData(入力列のみ)をJSON化して暗号化したもの。労働時間・残業・距離集計等の
+ * AttendanceRowData(入力列のみ)をそのままJSON(jsonb列)で持つ。労働時間・残業・距離集計等の
  * 派生値は保存しない(常にrowDataから都度計算する。packages/db/src/schema/attendanceDays.ts参照)。
  */
 export interface AttendanceDayRecord {
@@ -371,7 +373,7 @@ export interface AttendanceDayRecord {
   staffId: string;
   /** 'YYYY-MM-DD' */
   businessDate: string;
-  rowData: EncryptedField;
+  rowData: AttendanceRowData;
   /** ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。 */
   updatedAt: Date;
 }
@@ -387,7 +389,7 @@ export interface AttendanceDayRepositoryPort {
     tenantId: string,
     staffId: string,
     businessDate: string,
-    rowData: EncryptedField,
+    rowData: AttendanceRowData,
     scope?: TransactionScope,
   ): Promise<AttendanceDayRecord>;
   /** ミラーワーカー(packages/worker)がoutbox_jobs.targetIdから対象レコードを読み直すために使う。 */
@@ -404,9 +406,10 @@ export interface AttendanceDayRepositoryPort {
 }
 
 /**
- * 保育日報1件。contentは packages/core/src/domain/reports/types.ts の DailyReportContent(JSON)を
- * 暗号化したもの(開始/終了時刻・メモ・社内向け/保護者向けレポート本文をまとめて1本にする。
- * attendance_daysのrowDataと同じ設計)。
+ * 保育日報1件。contentは packages/core/src/domain/reports/types.ts の DailyReportContent
+ * (開始/終了時刻・メモ・社内向け/保護者向けレポート本文)。DB上は項目ごとの平文列で持ち、
+ * SQLからの検索・集計や将来のAI活用(日報からの傾向分析)にそのまま使える形にしている
+ * (packages/db/src/schema/dailyReports.ts参照)。
  */
 export interface DailyReportRecord {
   id: string;
@@ -416,7 +419,7 @@ export interface DailyReportRecord {
   occurredAt: Date;
   riskRating: number | null;
   esRating: number | null;
-  content: EncryptedField;
+  content: DailyReportContent;
   /** ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。 */
   updatedAt: Date;
 }
@@ -428,7 +431,7 @@ export interface NewDailyReportInput {
   occurredAt: Date;
   riskRating: number | null;
   esRating: number | null;
-  content: EncryptedField;
+  content: DailyReportContent;
 }
 
 export interface DailyReportRepositoryPort {
@@ -454,7 +457,8 @@ export interface DailyReportRepositoryPort {
 }
 
 /**
- * 事故報告/ヒヤリハット1件。contentは AccidentReportContent(JSON)を暗号化したもの。
+ * 事故報告/ヒヤリハット1件。contentは AccidentReportContent(DB上は項目ごとの平文列。
+ * daily_reportsと同じ設計)。
  */
 export interface AccidentReportRecord {
   id: string;
@@ -463,7 +467,7 @@ export interface AccidentReportRecord {
   customerId: string;
   occurredAt: Date;
   reportType: string;
-  content: EncryptedField;
+  content: AccidentReportContent;
   /** ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。 */
   updatedAt: Date;
 }
@@ -474,7 +478,7 @@ export interface NewAccidentReportInput {
   customerId: string;
   occurredAt: Date;
   reportType: string;
-  content: EncryptedField;
+  content: AccidentReportContent;
 }
 
 export interface AccidentReportRepositoryPort {
@@ -503,9 +507,10 @@ export interface ReceiptRecord {
   staffId: string;
   customerId: string | null;
   receiptTimestamp: Date;
-  amount: EncryptedField | null;
-  storeName: EncryptedField | null;
-  handoffText: EncryptedField | null;
+  /** 正規化済みの金額文字列(normalizeAmount)。未入力ならnull。 */
+  amount: string | null;
+  storeName: string | null;
+  handoffText: string | null;
   fileKey: string;
   contentType: string;
   /**
@@ -520,10 +525,14 @@ export interface NewReceiptInput {
   staffId: string;
   customerId: string | null;
   receiptTimestamp: Date;
-  dedupeBlindIndex: string | null;
-  amount: EncryptedField | null;
-  storeName: EncryptedField | null;
-  handoffText: EncryptedField | null;
+  /**
+   * 重複登録検出用のキー(buildReceiptDedupeKeyの戻り値そのまま)。金額または店舗名が空で
+   * 重複判定の対象外ならnull。
+   */
+  dedupeKey: string | null;
+  amount: string | null;
+  storeName: string | null;
+  handoffText: string | null;
   fileKey: string;
   contentType: string;
 }
@@ -533,11 +542,11 @@ export interface ReceiptRepositoryPort {
   /** ミラーワーカー(packages/worker)がoutbox_jobs.targetIdから対象レコードを読み直すために使う。 */
   findById(tenantId: string, id: string): Promise<ReceiptRecord | null>;
   /**
-   * dedupeBlindIndexの一致を確認する(GAS版processReceiptImagesの「シート上の既存データとの照合」
+   * dedupeKeyの一致を確認する(GAS版processReceiptImagesの「シート上の既存データとの照合」
    * に相当)。バッチ内の重複は呼び出し側(usecase)がメモリ上で扱うため、ここはDBに既に永続化された
    * 行だけを対象にする。
    */
-  findExistingDedupeIndexes(tenantId: string, dedupeBlindIndexes: string[]): Promise<Set<string>>;
+  findExistingDedupeKeys(tenantId: string, dedupeKeys: string[]): Promise<Set<string>>;
 }
 
 /**

@@ -1,5 +1,4 @@
 import type {
-  EncryptedField,
   FamilyMemberRecord,
   FamilyMemberRepositoryPort,
   NewFamilyMemberInput,
@@ -11,18 +10,26 @@ import { withTenant } from '../tenantScope';
 
 type FamilyMemberRow = typeof familyMembers.$inferSelect;
 
-function encField(ciphertext: string | null, keyVersion: number | null): EncryptedField | null {
-  return ciphertext && keyVersion != null ? { ciphertext, keyVersion } : null;
+/** NewFamilyMemberInputをDrizzleのinsert値に変換する。 */
+function toInsertValues(input: NewFamilyMemberInput) {
+  return {
+    tenantId: input.tenantId,
+    customerId: input.customerId,
+    name: input.name,
+    dob: input.dob,
+    info: input.info,
+  };
 }
 
+/** DrizzleのfamilyMembersテーブルのSELECT結果行を、ポート層のFamilyMemberRecordに変換する。 */
 function toRecord(row: FamilyMemberRow): FamilyMemberRecord {
   return {
     id: row.id,
     tenantId: row.tenantId,
     customerId: row.customerId,
-    name: { ciphertext: row.nameCiphertext, keyVersion: row.nameKeyVersion },
-    dob: encField(row.dobCiphertext, row.dobKeyVersion),
-    info: encField(row.infoCiphertext, row.infoKeyVersion),
+    name: row.name,
+    dob: row.dob,
+    info: row.info,
   };
 }
 
@@ -34,21 +41,7 @@ export class DrizzleFamilyMemberRepository implements FamilyMemberRepositoryPort
     const tenantId = inputs[0]?.tenantId;
     if (!tenantId) return [];
     return withTenant(this.db, tenantId, async (tx) => {
-      const rows = await tx
-        .insert(familyMembers)
-        .values(
-          inputs.map((input) => ({
-            tenantId: input.tenantId,
-            customerId: input.customerId,
-            nameCiphertext: input.name.ciphertext,
-            nameKeyVersion: input.name.keyVersion,
-            dobCiphertext: input.dob?.ciphertext ?? null,
-            dobKeyVersion: input.dob?.keyVersion ?? null,
-            infoCiphertext: input.info?.ciphertext ?? null,
-            infoKeyVersion: input.info?.keyVersion ?? null,
-          })),
-        )
-        .returning();
+      const rows = await tx.insert(familyMembers).values(inputs.map(toInsertValues)).returning();
       return rows.map(toRecord);
     });
   }
@@ -75,21 +68,7 @@ export class DrizzleFamilyMemberRepository implements FamilyMemberRepositoryPort
 
       if (inputs.length === 0) return [];
 
-      const rows = await tx
-        .insert(familyMembers)
-        .values(
-          inputs.map((input) => ({
-            tenantId: input.tenantId,
-            customerId: input.customerId,
-            nameCiphertext: input.name.ciphertext,
-            nameKeyVersion: input.name.keyVersion,
-            dobCiphertext: input.dob?.ciphertext ?? null,
-            dobKeyVersion: input.dob?.keyVersion ?? null,
-            infoCiphertext: input.info?.ciphertext ?? null,
-            infoKeyVersion: input.info?.keyVersion ?? null,
-          })),
-        )
-        .returning();
+      const rows = await tx.insert(familyMembers).values(inputs.map(toInsertValues)).returning();
       return rows.map(toRecord);
     });
   }

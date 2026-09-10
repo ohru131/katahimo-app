@@ -7,7 +7,6 @@ import {
 } from '../domain';
 import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
 import type { AccidentReportContent, DailyReportContent } from '../domain/reports/types';
-import type { CryptoPort } from '../ports/crypto';
 import type { MirrorPort } from '../ports/mirror';
 import type { NotifierPort } from '../ports/notifier';
 import type {
@@ -23,7 +22,6 @@ export interface ReportDeps {
   accidentReports: AccidentReportRepositoryPort;
   customers: CustomerRepositoryPort;
   staff: StaffRepositoryPort;
-  crypto: CryptoPort;
   notifier: NotifierPort;
   /** GAS版「日報」「事故報告」シートへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
   mirror: MirrorPort;
@@ -90,7 +88,6 @@ export async function saveDailyReport(
     internalText: input.internalText || '',
     customerText: input.customerText || '',
   };
-  const encryptedContent = await deps.crypto.encrypt(tenantId, JSON.stringify(content));
 
   const newInput = {
     tenantId,
@@ -99,12 +96,12 @@ export async function saveDailyReport(
     occurredAt,
     riskRating: input.riskRating,
     esRating: input.esRating,
-    content: encryptedContent,
+    content,
   };
 
   // 保存とミラー要求のenqueueは1つのトランザクションで確定させる。分けると、日報は
   // 保存できたのにスプレッドシートへ永久に反映されない行が、誰にも気づかれずに残る。
-  // 暗号化(tenant_keysの読み取り)や通知は、この外側で済ませておくこと(unitOfWork.ts参照)。
+  // 通知(外部サービス呼び出し)は、この外側で済ませておくこと(unitOfWork.ts参照)。
   const record = await deps.unitOfWork.run(tenantId, async (scope) => {
     const saved = input.reportId
       ? ((await deps.dailyReports.update(tenantId, input.reportId, newInput, scope)) ??
@@ -194,7 +191,6 @@ export async function saveAccidentReport(
     inputText: input.inputText,
   };
   const reportType = input.reportType || '事故報告';
-  const encryptedContent = await deps.crypto.encrypt(tenantId, JSON.stringify(content));
 
   const newInput = {
     tenantId,
@@ -202,7 +198,7 @@ export async function saveAccidentReport(
     customerId: input.customerId,
     occurredAt: new Date(),
     reportType,
-    content: encryptedContent,
+    content,
   };
 
   const record = await deps.unitOfWork.run(tenantId, async (scope) => {
@@ -314,43 +310,37 @@ export async function getCustomerHistory(
     }),
   );
 
-  const dailyItems: HistoryItem[] = await Promise.all(
-    dailyRecords.map(async (r) => {
-      const json = await deps.crypto.decrypt(tenantId, r.content);
-      const content = JSON.parse(json) as DailyReportContent;
-      return {
-        type: 'daily' as const,
-        id: r.id,
-        occurredAtIso: r.occurredAt.toISOString(),
-        timestamp: formatJstDateTimeShort(r.occurredAt),
-        staff: staffNameById.get(r.staffId) ?? '',
-        original: content.inputText,
-        internal: content.internalText,
-        customer: content.customerText,
-        risk: r.riskRating,
-        es: r.esRating,
-      };
-    }),
-  );
+  const dailyItems: HistoryItem[] = dailyRecords.map((r) => {
+    const content = r.content;
+    return {
+      type: 'daily' as const,
+      id: r.id,
+      occurredAtIso: r.occurredAt.toISOString(),
+      timestamp: formatJstDateTimeShort(r.occurredAt),
+      staff: staffNameById.get(r.staffId) ?? '',
+      original: content.inputText,
+      internal: content.internalText,
+      customer: content.customerText,
+      risk: r.riskRating,
+      es: r.esRating,
+    };
+  });
 
-  const accidentItems: HistoryItem[] = await Promise.all(
-    accidentRecords.map(async (r) => {
-      const json = await deps.crypto.decrypt(tenantId, r.content);
-      const content = JSON.parse(json) as AccidentReportContent;
-      return {
-        type: 'accident' as const,
-        id: r.id,
-        occurredAtIso: r.occurredAt.toISOString(),
-        timestamp: formatJstDateTimeShort(r.occurredAt),
-        staff: staffNameById.get(r.staffId) ?? '',
-        original: content.inputText,
-        internal: buildAccidentHistoryInternalText(content),
-        customer: content.parentCorrespondence,
-        isAccident: true,
-        subtype: r.reportType || '事故報告',
-      };
-    }),
-  );
+  const accidentItems: HistoryItem[] = accidentRecords.map((r) => {
+    const content = r.content;
+    return {
+      type: 'accident' as const,
+      id: r.id,
+      occurredAtIso: r.occurredAt.toISOString(),
+      timestamp: formatJstDateTimeShort(r.occurredAt),
+      staff: staffNameById.get(r.staffId) ?? '',
+      original: content.inputText,
+      internal: buildAccidentHistoryInternalText(content),
+      customer: content.parentCorrespondence,
+      isAccident: true,
+      subtype: r.reportType || '事故報告',
+    };
+  });
 
   return [...dailyItems, ...accidentItems]
     .sort((a, b) => (a.occurredAtIso < b.occurredAtIso ? 1 : a.occurredAtIso > b.occurredAtIso ? -1 : 0))

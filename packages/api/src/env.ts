@@ -16,23 +16,17 @@ const envSchema = z.object({
   // 以前ここに SESSION_SECRET を必須で置いていたが、どこからも参照していなかった。
   // 「必須なのに使われていない設定」は、署名しているかのような誤解を招くので置かない。
 
-  // BlindIndexPortの開発用実装(LocalBlindIndexPort)が使うマスターキー。32バイト(64桁hex)。
-  // CryptoPort(実値の暗号化)とは意図的に鍵を分けている(一方の漏洩だけでは他方に影響しない
-  // 権限分離のため、packages/core/src/ports/crypto.ts参照)。
-  LOCAL_DEV_MASTER_KEY: z
-    .string()
-    .regex(/^[0-9a-f]{64}$/i, 'LOCAL_DEV_MASTER_KEY は32バイト(64桁の16進数)にしてください'),
-
-  // CryptoPortが使うテナントDEKをラップするKEK(KeyManagementPortの開発用実装LocalKmsPortが
-  // 使う)。32バイト(64桁hex)。本番はCloud KMSに置き換える(Phase 5)。LOCAL_DEV_MASTER_KEYとは
-  // 別の値にすること(こちらが漏れてもblind indexの鍵には影響しない、逆も同様)。
+  // CryptoPortが使うテナントDEK(tenant_keys)をラップするKEK(KeyManagementPortの開発用実装
+  // LocalKmsPortが使う)。32バイト(64桁hex)。暗号化の対象は app_settings の資格情報
+  // (Gemini APIキー・Google Chat Webhook URL)だけで、顧客・日報等の業務データは平文列
+  // (packages/core/src/ports/crypto.ts参照)。本番はCloud KMSに置き換える(Phase 5)。
   LOCAL_DEV_KEK: z.string().regex(/^[0-9a-f]{64}$/i, 'LOCAL_DEV_KEK は32バイト(64桁の16進数)にしてください'),
 
   // パスワード再設定コード(6桁)の検証子を計算する鍵。32バイト(64桁hex)。
   // DBには検証子(HMAC)だけを保存し、この鍵はDBに置かない。単純なハッシュだと
   // 6桁=100万通りしか無いためDBが漏れた時点で有効なコードを復元できてしまう、
-  // というのを防ぐためのもの。LOCAL_DEV_MASTER_KEY/LOCAL_DEV_KEKとは別の値にする
-  // (一方が漏れても他方に影響しない権限分離。crypto.ts参照)。
+  // というのを防ぐためのもの。LOCAL_DEV_KEKとは別の値にする
+  // (一方が漏れても他方に影響しない権限分離)。
   PASSWORD_RESET_PEPPER: z
     .string()
     .regex(/^[0-9a-f]{64}$/i, 'PASSWORD_RESET_PEPPER は32バイト(64桁の16進数)にしてください'),

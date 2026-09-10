@@ -6,12 +6,7 @@ import {
   getAttendanceScheduleEvents,
   saveAttendanceDay,
 } from './attendance';
-import {
-  FakeAttendanceDayRepository,
-  FakeCryptoPort,
-  FakeOutboxRepository,
-  FakeUnitOfWork,
-} from './testDoubles';
+import { FakeAttendanceDayRepository, FakeOutboxRepository, FakeUnitOfWork } from './testDoubles';
 
 describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
   let deps: AttendanceDeps;
@@ -23,7 +18,6 @@ describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
     const mirror = new FakeOutboxRepository();
     deps = {
       attendanceDays,
-      crypto: new FakeCryptoPort(),
       mirror,
       unitOfWork: new FakeUnitOfWork([attendanceDays, mirror]),
     };
@@ -36,7 +30,7 @@ describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
     expect(result.derived.visitCount).toBe(0);
   });
 
-  it('保存した入力列が暗号化して保存され、取得時に復号・派生値計算まで一致する', async () => {
+  it('保存した入力列がそのまま保存され、取得時に派生値計算まで一致する', async () => {
     const rowData = { D: '10:00', E: '12:00', AG: '5', AH: '3' };
     const saved = await saveAttendanceDay(deps, tenantId, staffId, '2026-08-01', rowData);
     expect(saved.derived.laborMinutes).toBe(120);

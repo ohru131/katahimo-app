@@ -1,8 +1,4 @@
-import {
-  FakeCryptoPort,
-  FakeCustomerRepository,
-  FakeFamilyMemberRepository,
-} from '@katahimo/core/test-utils';
+import { FakeCustomerRepository, FakeFamilyMemberRepository } from '@katahimo/core/test-utils';
 import type { CustomerDeps } from '@katahimo/core/usecases';
 import { createCustomer } from '@katahimo/core/usecases';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -53,7 +49,6 @@ describe('planReservaImport / applyReservaImportPlan', () => {
     deps = {
       customers: new FakeCustomerRepository(),
       familyMembers: new FakeFamilyMemberRepository(),
-      crypto: new FakeCryptoPort(),
     };
   });
 
@@ -129,7 +124,7 @@ describe('planReservaImport / applyReservaImportPlan', () => {
     expect(members).toHaveLength(1);
     const firstMember = members[0];
     if (!firstMember) throw new Error('family member not found');
-    expect(await deps.crypto.decrypt(tenantId, firstMember.name)).toBe('佐藤 太郎');
+    expect(firstMember.name).toBe('佐藤 太郎');
   });
 
   it('計画時には存在した顧客が適用時に見つからない場合、黙って飛ばさずfailuresに記録する', async () => {

@@ -1,7 +1,7 @@
+import type { AttendanceRowData } from '@katahimo/core/domain';
 import type {
   AttendanceDayRecord,
   AttendanceDayRepositoryPort,
-  EncryptedField,
   TransactionScope,
 } from '@katahimo/core/ports';
 import { and, eq, gte, lt, lte } from 'drizzle-orm';
@@ -11,13 +11,14 @@ import { withTenant } from '../tenantScope';
 
 type AttendanceDayRow = typeof attendanceDays.$inferSelect;
 
+/** DrizzleのattendanceDaysテーブルのSELECT結果行を、ポート層のAttendanceDayRecordに変換する。 */
 function toRecord(row: AttendanceDayRow): AttendanceDayRecord {
   return {
     id: row.id,
     tenantId: row.tenantId,
     staffId: row.staffId,
     businessDate: row.businessDate,
-    rowData: { ciphertext: row.rowDataCiphertext, keyVersion: row.rowDataKeyVersion },
+    rowData: row.rowData,
     updatedAt: row.updatedAt,
   };
 }
@@ -65,7 +66,7 @@ export class DrizzleAttendanceDayRepository implements AttendanceDayRepositoryPo
     tenantId: string,
     staffId: string,
     businessDate: string,
-    rowData: EncryptedField,
+    rowData: AttendanceRowData,
     scope?: TransactionScope,
   ): Promise<AttendanceDayRecord> {
     return withTenant(
@@ -78,14 +79,12 @@ export class DrizzleAttendanceDayRepository implements AttendanceDayRepositoryPo
             tenantId,
             staffId,
             businessDate,
-            rowDataCiphertext: rowData.ciphertext,
-            rowDataKeyVersion: rowData.keyVersion,
+            rowData,
           })
           .onConflictDoUpdate({
             target: [attendanceDays.tenantId, attendanceDays.staffId, attendanceDays.businessDate],
             set: {
-              rowDataCiphertext: rowData.ciphertext,
-              rowDataKeyVersion: rowData.keyVersion,
+              rowData,
               updatedAt: new Date(),
             },
           })

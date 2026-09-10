@@ -1,3 +1,4 @@
+import type { DailyReportContent } from '@katahimo/core/domain';
 import type {
   DailyReportRecord,
   DailyReportRepositoryPort,
@@ -11,6 +12,32 @@ import { withTenant } from '../tenantScope';
 
 type DailyReportRow = typeof dailyReports.$inferSelect;
 
+/**
+ * DailyReportContent ↔ daily_reports の項目別平文列(1:1)の詰め替え。
+ * 列を足したら両方向を同時に更新する(schema/dailyReports.ts 参照)。
+ */
+function toContentColumns(content: DailyReportContent) {
+  return {
+    startTime: content.startTime,
+    endTime: content.endTime,
+    inputText: content.inputText,
+    internalText: content.internalText,
+    customerText: content.customerText,
+  };
+}
+
+/** daily_reportsの項目別平文列から、DailyReportContentを組み立てる。 */
+function toContent(row: DailyReportRow): DailyReportContent {
+  return {
+    startTime: row.startTime,
+    endTime: row.endTime,
+    inputText: row.inputText,
+    internalText: row.internalText,
+    customerText: row.customerText,
+  };
+}
+
+/** DrizzleのdailyReportsテーブルのSELECT結果行を、ポート層のDailyReportRecordに変換する。 */
 function toRecord(row: DailyReportRow): DailyReportRecord {
   return {
     id: row.id,
@@ -20,7 +47,7 @@ function toRecord(row: DailyReportRow): DailyReportRecord {
     occurredAt: row.occurredAt,
     riskRating: row.riskRating,
     esRating: row.esRating,
-    content: { ciphertext: row.contentCiphertext, keyVersion: row.contentKeyVersion },
+    content: toContent(row),
     updatedAt: row.updatedAt,
   };
 }
@@ -42,8 +69,7 @@ export class DrizzleDailyReportRepository implements DailyReportRepositoryPort {
             occurredAt: input.occurredAt,
             riskRating: input.riskRating,
             esRating: input.esRating,
-            contentCiphertext: input.content.ciphertext,
-            contentKeyVersion: input.content.keyVersion,
+            ...toContentColumns(input.content),
           })
           .returning();
         const row = rows[0];
@@ -70,8 +96,7 @@ export class DrizzleDailyReportRepository implements DailyReportRepositoryPort {
             occurredAt: input.occurredAt,
             riskRating: input.riskRating,
             esRating: input.esRating,
-            contentCiphertext: input.content.ciphertext,
-            contentKeyVersion: input.content.keyVersion,
+            ...toContentColumns(input.content),
             updatedAt: new Date(),
           })
           .where(eq(dailyReports.id, id))

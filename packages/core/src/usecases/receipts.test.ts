@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { buildReceiptDedupeKey } from '../domain';
 import type { AuthDeps } from './auth';
 import { registerStaff } from './auth';
 import type { CustomerDeps } from './customers';
@@ -6,7 +7,6 @@ import { createCustomer } from './customers';
 import type { ReceiptDeps } from './receipts';
 import { uploadReceipts } from './receipts';
 import {
-  FakeCryptoPort,
   FakeCustomerRepository,
   FakeFamilyMemberRepository,
   FakeNotifierPort,
@@ -26,9 +26,10 @@ describe('uploadReceipts', () => {
   let deps: ReceiptDeps;
   let staffId: string;
   let customerId: string;
+  let receiptRepository: FakeReceiptRepository;
+  let storage: FakeStoragePort;
 
   beforeEach(async () => {
-    const crypto = new FakeCryptoPort();
     const staff = new FakeStaffRepository();
     const customers = new FakeCustomerRepository();
 
@@ -51,24 +52,18 @@ describe('uploadReceipts', () => {
     const customerDeps: CustomerDeps = {
       customers,
       familyMembers: new FakeFamilyMemberRepository(),
-      crypto,
     };
     const createdCustomer = await createCustomer(customerDeps, { tenantId, name: '田中 一郎' });
     customerId = createdCustomer.id;
 
-    const receiptRepository = new FakeReceiptRepository();
+    receiptRepository = new FakeReceiptRepository();
+    storage = new FakeStoragePort();
     const mirror = new FakeOutboxRepository();
     deps = {
       receipts: receiptRepository,
       staff,
       customers,
-      crypto,
-      blindIndex: {
-        async compute(_tenantId: string, normalizedValue: string) {
-          return `blind:${normalizedValue}`;
-        },
-      },
-      storage: new FakeStoragePort(),
+      storage,
       notifier: new FakeNotifierPort(),
       mirror,
       unitOfWork: new FakeUnitOfWork([receiptRepository, mirror]),
@@ -105,5 +100,49 @@ describe('uploadReceipts', () => {
 
     expect(result.uploadedCount).toBe(2);
     expect(result.duplicateCount).toBe(0);
+  });
+
+  it('findExistingDedupeKeysをすり抜けても、DB側の一意制約違反を重複として扱いファイルを残さない', async () => {
+    const fallbackTimestamp = '2026/08/30 10:00:00';
+    const amount = '1200';
+    const storeName = 'コンビニ';
+
+    // 同時に別リクエストで既に登録済みの領収書(このテストではfindExistingDedupeKeysで
+    // 見つからない=競合状態)を、事前にリポジトリへ直接差し込んでおく。
+    const dedupeKey = buildReceiptDedupeKey({
+      timestamp: fallbackTimestamp,
+      staffId,
+      customerId,
+      amount,
+      storeName,
+    });
+    await receiptRepository.create({
+      tenantId,
+      staffId,
+      customerId,
+      receiptTimestamp: new Date(),
+      dedupeKey,
+      amount,
+      storeName,
+      handoffText: null,
+      fileKey: `${tenantId}/receipts/existing.jpg`,
+      contentType: 'image/jpeg',
+    });
+
+    // アプリ側の事前チェックがすり抜けた状況を再現する(本来ならexistingに入っているはず)。
+    receiptRepository.findExistingDedupeKeys = async () => new Set();
+
+    const result = await uploadReceipts(deps, tenantId, {
+      staffId,
+      customerId,
+      images: [{ data: 'data:image/jpeg;base64,AAAA', amount, storeName }],
+      fallbackTimestamp,
+    });
+
+    expect(result.duplicateCount).toBe(1);
+    expect(result.uploadedCount).toBe(0);
+    expect(result.duplicates[0]).toMatchObject({ amount, storeName });
+    // 重複と分かった画像のファイルは残さず消す。
+    expect(storage.listKeysForTest()).toEqual([]);
   });
 });

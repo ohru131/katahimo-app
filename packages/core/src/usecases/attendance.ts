@@ -10,14 +10,12 @@ import {
   computeMonthlyTotals,
 } from '../domain/attendance';
 import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
-import type { CryptoPort } from '../ports/crypto';
 import type { MirrorPort } from '../ports/mirror';
 import type { AttendanceDayRepositoryPort } from '../ports/repositories';
 import type { UnitOfWorkPort } from '../ports/unitOfWork';
 
 export interface AttendanceDeps {
   attendanceDays: AttendanceDayRepositoryPort;
-  crypto: CryptoPort;
   /** 出勤簿スプレッドシートへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
   mirror: MirrorPort;
   /** 勤怠の保存とミラー要求のenqueueを、1つのトランザクションにまとめるために使う。 */
@@ -28,16 +26,6 @@ export interface AttendanceDayView {
   businessDate: string;
   rowData: AttendanceRowData;
   derived: AttendanceDayDerived;
-}
-
-async function decryptRowData(
-  crypto: CryptoPort,
-  tenantId: string,
-  ciphertext: string,
-  keyVersion: number,
-): Promise<AttendanceRowData> {
-  const json = await crypto.decrypt(tenantId, { ciphertext, keyVersion });
-  return JSON.parse(json) as AttendanceRowData;
 }
 
 /**
@@ -51,9 +39,7 @@ export async function getAttendanceDay(
   businessDate: string,
 ): Promise<AttendanceDayView> {
   const record = await deps.attendanceDays.findByStaffAndDate(tenantId, staffId, businessDate);
-  const rowData = record
-    ? await decryptRowData(deps.crypto, tenantId, record.rowData.ciphertext, record.rowData.keyVersion)
-    : {};
+  const rowData: AttendanceRowData = record ? record.rowData : {};
   return { businessDate, rowData, derived: computeDayDerived(rowData) };
 }
 
@@ -68,11 +54,8 @@ export async function saveAttendanceDay(
   businessDate: string,
   rowData: AttendanceRowData,
 ): Promise<AttendanceDayView> {
-  // 暗号化はトランザクションの外で済ませる(tenant_keysの読み取りが別トランザクションを
-  // 開くため。unitOfWork.ts参照)。
-  const encrypted = await deps.crypto.encrypt(tenantId, JSON.stringify(rowData));
   await deps.unitOfWork.run(tenantId, async (scope) => {
-    const record = await deps.attendanceDays.upsert(tenantId, staffId, businessDate, encrypted, scope);
+    const record = await deps.attendanceDays.upsert(tenantId, staffId, businessDate, rowData, scope);
     await deps.mirror.enqueue(
       {
         tenantId,
@@ -101,12 +84,11 @@ export async function getAttendanceMonth(
 ): Promise<AttendanceMonthView> {
   const records = await deps.attendanceDays.listByStaffAndMonth(tenantId, staffId, yearMonth);
 
-  const days = await Promise.all(
-    records.map(async (r) => {
-      const rowData = await decryptRowData(deps.crypto, tenantId, r.rowData.ciphertext, r.rowData.keyVersion);
-      return { businessDate: r.businessDate, rowData, derived: computeDayDerived(rowData) };
-    }),
-  );
+  const days = records.map((r) => ({
+    businessDate: r.businessDate,
+    rowData: r.rowData,
+    derived: computeDayDerived(r.rowData),
+  }));
   days.sort((a, b) => a.businessDate.localeCompare(b.businessDate));
 
   const totals = computeMonthlyTotals(days.map((d) => ({ rowData: d.rowData, derived: d.derived })));
@@ -129,12 +111,5 @@ export async function getAttendanceScheduleEvents(
 ): Promise<ScheduleEvent[]> {
   const records = await deps.attendanceDays.listByStaffAndDateRange(tenantId, staffId, startDate, endDate);
 
-  const eventsByDay = await Promise.all(
-    records.map(async (r) => {
-      const rowData = await decryptRowData(deps.crypto, tenantId, r.rowData.ciphertext, r.rowData.keyVersion);
-      return buildScheduleEventsFromRowData(r.businessDate, rowData);
-    }),
-  );
-
-  return eventsByDay.flat();
+  return records.flatMap((r) => buildScheduleEventsFromRowData(r.businessDate, r.rowData));
 }

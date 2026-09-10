@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { foreignKey, index, integer, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { foreignKey, pgPolicy, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { staff } from './staff';
@@ -9,13 +9,17 @@ import { tenants } from './tenants';
  * 領収書登録。GAS版のMain.js processReceiptImages/uploadReceiptsOnly(領収書ログスプレッドシート
  * IMAGE_LOG_SS_ID + Driveフォルダ RECEIPT_FOLDER_ID)に対応。
  *
- * receiptTimestampはOCRで読み取った領収書日時(無ければ登録時刻にフォールバック)で、
- * attendance_daysのbusinessDateと同様に日時そのものは検索/表示に使うため平文で持つ。
- * 金額・店舗名・申し送りは自由記述で個人の消費行動が読み取れるため暗号化する。
+ * receiptTimestampはOCRで読み取った領収書日時(無ければ登録時刻にフォールバック)。
  *
- * dedupeBlindIndexは「同一スタッフ・同一顧客・同一日時・同一金額・同一店舗名」の重複登録を
- * DBに全件復号せず検出するためのHMAC(GAS版processReceiptImagesのbuildKeyと同じ組み合わせを
- * 正規化してブラインドインデックス化したもの)。金額または店舗名が空の場合はGAS版と同様に
+ * 【保存方針(2026-09 データベース暗号化の見直し)】
+ * 金額・店舗名・申し送りは平文列で保存する(以前はアプリ層で暗号化していたが、フィールド単位の
+ * 暗号化は app_settings の資格情報だけに縮小した)。保護はDB/バックアップの保存時暗号化 + RLS +
+ * アクセス制御で行い、平文にすることで検索や将来の分析・AI活用にSQLから直接使える。
+ *
+ * dedupeKeyは「同一スタッフ・同一顧客・同一日時・同一金額・同一店舗名」の重複登録を検出する
+ * ためのキーで、buildReceiptDedupeKey()(packages/core/src/domain/reports/receiptDedupe.ts)の
+ * 正規化済み文字列をそのまま入れる(等値一致で照合。GAS版processReceiptImagesのbuildKeyと同じ挙動。
+ * 以前のHMACブラインドインデックスは廃止)。金額または店舗名が空の場合はGAS版と同様に
  * 重複判定自体を行わないためnullになる。
  *
  * fileKeyはStoragePort(領収書画像の実体。ローカル開発はファイルシステム、本番はGCS想定)の
@@ -33,14 +37,14 @@ export const receipts = pgTable(
     customerId: uuid(),
 
     receiptTimestamp: timestamp({ withTimezone: true }).notNull(),
-    dedupeBlindIndex: text(),
+    dedupeKey: text(),
 
-    amountCiphertext: text(),
-    amountKeyVersion: integer(),
-    storeNameCiphertext: text(),
-    storeNameKeyVersion: integer(),
-    handoffTextCiphertext: text(),
-    handoffTextKeyVersion: integer(),
+    /** 金額(正規化済み文字列)。OCRで読めなかった場合はnull。 */
+    amount: text(),
+    /** 店舗名(正規化済み文字列)。 */
+    storeName: text(),
+    /** 申し送り(自由記述)。 */
+    handoffText: text(),
 
     fileKey: text().notNull(),
     contentType: text().notNull(),
@@ -61,7 +65,12 @@ export const receipts = pgTable(
       columns: [t.tenantId, t.customerId],
       foreignColumns: [customers.tenantId, customers.id],
     }),
-    // findExistingDedupeIndexes()の絞り込み(tenant_id + dedupe_blind_index)を支えるインデックス。
-    index('receipts_tenant_dedupe_blind_index_idx').on(t.tenantId, t.dedupeBlindIndex),
+    // findExistingDedupeKeys()の絞り込み(tenant_id + dedupe_key)を支えるインデックス。
+    // 同時に同じ領収書が2リクエストで登録された場合にfindExistingDedupeKeysをすり抜けても
+    // DB側で止めるため、dedupeKeyがある行に限定した一意インデックスにしている
+    // (null同士は重複とみなさない=金額/店舗名が空でdedupeKeyがnullの行は複数許容)。
+    uniqueIndex('receipts_tenant_dedupe_key_uidx')
+      .on(t.tenantId, t.dedupeKey)
+      .where(sql`${t.dedupeKey} IS NOT NULL`),
   ],
 ).enableRLS();

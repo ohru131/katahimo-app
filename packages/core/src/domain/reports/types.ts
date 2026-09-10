@@ -1,7 +1,8 @@
 /**
- * 日報/事故報告の暗号化対象(content)の中身。GAS版の「日報」「事故報告」シートの列のうち、
- * occurredAt・riskRating・esRating・reportType以外(=自由記述)をここにまとめる
- * (daily_reports/accident_reportsテーブルのcontentCiphertext参照)。
+ * 日報/事故報告の本文(content)の中身。GAS版の「日報」「事故報告」シートの列のうち、
+ * occurredAt・riskRating・esRating・reportType以外(=自由記述)をここにまとめる。
+ * DB上は daily_reports/accident_reports テーブルの項目ごとの平文 text 列として保存する
+ * (各フィールドが列と1:1に対応。SQLでの検索・集計・全文検索をそのまま行うため)。
  */
 export interface DailyReportContent {
   /** 'HH:mm'。未入力は空文字(GAS版のStartTime/EndTime列と同じ)。 */

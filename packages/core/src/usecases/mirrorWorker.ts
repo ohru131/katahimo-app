@@ -1,8 +1,5 @@
-import type { AttendanceRowData } from '../domain/attendance';
 import { nextOutboxRetryDelayMs } from '../domain/mirror/retry';
 import { formatJstDateTime } from '../domain/reports/jstTime';
-import type { AccidentReportContent, DailyReportContent } from '../domain/reports/types';
-import type { CryptoPort } from '../ports/crypto';
 import type { OutboxJobRecord, OutboxRepositoryPort } from '../ports/mirror';
 import type { MirrorSenderPort } from '../ports/mirrorSender';
 import type {
@@ -23,7 +20,6 @@ export interface MirrorWorkerDeps {
   attendanceDays: AttendanceDayRepositoryPort;
   staff: StaffRepositoryPort;
   customers: CustomerRepositoryPort;
-  crypto: CryptoPort;
   storage: StoragePort;
   sender: MirrorSenderPort;
 }
@@ -44,7 +40,7 @@ export class PermanentMirrorError extends Error {
 }
 
 /**
- * outbox_jobs1件分を実際にGAS版スプレッドシート/Driveへミラーする。DBの最新値を読み直し・復号し、
+ * outbox_jobs1件分を実際にGAS版スプレッドシート/Driveへミラーする。DBの最新値を読み直し、
  * GAS側の列にそのまま書き込める形(MirrorSenderPortのペイロード)に整形する。
  *
  * 対応する種別は daily_report / accident_report / receipt / attendance_day の4つ(Phase 5の
@@ -61,12 +57,11 @@ export async function processOutboxJob(
     case 'daily_report': {
       const record = await deps.dailyReports.findById(tenantId, job.targetId);
       if (!record) return;
-      const [staffRecord, customerRecord, json] = await Promise.all([
+      const [staffRecord, customerRecord] = await Promise.all([
         deps.staff.findById(tenantId, record.staffId),
         deps.customers.findById(tenantId, record.customerId),
-        deps.crypto.decrypt(tenantId, record.content),
       ]);
-      const content = JSON.parse(json) as DailyReportContent;
+      const content = record.content;
       await deps.sender.sendDailyReport({
         reportId: record.id,
         timestampJst: formatJstDateTime(record.occurredAt),
@@ -87,12 +82,11 @@ export async function processOutboxJob(
     case 'accident_report': {
       const record = await deps.accidentReports.findById(tenantId, job.targetId);
       if (!record) return;
-      const [staffRecord, customerRecord, json] = await Promise.all([
+      const [staffRecord, customerRecord] = await Promise.all([
         deps.staff.findById(tenantId, record.staffId),
         deps.customers.findById(tenantId, record.customerId),
-        deps.crypto.decrypt(tenantId, record.content),
       ]);
-      const content = JSON.parse(json) as AccidentReportContent;
+      const content = record.content;
       await deps.sender.sendAccidentReport({
         reportId: record.id,
         timestampJst: formatJstDateTime(record.occurredAt),
@@ -118,12 +112,9 @@ export async function processOutboxJob(
     case 'receipt': {
       const record = await deps.receipts.findById(tenantId, job.targetId);
       if (!record) return;
-      const [staffRecord, customerRecord, amount, storeName, handoffText, imageBytes] = await Promise.all([
+      const [staffRecord, customerRecord, imageBytes] = await Promise.all([
         deps.staff.findById(tenantId, record.staffId),
         record.customerId ? deps.customers.findById(tenantId, record.customerId) : Promise.resolve(null),
-        record.amount ? deps.crypto.decrypt(tenantId, record.amount) : Promise.resolve(''),
-        record.storeName ? deps.crypto.decrypt(tenantId, record.storeName) : Promise.resolve(''),
-        record.handoffText ? deps.crypto.decrypt(tenantId, record.handoffText) : Promise.resolve(''),
         deps.storage.get(record.fileKey),
       ]);
       if (!imageBytes) {
@@ -134,9 +125,9 @@ export async function processOutboxJob(
         customerId: record.customerId ?? '',
         customerName: customerRecord?.name ?? '',
         receiptTimestampJst: formatJstDateTime(record.receiptTimestamp),
-        amount,
-        storeName,
-        handoffText,
+        amount: record.amount ?? '',
+        storeName: record.storeName ?? '',
+        handoffText: record.handoffText ?? '',
         imageDataUrl: `data:${record.contentType};base64,${bytesToBase64(imageBytes)}`,
       });
       return;
@@ -145,14 +136,17 @@ export async function processOutboxJob(
     case 'attendance_day': {
       const record = await deps.attendanceDays.findById(tenantId, job.targetId);
       if (!record) return;
-      const [staffRecord, json] = await Promise.all([
-        deps.staff.findById(tenantId, record.staffId),
-        deps.crypto.decrypt(tenantId, record.rowData),
-      ]);
-      const rowData = JSON.parse(json) as AttendanceRowData;
+      const staffRecord = await deps.staff.findById(tenantId, record.staffId);
+      // jsonb列から読んだ値なので、文字列以外が混ざっていないかを念のため確認する。
+      // undefinedはAttendanceRowDataの任意項目として許容するが、それ以外の非文字列値は
+      // データ破損の疑いがあるため再試行しても直らない -> デッドレターに落とす。
       const values: Record<string, string> = {};
-      for (const [key, value] of Object.entries(rowData)) {
-        if (typeof value === 'string') values[key] = value;
+      for (const [key, value] of Object.entries(record.rowData)) {
+        if (value === undefined) continue;
+        if (typeof value !== 'string') {
+          throw new PermanentMirrorError(`勤怠rowDataの値が文字列ではありません: ${key}`);
+        }
+        values[key] = value;
       }
       await deps.sender.sendAttendanceDay({
         staffName: staffRecord?.name ?? '',

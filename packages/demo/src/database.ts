@@ -45,14 +45,59 @@ export interface DemoMigration {
 }
 
 /**
+ * 「台帳にこのタグが無いDBは、増分適用ではなく作り直す」対象のマイグレーション。
+ *
+ * 0005 は顧客・日報・勤怠・領収書の暗号化列(`*_ciphertext`/`*_key_version`)を落とし、
+ * 続く 0006 が同名の平文列を追加する。暗号文→平文への切り替えなので、既存行の本文は
+ * SQL だけでは引き継げない(復号の移行処理は本番でも作らない方針)。増分で当てると
+ * 「顧客は残っているのに連絡先や日報の本文が全部空」という中途半端なデモになるため、
+ * 既にデモを開いたことがある訪問者の IndexedDB は丸ごと作り直してシードし直す。
+ * 消えるのは架空のシードデータと訪問者がデモで入力した内容だけなので、それで良い。
+ *
+ * タグは `packages/db/drizzle/*.sql` のファイル名(拡張子なし)と一致させる。
+ * 実在しないタグを書くとルールが黙って無効になるので、applyPendingMigrations が検査する。
+ *
+ * 両方を列挙する理由: 0005適用直後に起動が止まると、次回は0006だけが当たって
+ * isFresh=falseになりシードが走らない(0005が既に台帳にあるため作り直し対象と
+ * 判定されない)。0006も列挙しておけば、その次回起動で0006が未適用と分かり
+ * 作り直し+シードのやり直しに入れる。
+ */
+export const REBUILD_REQUIRED_MIGRATIONS: readonly string[] = [
+  '0005_drop_field_encryption',
+  '0006_plaintext_columns',
+];
+
+/** 適用済みマイグレーションの台帳(LEDGER_TABLE)から、タグの集合を読み出す。 */
+async function readAppliedTags(client: PGlite): Promise<Set<string>> {
+  const { rows } = await client.query<{ tag: string }>(`SELECT tag FROM ${LEDGER_TABLE};`);
+  return new Set(rows.map((row) => row.tag));
+}
+
+/**
  * 未適用のマイグレーションを順に当てる。戻り値は「スキーマを新規に作ったか」
  * (=シード投入が必要か)。
  *
  * `migrations` を引数で受け取るのは、`import.meta.glob` に依存せずテストから
- * 実際のPostgres(PGlite)に対して当てられるようにするため。
+ * 実際のPostgres(PGlite)に対して当てられるようにするため。`rebuildRequired` も同じ理由で
+ * 差し替えられるようにしてある(既定は REBUILD_REQUIRED_MIGRATIONS)。
  */
-export async function applyPendingMigrations(client: PGlite, migrations: DemoMigration[]): Promise<boolean> {
+export async function applyPendingMigrations(
+  client: PGlite,
+  migrations: DemoMigration[],
+  rebuildRequired: readonly string[] = REBUILD_REQUIRED_MIGRATIONS,
+): Promise<boolean> {
   if (migrations.length === 0) throw new Error('マイグレーションSQLを読み込めませんでした');
+
+  // タイポで「作り直し」ルールが黙って無効になるのを防ぐ。DBの状態に関係なく毎回検査する
+  // (新規DBでしか動かさないテストでも気付けるように)。
+  const knownTags = new Set(migrations.map((migration) => migration.tag));
+  for (const tag of rebuildRequired) {
+    if (!knownTags.has(tag)) {
+      throw new Error(
+        `作り直し対象のマイグレーション '${tag}' が見つかりません(REBUILD_REQUIRED_MIGRATIONS を確認)`,
+      );
+    }
+  }
 
   const schemaExists = await relationExists(client, 'public.tenants');
   const ledgerExists = await relationExists(client, `public.${LEDGER_TABLE}`);
@@ -65,6 +110,16 @@ export async function applyPendingMigrations(client: PGlite, migrations: DemoMig
     console.warn('[demo] スキーマが古い形式のため、デモデータを作り直します。');
     await client.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
     isFresh = true;
+  } else if (schemaExists && ledgerExists) {
+    // 台帳はあるが、増分では引き継げないマイグレーション(REBUILD_REQUIRED_MIGRATIONS)が
+    // まだ当たっていないDB。台帳なしの場合と同じく作り直す。
+    const applied = await readAppliedTags(client);
+    const missing = rebuildRequired.filter((tag) => !applied.has(tag));
+    if (missing.length > 0) {
+      console.warn(`[demo] データ形式が変わったため(${missing.join(', ')})、デモデータを作り直します。`);
+      await client.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+      isFresh = true;
+    }
   }
 
   await client.exec(
@@ -74,8 +129,7 @@ export async function applyPendingMigrations(client: PGlite, migrations: DemoMig
      );`,
   );
 
-  const { rows } = await client.query<{ tag: string }>(`SELECT tag FROM ${LEDGER_TABLE};`);
-  const applied = new Set(rows.map((row) => row.tag));
+  const applied = await readAppliedTags(client);
 
   for (const migration of migrations) {
     if (applied.has(migration.tag)) continue;

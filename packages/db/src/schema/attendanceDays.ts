@@ -1,11 +1,11 @@
+import type { AttendanceRowData } from '@katahimo/core/domain';
 import { sql } from 'drizzle-orm';
 import {
   date,
   foreignKey,
-  integer,
+  jsonb,
   pgPolicy,
   pgTable,
-  text,
   timestamp,
   uniqueIndex,
   uuid,
@@ -17,10 +17,16 @@ import { tenants } from './tenants';
 /**
  * 勤怠(出勤簿)の1日分。GAS版の個別出勤簿スプレッドシートの入力列(数式列は含まない)に対応。
  *
- * rowDataは packages/core/src/domain/attendance/types.ts の AttendanceRowData(JSON)を
- * まるごと1つの暗号文として保存する。個々のフィールド(訪問先名等、customers同様に個人特定に
- * つながりうる自由記述を含む)は常に「1日分をまとめて読み書きする」用途しか無く、フィールド単位の
- * 検索が必要ないため、customersのようなフィールドごとのciphertext分割はせず1本にまとめている。
+ * 【保存方針(2026-09 データベース暗号化の見直し)】
+ * rowDataは packages/core/src/domain/attendance/types.ts の AttendanceRowData を平文の
+ * jsonb 列でそのまま持つ(以前は1本の暗号文にしていたが、フィールド単位の暗号化は app_settings の
+ * 資格情報だけに縮小した)。保護はDB/バックアップの保存時暗号化 + RLS + アクセス制御で行う。
+ *
+ * 日報・事故報告のように項目ごとの列に分けず JSON オブジェクトのままにしているのは、キーが
+ * スプレッドシートの列記号(C/D/E…)の動的なオブジェクトで、常に「1日分をまるごと読み書きする」
+ * 用途しか無いため。jsonb なので必要になれば SQL 側から個別キーを参照することもできる。
+ * DEFAULT '{}' は、行が残っているDBでも ADD COLUMN ... NOT NULL が失敗しないようにするため
+ * (既存の暗号化済みデータは引き継がない)。
  *
  * 労働時間・残業・移動距離・基準距離超過回数などの派生値は一切保存しない。常に
  * computeDayDerived/computeMonthlyTotals(attendanceCalc.ts)でrowDataから都度計算する
@@ -37,8 +43,7 @@ export const attendanceDays = pgTable(
     staffId: uuid().notNull(),
     businessDate: date().notNull(),
 
-    rowDataCiphertext: text().notNull(),
-    rowDataKeyVersion: integer().notNull(),
+    rowData: jsonb().$type<AttendanceRowData>().notNull().default({}),
 
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
