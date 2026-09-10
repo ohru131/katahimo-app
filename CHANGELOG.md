@@ -2,6 +2,71 @@
 
 > 旧モノレポ `C001-cutest-internal/01_GAS/CHANGELOG.md`(全プロジェクト横断)から、katahimo-app に関するエントリ(Ver. 1.1.0〜1.1.23、Phase 0〜Phase 5継続)のみを抜粋・独立化したもの。それ以前(Ver. 1.0.x以前)は katahimo-app 誕生前の他 `gas-*` プロジェクトのエントリのため含めていない。Ver. 1.1.23 は `gas-childcare-visit-app`(GAS版、旧モノレポに残置)側の `Bridge.js` 変更も含む合同エントリだが、katahimo-app 側の変更点の文脈として必要なためそのまま残してある。今後この新リポジトリでの更新はこのファイルに追記していく。
 
+## [Ver. 1.1.27] - 2026-09-10
+
+### katahimo-app(マイグレーションの1本化と、将来機能のためのテーブル追加17本)
+
+利用者から「まだ実運用前なので、過去のデータベースの互換性や履歴保存などは不要。クリーンな
+コードにしてほしい」「データベースの有識者レビューを行うので、将来機能のためのデータベースも
+追加してほしい」との指示を受けての対応。
+
+- **マイグレーションを1本に統合した。** `0000`〜`0015` の16本を削除し、現行スキーマから生成した
+  `0000_baseline_schema.sql` 1本に置き換えた。統合前は途中に「暗号化列を平文列に置き換える」
+  「領収書の金額textを整数列に分ける」「勤怠row_dataのキーを列記号から意味のある名前に変える」
+  といった破壊的変更と、そのためのバックフィル用plpgsql関数
+  (`parse_receipt_amount_yen`/`attendance_column_row_to_row_data`/`parse_date_only` 等)が
+  含まれていたが、移行対象のデータが存在しない以上、最終形の把握を妨げるだけなので残していない。
+  - 既存のローカル開発用PostgreSQLは作り直しが必要(`drizzle.__drizzle_migrations` に古い
+    ハッシュが記録されているため増分では当たらない)
+  - 公開デモ(ブラウザ内PGlite)は `REBUILD_REQUIRED_MIGRATIONS = ['0000_baseline_schema']` により、
+    古いタグしか持たないIndexedDBのDBを自動で作り直す。段階的なバックフィルを検証していた
+    `packages/demo/src/migrationBackfill.test.ts` は、対象のSQLが無くなったため削除した
+- **顧客カルテを追加した**(`customer_notes` / `customer_note_photos`)。カルテ(経過記録)・
+  申し送り・鍵の位置・ガレージ場所・引き継ぎ事項・注意点を、区分を持つ1テーブルで表し、
+  写真を子テーブルに持たせた。`customers` の列にしないのは、上書きになるため「いつ誰がその
+  情報にしたか」が残らず、訪問前に読む情報が誤っていたときに経緯を辿れないため
+- **予約(RESERVA移植版)を追加した**(`service_menus` / `reservations` /
+  `reservation_assignments` / `staff_availabilities`)。予約(約束)と日報(実施記録)は
+  片方だけ存在する状態が正常にあり得るため分け、`daily_reports.reservation_id` で紐付ける
+  (1つの予約に日報が2件付かないよう部分一意索引を張った)。スタッフの割当は別テーブルにし、
+  主担当が1予約に1人までであることを部分一意索引で保証する
+- **Stripe決済を追加した**(`customer_payment_profiles` / `invoices` / `invoice_lines` /
+  `payments` / `stripe_webhook_events`)。カード番号は受け取らず保存しない(Stripeが返す
+  識別子と表示用のブランド名・下4桁のみ)。状態の語はStripeのInvoice status /
+  PaymentIntent statusに合わせ、対応表を持たない。請求書は合計を保存しつつ
+  `total = subtotal - discount + tax` をCHECK制約で強制する。Webhookは
+  `(tenant_id, stripe_event_id)` の一意制約で冪等化する。`invoice_lines` は
+  `coupons.ts` のコメントが「まだ無い」と書いていた請求機能に相当し、
+  同じ領収書・同じクーポン適用が2つの明細に載らないよう部分一意索引を張った
+- **訪問割当の最適化パラメータを追加した**(`trait_definitions` / `customer_traits` /
+  `staff_traits` / `staff_customer_compatibilities` / `staff_customer_travel_estimates`)。
+  何を見て最適化するかが今後のヒアリングで決まるため、特性の項目自体をデータにした。
+  値はjsonbの塊にせず型ごとに列を分け(「ちょうど1つだけ非NULL」をCHECK制約で縛る)、
+  SQLから絞り込めるようにしている。相性は「スコア」と「絶対に組ませない(`avoid`)」を
+  別の列にした(人員が足りない日に自動割当が `avoid` を押し通す事故を防ぐため)。
+  スタッフ自宅からの距離を出すため、`staff` に `home_address`/`home_lat`/`home_lng` を追加した
+- **移動手段別の手当を追加した**(`transport_allowance_rules` / `travel_legs`)。
+  自動車・公共交通機関・自転車・徒歩を選べるようにし、手段ごとに計算方法(距離比例/
+  1移動あたり定額/1日あたり定額/実費精算)と単価を持つ。**確認したところ、金額への換算
+  ロジックは本アプリにもGAS版にも存在せず**(距離合計と基準距離超過回数を出すところまで)、
+  単価に相当する定数も無かったため、既存ロジックの修正ではなく新規追加になっている。
+  勤怠 `row_data` を入力にした計算はGAS版との数値一致を崩さないためそのまま残し、
+  `travel_legs` は手当の算定と移動実績の記録に使う(`doc/14` B項第2段階の受け皿)
+- **CHECK制約に定数を埋めるときの落とし穴を1つ潰した。** drizzleの `sql` テンプレートに
+  JavaScriptの値を `${}` で直接埋めるとリテラルではなくバインドパラメータになり、
+  `CHECK (... <= $1)` という適用できないDDLが生成される(実際に
+  「there is no parameter $1」でマイグレーションが落ちた)。`schema/_sqlLiteral.ts` に
+  `sqlNumber()` を用意して必ずそこを通す形にした。区分値も同ファイルの `sqlInList()` 経由で
+  `packages/shared/src/contracts/` の配列から組み立て、DDLへのベタ書きをやめている
+- **有識者レビュー用の資料 `doc/15_将来機能のデータベース設計.md` を追加した。**
+  各テーブルの設計理由と、まだ決めきれていない論点(予約のダブルブッキングをDBで止められて
+  いないこと、`btree_gist` がPGliteで使えないため排他制約が採れないこと、EAV形式を項目確定後も
+  維持すべきか、など)をまとめた
+- `packages/db/src/rlsPolicies.test.ts` と `packages/db/src/updatedAtTriggers.test.ts` は
+  検査対象をスキーマ定義のexportから自動で集めるため、追加した17テーブル分のRLS
+  (ENABLE + FORCE + ポリシー)と `updated_at` トリガーの検査が自動で増えている
+  (それぞれ101件・32件のテストが通っている)
+
 ## [Ver. 1.1.26] - 2026-09-10
 
 ### katahimo-app(`doc/14` A〜G項の実施: 金額・勤怠row_data・インデックス・CHECK制約・updated_atトリガー・日付型・緯度経度、および割引クーポン・領収書の請求区分)

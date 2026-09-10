@@ -98,6 +98,25 @@ pnpm --filter @katahimo/api start   # http://localhost:8080
 pnpm --filter @katahimo/web dev     # http://localhost:5173
 ```
 
+マイグレーションは `packages/db/drizzle/0000_baseline_schema.sql` の1本(2026-09に0000〜0015から統合。
+実運用前で過去データの引き継ぎが不要になったため、途中の破壊的変更とそのためのバックフィルSQLを
+残す意味が無くなった)。**以前のバージョンで既にマイグレーションを当てたことがあるローカル開発用
+PostgreSQLは、`drizzle.__drizzle_migrations` に旧いマイグレーションのハッシュが記録されているため
+増分では当たらない。上記「2. ローカルDBの用意」からDBを作り直してから、あらためて
+`pnpm --filter @katahimo/db exec tsx src/migrate.ts` を実行する**(公開デモは
+`packages/demo/src/database.ts` の `REBUILD_REQUIRED_MIGRATIONS` により旧スキーマのIndexedDBを
+自動で作り直すため、この対応は不要)。
+
+2026-09に、将来機能のためのテーブルを17本追加した(スキーマ・制約・ドキュメントのみで、
+リポジトリ実装・API・画面はまだ作っていない。DBの形を先に固めて有識者レビューを受けるため)。
+顧客カルテ(`customer_notes`/`customer_note_photos`)、予約(`service_menus`/`reservations`/
+`reservation_assignments`/`staff_availabilities`)、請求と決済(`customer_payment_profiles`/
+`invoices`/`invoice_lines`/`payments`/`stripe_webhook_events`)、訪問割当の最適化
+(`trait_definitions`/`customer_traits`/`staff_traits`/`staff_customer_compatibilities`/
+`staff_customer_travel_estimates`)、移動手段別の手当(`transport_allowance_rules`/`travel_legs`)。
+テーブル一覧とER図は `doc/09_データベース構造解説.md`、設計理由と未決の論点は
+`doc/15_将来機能のデータベース設計.md` を参照。
+
 `http://localhost:5173` を開き、法人ID `demo` / `admin@example.com` / `admin1234` でログインすると、GAS版
 (`gas-childcare-visit-app/index.html`)と同じ見た目・タブ構成のアプリが表示される(移行時の混乱を減らすため、
 Tailwindの配色・Outfitフォント・ヘッダー/3タブのレイアウトをそのまま踏襲している。詳細は下記「UIをGAS版に
@@ -294,7 +313,7 @@ pnpm --filter @katahimo/api import:legacy-staff demo "氏名" メールアドレ
 | `pnpm build` | 全パッケージのビルド |
 | `pnpm --filter @katahimo/web build:demo` | GitHub Pages公開デモのビルド(`preview:demo`でローカル確認) |
 | `node scripts/assertNoDemoInBuild.mjs` | 本番ビルドにデモ用コード/データが混入していないかの検査 |
-| `pnpm db:generate` / `db:migrate` / `db:seed` | Drizzleのマイグレーション生成・適用・初期データ |
+| `pnpm db:generate` / `db:migrate` / `db:seed` | Drizzleのマイグレーション生成・適用・初期データ(`db:generate`は`FORCE ROW LEVEL SECURITY`と`set_updated_at`トリガーを生成しないため、生成後に手で追記する。`packages/db/drizzle/0000_baseline_schema.sql`冒頭のコメント参照) |
 
 ## データ保護の方針(2026-09 見直し)
 
@@ -320,7 +339,7 @@ pnpm --filter @katahimo/api import:legacy-staff demo "氏名" メールアドレ
 - **資格情報の鍵管理は従来どおり**。DEK はテナントごとに `crypto.randomBytes` で独立生成し、`KeyManagementPort`(KEK)でラップした状態のみ `tenant_keys` に保存する(エンベロープ暗号化。平文 DEK は `LocalCryptoPort` のプロセス内メモリにしかない)。DEK は世代を並存させ(`tenant_keys` の主キーは `(tenant_id, dek_version)`)、暗号化は常に最新世代、復号は暗号文に記録された世代(`*_key_version`)の鍵で行う。`LocalCryptoPort.rotate()` は世代を1つ足すだけなので既存の暗号文が読めなくなることはないが、**既存データを新世代へ移す再暗号化バッチは未実装**(対象は資格情報3列だけになった)。ローカル開発の KEK は環境変数 `LOCAL_DEV_KEK` 1本(`LocalKmsPort`)。**本番の KEK(Cloud KMS)は未実装**で、`KeyManagementPort` の実装差し替えで対応する設計(KEK だけのローテーションは `TenantKeyRepositoryPort.updateWrappedDek`)。
 - **revoke の効果範囲**: テナント解約時に `tenant_keys` の該当行を revoke するとバックアップに残った暗号文も復号不能になる(暗号学的削除)が、これが及ぶのは資格情報だけ。顧客等の業務データは平文なので、NDA 第7条の返還・廃棄はテナント単位の物理 DELETE とバックアップ保持期間の満了で担保する。
 - **ブラインドインデックスは廃止**。領収書の重複検出は `receipts.dedupe_key` に `buildReceiptDedupeKey()` の正規化済み文字列をそのまま保存して等値一致で行う(GAS 版 `buildKey` と同じ挙動)。HMAC 用の別鍵と `BlindIndexPort` は削除した。
-- **既存の暗号化済みデータは引き継がない**。マイグレーション `0005_drop_field_encryption` で暗号化列を削除し、`0006_plaintext_columns` で平文列を追加し、`0007_receipts_dedupe_key_unique` で `(tenant_id, dedupe_key)` に部分一意インデックスを張る(同時アップロードの重複を DB 側でも止める)(`NOT NULL` 列には `DEFAULT ''`/`'{}'` を付けてあるので行が残っている DB でも適用は通るが、既存行の本文は空になる)。ローカル開発 DB は `pnpm db:migrate` → `pnpm db:seed` で作り直す。公開デモは旧スキーマの IndexedDB を検知して自動で作り直す(`packages/demo/src/database.ts` の `REBUILD_REQUIRED_MIGRATIONS`)。復号→再保存の移行スクリプトは作っていない。
+- **既存の暗号化済みデータは引き継がない**。当時のマイグレーション(`0005_drop_field_encryption`で暗号化列を削除、`0006_plaintext_columns`で平文列を追加、`0007_receipts_dedupe_key_unique`で`(tenant_id, dedupe_key)`に部分一意インデックスを追加。同時アップロードの重複をDB側でも止める)は、2026-09のマイグレーション統合で`0000_baseline_schema.sql`1本にまとめられており、個別のファイルとしては残っていない。ローカル開発 DB は作り直してから `pnpm db:migrate` → `pnpm db:seed` で用意する(上記「動作デモ(ログイン+苗字検索)」の注意参照)。公開デモは旧スキーマの IndexedDB を検知して自動で作り直す(`packages/demo/src/database.ts` の `REBUILD_REQUIRED_MIGRATIONS`)。復号→再保存の移行スクリプトは作っていない。
 - **ミラーワーカーは復号しない**。`packages/worker` は平文列をそのまま読んで Bridge.js に送るため、`LOCAL_DEV_KEK` が不要になった(API サーバーは資格情報の復号のため引き続き必要)。
 - 監査ログ(`AuditLogPort`、実装は `ConsoleAuditLogPort`)は構造化 JSON を1行ずつ stdout へ出力する(Cloud Run 上は stdout/stderr がそのまま Cloud Logging に取り込まれるため追加の GCP 設定は不要)。記録するのは2種類。復号(`recordDecrypt`)は資格情報の復号(管理者設定の読み出し・Gemini 呼び出し・Chat 通知)だけが対象で、「どのテナントのデータをいつ復号したか」まで(`decrypt(tenantId, value)` のシグネチャに呼び出し元情報が無いため「誰が」は残らない)。認証・権限まわりのイベント(`record`)は `actorStaffId`(誰が)・`targetStaffId`(誰を)付きで残す(ログイン失敗だけ severity=WARNING。種別は `login_succeeded`/`login_failed`/`password_changed`/`password_reset_completed`/`staff_created`/`staff_updated`/`staff_password_reset_by_admin`。`AuditEventType` には `logout`/`password_reset_requested` も定義してあるが、記録の呼び出しはまだ置いていない)。**業務データは全て平文列なので、その参照は復号を経由せずこの網には入らない**。データアクセス監査が必要になれば DB 側の監査(pgaudit 等)が本命。
 - 実装は `packages/integrations`(`local-crypto`/`local-kms`)に置く。暗号化対象カラムは `*_ciphertext`/`*_key_version` のペアで、現在は `app_settings` の3ペアのみ。
@@ -328,7 +347,7 @@ pnpm --filter @katahimo/api import:legacy-staff demo "氏名" メールアドレ
 ## 進捗(フェーズ)
 
 - [x] **Phase 0 — 基盤構築**: モノレポ・TS strict・Biome・Vitest・Docker/ローカルPostgreSQL・Hono空サーバー・Vite PWA雛形・health/DB疎通。
-- [x] **Phase 1 — スキーマとテナント分離(RLS)**: tenants/staff/sessions/customers/outbox_jobsをDrizzleで定義し、tenant_idを持つ全テーブルにRLSポリシーを適用(katahimo=所有者/DDL用、katahimo_app=RLS対象のアプリ用ロールに分離。実際にRLSがブロックすることを確認済み)。**2026-08 データベース構造レビューで、RLSはSELECTしか絞り込まずFK制約自体は常にRLSをバイパスする(PostgreSQL仕様)ため単一列FKのままだとテナントを跨いだ取り違えを防げないと指摘され、`customers`/`staff`に`(tenant_id, id)`のUNIQUE制約を追加し、`daily_reports`/`accident_reports`/`receipts`/`family_members`/`attendance_days`/`sessions`のFKを全て`(tenant_id, xxx_id)`複合FKに置き換えた**(実際にPostgreSQLへ適用する際、`drizzle-kit generate`が出力するステートメント順のままだと複合FKが参照先のUNIQUE制約より先に実行されて失敗することが実機で判明したため、マイグレーションSQLの順序を手動で修正した)。あわせて`outbox_jobs`の冪等キーのUNIQUE制約もテナント跨ぎで衝突し得た点を`(tenant_id, idempotency_key)`にスコープし直した。**続けて有識者レビューで「DB個別の暗号化(氏名・住所等まで含む全面フィールド暗号化)は過剰、バックアップ暗号化(TDE)+RLSで十分」と指摘を受け、`customers`/`staff`の氏名・かな・メール・電話・住所・駐車場情報を平文カラムに戻し、ブラインドインデックス列(`*_blind_index`)を全廃した**(この時点で引き続き暗号化したのは緊急連絡先・避難場所・メモ・Benefit会員ID・緯度経度・世帯構成員・日報/事故報告本文・領収書明細)。マイグレーション生成時、同一テーブルで列の追加と削除が同時に発生すると`drizzle-kit generate`がリネームか新規かを対話的に確認しようとして自動化できない問題に遭遇したため、「削除のみ」→「追加のみ」の2回に分けてgenerateする回避策を用いた。**RLSの網羅性はテストで自動検証している**: `packages/db/src/rlsPolicies.test.ts`がDrizzleスキーマ定義から全テーブルを動的に集め、マイグレーションSQLに`ENABLE`と`FORCE ROW LEVEL SECURITY`の両方、`tenant_isolation`ポリシーの`USING`/`WITH CHECK`が揃っていることを検査する(除外は`tenants`のみ)ため、新しいテーブルを足してFORCEを書き忘れるとCIで落ちる。`packages/demo/src/rlsEnforcement.test.ts`はPGlite上に非特権ロールを作り、クロステナントの読み書きが実際に止まること(FORCEの有無で挙動が変わることまで比較で固定)を検証する。**さらに 2026-09 に、実証協力事業者との秘密保持契約(案)第6条の要求水準(アクセス制限・通信/保存時の暗号化・パスワード管理)と検索性・日報データの AI 活用を踏まえて二度目の縮小を行い、顧客・世帯構成員・日報・事故報告・勤怠・領収書の全業務データを平文化、アプリ層で暗号化するのは `app_settings` の資格情報3項目のみとし、ブラインドインデックス列(`receipts.dedupe_blind_index`)も廃止した**(マイグレーション `0005_drop_field_encryption`/`0006_plaintext_columns`。既存の暗号化済みデータは引き継がない。詳細は本READMEの「データ保護の方針」・`doc/09_データベース構造解説.md`参照)。
+- [x] **Phase 1 — スキーマとテナント分離(RLS)**: tenants/staff/sessions/customers/outbox_jobsをDrizzleで定義し、tenant_idを持つ全テーブルにRLSポリシーを適用(katahimo=所有者/DDL用、katahimo_app=RLS対象のアプリ用ロールに分離。実際にRLSがブロックすることを確認済み)。**2026-08 データベース構造レビューで、RLSはSELECTしか絞り込まずFK制約自体は常にRLSをバイパスする(PostgreSQL仕様)ため単一列FKのままだとテナントを跨いだ取り違えを防げないと指摘され、`customers`/`staff`に`(tenant_id, id)`のUNIQUE制約を追加し、`daily_reports`/`accident_reports`/`receipts`/`family_members`/`attendance_days`/`sessions`のFKを全て`(tenant_id, xxx_id)`複合FKに置き換えた**(実際にPostgreSQLへ適用する際、`drizzle-kit generate`が出力するステートメント順のままだと複合FKが参照先のUNIQUE制約より先に実行されて失敗することが実機で判明したため、マイグレーションSQLの順序を手動で修正した)。あわせて`outbox_jobs`の冪等キーのUNIQUE制約もテナント跨ぎで衝突し得た点を`(tenant_id, idempotency_key)`にスコープし直した。**続けて有識者レビューで「DB個別の暗号化(氏名・住所等まで含む全面フィールド暗号化)は過剰、バックアップ暗号化(TDE)+RLSで十分」と指摘を受け、`customers`/`staff`の氏名・かな・メール・電話・住所・駐車場情報を平文カラムに戻し、ブラインドインデックス列(`*_blind_index`)を全廃した**(この時点で引き続き暗号化したのは緊急連絡先・避難場所・メモ・Benefit会員ID・緯度経度・世帯構成員・日報/事故報告本文・領収書明細)。マイグレーション生成時、同一テーブルで列の追加と削除が同時に発生すると`drizzle-kit generate`がリネームか新規かを対話的に確認しようとして自動化できない問題に遭遇したため、「削除のみ」→「追加のみ」の2回に分けてgenerateする回避策を用いた。**RLSの網羅性はテストで自動検証している**: `packages/db/src/rlsPolicies.test.ts`がDrizzleスキーマ定義から全テーブルを動的に集め、マイグレーションSQLに`ENABLE`と`FORCE ROW LEVEL SECURITY`の両方、`tenant_isolation`ポリシーの`USING`/`WITH CHECK`が揃っていることを検査する(除外は`tenants`のみ)ため、新しいテーブルを足してFORCEを書き忘れるとCIで落ちる。`packages/demo/src/rlsEnforcement.test.ts`はPGlite上に非特権ロールを作り、クロステナントの読み書きが実際に止まること(FORCEの有無で挙動が変わることまで比較で固定)を検証する。**さらに 2026-09 に、実証協力事業者との秘密保持契約(案)第6条の要求水準(アクセス制限・通信/保存時の暗号化・パスワード管理)と検索性・日報データの AI 活用を踏まえて二度目の縮小を行い、顧客・世帯構成員・日報・事故報告・勤怠・領収書の全業務データを平文化、アプリ層で暗号化するのは `app_settings` の資格情報3項目のみとし、ブラインドインデックス列(`receipts.dedupe_blind_index`)も廃止した**(当時のマイグレーション `0005_drop_field_encryption`/`0006_plaintext_columns`。2026-09のマイグレーション統合で現在は`0000_baseline_schema.sql`に含まれる。既存の暗号化済みデータは引き継がない。詳細は本READMEの「データ保護の方針」・`doc/09_データベース構造解説.md`参照)。
 - [x] **Phase 2 — 認証(メール)**: argon2idパスワードハッシュ、httpOnly Cookieセッション(tenantId埋め込みでRLSのチキン&エッグ問題を回避)、`POST /api/auth/login`・`GET /api/auth/me`・`POST /api/auth/logout`。**GAS版のSHA-256+saltパスワードハッシュ(Auth.jsのcomputeHash)を、パスワード変更なしで引き継げるようにした**(`computeLegacyHash`。GAS版を実行した結果と一致することを検証済み)。ログイン成功時にargon2idへサイレント再ハッシュされ、実際にAPI経由で移行→ログイン→再ハッシュ確認→2回目ログインまで動作確認済み。Google認証(OAuth)は未着手(実GCPクライアントIDが必要なため)。
 - [x] **パスワード再設定(メール)+ 初期パスワード方式**: GAS版`Auth.js`の`requestPasswordReset`/`resetPasswordWithCode`に対応する、メールの6桁コード(有効期限30分)によるパスワード再設定を実装。あわせて管理者がスタッフを登録すると初期パスワードを自動生成して本人へメールし、本人が変更するまで**サーバー側が他のAPIを403で拒否する**方式(`staff.must_change_password` + `requirePasswordChangeGuard`)にした。画面だけで変更を促してもAPIを直接叩けば通ってしまうため、強制はサーバー側で行う。メール送信は`MailerPort`として切り出し、既定の実装はGAS版と同じ`MailApp.sendEmail`を使う`GasBridgeMailerPort`(doc/10「新規GCP APIより既存GASブリッジを優先」に従い、SMTPアカウントやSendGrid等の新規契約を避けた)。**GASブリッジ側に`sendEmail`アクションの追加とデプロイが必要**で、未設定の間は`LoggingMailerPort`が送信内容をサーバーログに出すだけになる。GAS版から意図的に変えた点が4つある: (1) 宛先が登録済みかどうかで応答を出し分けない(GAS版は「ユーザーIDが見つからない」と返しており、誰でもメールアドレスの登録有無を確かめられた)、(2) コードは平文ではなく、DBに置かないペッパー(環境変数`PASSWORD_RESET_PEPPER`)を鍵にしたHMAC-SHA256の検証子として保存する(GAS版はシートに平文。単純なハッシュでは6桁=100万通りしかないため、DBダンプが漏れた時点でオフラインの総当たりで有効なコードを復元できてしまう)、(3) 6桁=100万通りしかないため誤入力5回でコードを無効化する(GAS版は無制限)、(4) 再設定の完了時にそのスタッフの全セッションを破棄する(パスワードを忘れる状況には乗っ取られている場合も含まれるため)。パスワードの最低文字数(8文字)も追加した(GAS版は1文字でも設定できた)。
 - [x] **認証まわりの堅牢化**: ログイン試行は連続10回の失敗で15分ロックし、成功でカウンタを0に戻す
@@ -419,7 +438,8 @@ pnpm --filter @katahimo/api import:legacy-staff demo "氏名" メールアドレ
   別のジョブとして改めて積まれる)。**ジョブの失敗は終端ではなく指数バックオフで再試行する**:
   5秒から倍々に伸ばし、上限1時間、最大8回まで(`packages/core/src/domain/mirror/retry.ts`、
   `outbox_jobs.next_attempt_at`/`updated_at`とインデックス`outbox_jobs_tenant_status_next_attempt_idx`は
-  マイグレーション`0002_outbox_retry.sql`で追加)。上限に達したものだけを`failed`(デッドレター)に
+  当時のマイグレーション`0002_outbox_retry.sql`で追加。2026-09のマイグレーション統合で現在は
+  `0000_baseline_schema.sql`に含まれる)。上限に達したものだけを`failed`(デッドレター)に
   落とす。`processing`のまま`updated_at`が5分を過ぎた行は再びclaimの対象になるため、ワーカーが
   異常終了しても取り残されない。デッドレターが発生した回は、ワーカーが通常のログとは別に
   `console.error`で出す(`packages/worker/src/main.ts`。Cloud Loggingのseverityで拾える)。
