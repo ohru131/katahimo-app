@@ -71,6 +71,13 @@
       "when": 1789047064497,
       "tag": "0009_add_check_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789047412002,
+      "tag": "0010_updated_at_trigger",
+      "breakpoints": true
     }
   ]
 }
