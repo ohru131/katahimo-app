@@ -11,6 +11,24 @@ import { withTenant } from '../tenantScope';
 
 type CustomerRow = typeof customers.$inferSelect;
 
+/**
+ * numeric(9,6)列(drizzle-orm上はstring)を、ポート層のnumberへ変換する。
+ * ports/repositories.tsのCustomerProfileFields.lat/lngのコメント参照(値域はnumberで
+ * 誤差なく表現できる)。
+ */
+function numericToNumber(value: string | null): number | null {
+  return value === null ? null : Number(value);
+}
+
+/**
+ * ポート層のnumberを、numeric(9,6)列に渡す文字列へ変換する。scale(6)に合わせて
+ * toFixed(6)で丸めておく(桁数が違うとPostgres側の丸めに任せることになり、
+ * どちらで丸められたのか分かりにくくなるため、ここで明示的に揃える)。
+ */
+function numberToNumeric(value: number | null | undefined): string | null {
+  return value === null || value === undefined ? null : value.toFixed(6);
+}
+
 /** DrizzleのcustomersテーブルのSELECT結果行を、ポート層のCustomerRecordに変換する。 */
 function toRecord(row: CustomerRow): CustomerRecord {
   return {
@@ -37,7 +55,9 @@ function toRecord(row: CustomerRow): CustomerRecord {
     address2: row.address2,
     address2StartDate: row.address2StartDate,
     address2EndDate: row.address2EndDate,
-    latLng: row.latLng,
+    lat: numericToNumber(row.lat),
+    lng: numericToNumber(row.lng),
+    latLngRaw: row.latLngRaw,
     memberType: row.memberType,
     memberStatus: row.memberStatus,
     paymentMethod: row.paymentMethod,
@@ -71,7 +91,9 @@ function toColumnValues(input: NewCustomerInput) {
     address2: input.address2 ?? null,
     address2StartDate: input.address2StartDate ?? null,
     address2EndDate: input.address2EndDate ?? null,
-    latLng: input.latLng ?? null,
+    lat: numberToNumeric(input.lat),
+    lng: numberToNumeric(input.lng),
+    latLngRaw: input.latLngRaw ?? null,
     memberType: input.memberType ?? null,
     memberStatus: input.memberStatus ?? null,
     paymentMethod: input.paymentMethod ?? null,
@@ -114,7 +136,9 @@ function toPatchColumnValues(patch: CustomerPatchInput) {
     ...(patch.address2 !== undefined && { address2: patch.address2 }),
     ...(patch.address2StartDate !== undefined && { address2StartDate: patch.address2StartDate }),
     ...(patch.address2EndDate !== undefined && { address2EndDate: patch.address2EndDate }),
-    ...(patch.latLng !== undefined && { latLng: patch.latLng }),
+    ...(patch.lat !== undefined && { lat: numberToNumeric(patch.lat) }),
+    ...(patch.lng !== undefined && { lng: numberToNumeric(patch.lng) }),
+    ...(patch.latLngRaw !== undefined && { latLngRaw: patch.latLngRaw }),
     ...(patch.memberType !== undefined && { memberType: patch.memberType }),
     ...(patch.memberStatus !== undefined && { memberStatus: patch.memberStatus }),
     ...(patch.paymentMethod !== undefined && { paymentMethod: patch.paymentMethod }),

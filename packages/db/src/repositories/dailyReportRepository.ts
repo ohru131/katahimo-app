@@ -18,8 +18,6 @@ type DailyReportRow = typeof dailyReports.$inferSelect;
  */
 function toContentColumns(content: DailyReportContent) {
   return {
-    startTime: content.startTime,
-    endTime: content.endTime,
     inputText: content.inputText,
     internalText: content.internalText,
     customerText: content.customerText,
@@ -29,8 +27,6 @@ function toContentColumns(content: DailyReportContent) {
 /** daily_reportsの項目別平文列から、DailyReportContentを組み立てる。 */
 function toContent(row: DailyReportRow): DailyReportContent {
   return {
-    startTime: row.startTime,
-    endTime: row.endTime,
     inputText: row.inputText,
     internalText: row.internalText,
     customerText: row.customerText,
@@ -47,6 +43,8 @@ function toRecord(row: DailyReportRow): DailyReportRecord {
     occurredAt: row.occurredAt,
     riskRating: row.riskRating,
     esRating: row.esRating,
+    startedAt: row.startedAt,
+    endedAt: row.endedAt,
     content: toContent(row),
     updatedAt: row.updatedAt,
   };
@@ -69,6 +67,8 @@ export class DrizzleDailyReportRepository implements DailyReportRepositoryPort {
             occurredAt: input.occurredAt,
             riskRating: input.riskRating,
             esRating: input.esRating,
+            startedAt: input.startedAt,
+            endedAt: input.endedAt,
             ...toContentColumns(input.content),
           })
           .returning();
@@ -96,6 +96,8 @@ export class DrizzleDailyReportRepository implements DailyReportRepositoryPort {
             occurredAt: input.occurredAt,
             riskRating: input.riskRating,
             esRating: input.esRating,
+            startedAt: input.startedAt,
+            endedAt: input.endedAt,
             ...toContentColumns(input.content),
             updatedAt: new Date(),
           })

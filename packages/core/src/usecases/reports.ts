@@ -2,7 +2,9 @@ import {
   buildAccidentHistoryInternalText,
   buildAccidentReportNotificationText,
   buildDailyReportNotificationText,
+  formatJstDateKey,
   formatJstDateTimeShort,
+  parseDateOnly,
   parseJstDateTime,
 } from '../domain';
 import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
@@ -67,7 +69,38 @@ export interface DailyReportView {
   customerId: string;
   riskRating: number | null;
   esRating: number | null;
+  startedAt: Date | null;
+  endedAt: Date | null;
   content: DailyReportContent;
+}
+
+/**
+ * 'YYYY-MM-DD'の訪問日とstart/endTime('HH:mm'。未入力は空文字)から、startedAt/endedAtを
+ * 組み立てる(doc/14 F項)。
+ *
+ * occurredAt(=訪問日+開始時刻。並べ替えキー)とstartedAtは同じ情報の二重管理になるため、
+ * 呼び出し側(saveDailyReport)はこの関数が返すstartedAtをoccurredAtとしてもそのまま使う
+ * (再度parseJstDateTimeを呼び直さない=Dateオブジェクトそのものを共有し、構造的に食い違いを
+ * 起こさないようにする)。startTimeが空文字の場合、startedAtはnull(未入力)になる一方、
+ * occurredAt側は呼び出し側が引き続き「00:00固定の並べ替えキー」として扱う(既存挙動を変えない)。
+ *
+ * 日跨ぎ勤務(22:00〜01:00等)はendedAtがstartedAtより前の時刻になってしまうため、その場合は
+ * 日付を1日進める(daily_reports_time_orderのCHECK制約を満たすため)。
+ */
+function computeDailyReportTimes(
+  reportDateStr: string,
+  startTime: string,
+  endTime: string,
+): { startedAt: Date | null; endedAt: Date | null } {
+  const startedAt = startTime ? parseJstDateTime(reportDateStr, startTime) : null;
+  if (!endTime) return { startedAt, endedAt: null };
+
+  const endCandidate = parseJstDateTime(reportDateStr, endTime);
+  const endedAt =
+    startedAt && endCandidate < startedAt
+      ? new Date(endCandidate.getTime() + 24 * 60 * 60 * 1000)
+      : endCandidate;
+  return { startedAt, endedAt };
 }
 
 /**
@@ -80,10 +113,17 @@ export async function saveDailyReport(
   tenantId: string,
   input: SaveDailyReportInput,
 ): Promise<DailyReportView> {
-  const occurredAt = input.reportDate ? parseJstDateTime(input.reportDate, input.startTime) : new Date();
+  // reportDate省略時は「今日」のJST日付を補ってstartedAt/endedAtを計算する(そうしないと
+  // start/endTimeが入力されていても常にnullになってしまう)。ただしoccurredAt自体は
+  // 従来通り「保存操作時刻そのもの」にする(GAS版saveReportと同じ、訪問日時の遡り指定は
+  // できない仕様。reportDateが無い=どの日の何時か分からないため、startTimeの値は
+  // 信用せず実際の保存時刻を使う)。
+  const now = new Date();
+  const reportDateStr = input.reportDate ?? formatJstDateKey(now);
+  const { startedAt, endedAt } = computeDailyReportTimes(reportDateStr, input.startTime, input.endTime);
+  const occurredAt = input.reportDate ? (startedAt ?? parseJstDateTime(reportDateStr, undefined)) : now;
+
   const content: DailyReportContent = {
-    startTime: input.startTime || '',
-    endTime: input.endTime || '',
     inputText: input.inputText || '',
     internalText: input.internalText || '',
     customerText: input.customerText || '',
@@ -96,6 +136,8 @@ export async function saveDailyReport(
     occurredAt,
     riskRating: input.riskRating,
     esRating: input.esRating,
+    startedAt,
+    endedAt,
     content,
   };
 
@@ -123,7 +165,14 @@ export async function saveDailyReport(
   const notificationText = buildDailyReportNotificationText({
     staffName,
     customerName,
-    content: { startTime: content.startTime, endTime: content.endTime, internalText: content.internalText },
+    // DB保存後のstartedAt/endedAt(timestamptz)を'HH:mm'へ戻す回り道はせず、入力の
+    // 生文字列をそのまま使う(notificationText.tsのbuildDailyReportNotificationTextの
+    // コメント参照)。
+    content: {
+      startTime: input.startTime || '',
+      endTime: input.endTime || '',
+      internalText: content.internalText,
+    },
     riskRating: input.riskRating,
     esRating: input.esRating,
   });
@@ -136,6 +185,8 @@ export async function saveDailyReport(
     customerId: record.customerId,
     riskRating: record.riskRating,
     esRating: record.esRating,
+    startedAt: record.startedAt,
+    endedAt: record.endedAt,
     content,
   };
 }
@@ -177,9 +228,13 @@ export async function saveAccidentReport(
   tenantId: string,
   input: SaveAccidentReportInput,
 ): Promise<AccidentReportView> {
+  // doc/14 F項: targetDob(自由記述由来の生文字列)はtargetDobRawへそのまま残しつつ、
+  // parseDateOnlyで解析できた場合だけtargetDobDateに'YYYY-MM-DD'を入れる。
+  const targetDobRaw = input.targetDob || '';
   const content: AccidentReportContent = {
     targetName: input.targetName || '',
-    targetDob: input.targetDob || '',
+    targetDobDate: targetDobRaw ? parseDateOnly(targetDobRaw) : null,
+    targetDobRaw,
     occurrenceTime: input.occurrenceTime,
     location: input.location,
     accidentContent: input.accidentContent,

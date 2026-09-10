@@ -92,6 +92,13 @@
       "when": 1789049329867,
       "tag": "0012_attendance_row_data_shape",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789051569940,
+      "tag": "0013_typed_dates_and_coordinates",
+      "breakpoints": true
     }
   ]
 }

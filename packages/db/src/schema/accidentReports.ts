@@ -1,5 +1,15 @@
 import { sql } from 'drizzle-orm';
-import { check, foreignKey, index, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  check,
+  date,
+  foreignKey,
+  index,
+  pgPolicy,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { staff } from './staff';
@@ -38,8 +48,11 @@ export const accidentReports = pgTable(
 
     /** 対象児(世帯構成員)の氏名。GAS版のTargetName列。 */
     targetName: text().notNull().default(''),
-    /** 'yyyy/MM/dd'。GAS版のTargetDob列。 */
-    targetDob: text().notNull().default(''),
+    // doc/14 F項: family_membersのdobと同じ理由でtargetDob(text)を分割する。
+    /** 対象児の生年月日(parseDateOnlyで解析できた場合のみ)。不完全な表記はnullのまま。 */
+    targetDobDate: date(),
+    /** 対象児の生年月日の元表記('yyyy/MM/dd'。GAS版のTargetDob列と同じ)。常に保持する。 */
+    targetDobRaw: text().notNull().default(''),
     occurrenceTime: text().notNull().default(''),
     location: text().notNull().default(''),
     accidentContent: text().notNull().default(''),

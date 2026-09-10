@@ -21,6 +21,15 @@ import { tenants } from './tenants';
  * occurredAtは訪問日時(reportDate+startTimeから算出。GAS版のTimestamp列と同じ)で、履歴の並び替え・
  * 絞り込みに使う。PSI/ES評価は小さな数値。
  *
+ * 【occurredAtとstartedAtの二重管理(doc/14 F項)】
+ * startedAtはoccurredAt(=訪問日+開始時刻)と同じ情報の二重管理になっている。食い違いが
+ * 起きないよう、usecases/reports.tsのsaveDailyReportは両方を同じ入力(reportDate+startTime)
+ * から同じ関数(parseJstDateTime)で作り、startTimeが入力されているときはoccurredAtの
+ * DateオブジェクトをそのままstartedAtにも使う(計算をやり直さない)。startTime未入力時は
+ * occurredAtだけが埋まる(並べ替えキーとして機能させるため空文字時刻をmidnight扱いにする
+ * 既存挙動を維持)のに対し、startedAtはnullのままにする(「未入力」をNULLで表せるようにする
+ * のがこの改修の目的のため)。
+ *
  * 【保存方針(2026-09 データベース暗号化の見直し)】
  * 本文(開始/終了時刻、メモ、社内向け/保護者向けレポート)は packages/core/src/domain/reports/types.ts
  * の DailyReportContent と1:1の平文 text 列に分けて保存する。以前はJSONにまとめて1本の暗号文に
@@ -47,9 +56,14 @@ export const dailyReports = pgTable(
     /** 満足度(ES)評価(1〜5)。未評価はnull。 */
     esRating: integer(),
 
-    /** 'HH:mm'。未入力は空文字(GAS版のStartTime/EndTime列と同じ)。 */
-    startTime: text().notNull().default(''),
-    endTime: text().notNull().default(''),
+    // doc/14 F項: 'HH:mm'文字列(未入力は空文字)をtimestamptzに変える。NULLを「未入力」に
+    // 使えるようにし、滞在時間の集計や日跨ぎ勤務(22:00〜01:00等)の計算をSQLでできるようにする。
+    // "HH:mm"表記が必要な場面(GASミラー・画面表示)は、保存時ではなくその場で整形し直す
+    // (usecases/mirrorWorker.ts、domain/reports/jstTime.tsのformatJstTimeOnly参照)。
+    /** 開始時刻。未入力はnull。occurredAtとの関係はこのファイル冒頭のコメント参照。 */
+    startedAt: timestamp({ withTimezone: true }),
+    /** 終了時刻。未入力はnull。日跨ぎ勤務はstartedAtより後(翌日)の値になる。 */
+    endedAt: timestamp({ withTimezone: true }),
     /** 保育日報のメモ(口語入力。AI生成前の元テキスト)。GAS版のInputText列。 */
     inputText: text().notNull().default(''),
     /** 社内向けレポート本文。GAS版のInternalReport列。 */
@@ -83,5 +97,13 @@ export const dailyReports = pgTable(
     // 範囲外の値が混入すると気付かないままスプレッドシートにも書き出される(doc/14 D項)。
     check('daily_reports_risk_rating_check', sql`${t.riskRating} IS NULL OR ${t.riskRating} BETWEEN 1 AND 5`),
     check('daily_reports_es_rating_check', sql`${t.esRating} IS NULL OR ${t.esRating} BETWEEN 1 AND 5`),
+    // 日跨ぎ勤務(22:00〜01:00等)はendedAtがstartedAtの翌日になるのを許すため、単純な
+    // ">="ではなく「どちらかがNULL(未入力)ならスキップ」を先に見る(doc/14 F項)。
+    // endedAt/startedAtを組み立てる側(usecases/reports.ts)が、end<startのときendedAtを
+    // 翌日にずらす責任を持つ。
+    check(
+      'daily_reports_time_order',
+      sql`${t.endedAt} IS NULL OR ${t.startedAt} IS NULL OR ${t.endedAt} >= ${t.startedAt}`,
+    ),
   ],
 ).enableRLS();

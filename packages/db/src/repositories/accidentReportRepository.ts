@@ -19,7 +19,8 @@ type AccidentReportRow = typeof accidentReports.$inferSelect;
 function toContentColumns(content: AccidentReportContent) {
   return {
     targetName: content.targetName,
-    targetDob: content.targetDob,
+    targetDobDate: content.targetDobDate,
+    targetDobRaw: content.targetDobRaw,
     occurrenceTime: content.occurrenceTime,
     location: content.location,
     accidentContent: content.accidentContent,
@@ -36,7 +37,8 @@ function toContentColumns(content: AccidentReportContent) {
 function toContent(row: AccidentReportRow): AccidentReportContent {
   return {
     targetName: row.targetName,
-    targetDob: row.targetDob,
+    targetDobDate: row.targetDobDate,
+    targetDobRaw: row.targetDobRaw,
     occurrenceTime: row.occurrenceTime,
     location: row.location,
     accidentContent: row.accidentContent,

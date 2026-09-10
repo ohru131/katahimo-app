@@ -278,7 +278,18 @@ export interface CustomerProfileFields {
   address2: string | null;
   address2StartDate: string | null;
   address2EndDate: string | null;
-  latLng: string | null;
+  /**
+   * 緯度・経度(doc/14 G項)。DBの型はnumeric(9,6)(drizzle-orm上はstring)だが、
+   * ポート層ではnumberにしている。numeric(9,6)の値域(整数部最大3桁+小数第6位)は
+   * 倍精度浮動小数点が誤差なく表現できる有効桁数(約15〜17桁)に余裕で収まるため、
+   * 金額(整数)のような丸め誤差の心配が無く、呼び出し側(usecase・API・画面)での
+   * 扱いやすさを優先した。string<->numberの変換はリポジトリ実装(DrizzleCustomerRepository)
+   * が担う。
+   */
+  lat: number | null;
+  lng: number | null;
+  /** 緯度・経度の元表記(RESERVA CSVの「緯度・経度」列)。lat/lngの解析成否によらず常に保持する。 */
+  latLngRaw: string | null;
   memberType: string | null;
   memberStatus: string | null;
   paymentMethod: string | null;
@@ -337,8 +348,11 @@ export interface FamilyMemberRecord {
   tenantId: string;
   customerId: string;
   name: string;
-  /** 'YYYY/M/D'(normalizeDateStrで正規化済み)。未取得ならnull。 */
-  dob: string | null;
+  /** 生年月日(parseDateOnlyで解析できた場合のみ。'YYYY-MM-DD')。doc/14 F項。 */
+  dobDate: string | null;
+  /** 生年月日の元表記('YYYY/M/D'。normalizeDateStrで正規化済み)。dobDateの解析成否によらず
+   * 常に保持する(未取得ならnull)。 */
+  dobRaw: string | null;
   /** 職業・アレルギー等の自由記述。 */
   info: string | null;
 }
@@ -347,7 +361,8 @@ export interface NewFamilyMemberInput {
   tenantId: string;
   customerId: string;
   name: string;
-  dob: string | null;
+  dobDate: string | null;
+  dobRaw: string | null;
   info: string | null;
 }
 
@@ -421,6 +436,12 @@ export interface DailyReportRecord {
   occurredAt: Date;
   riskRating: number | null;
   esRating: number | null;
+  /**
+   * 開始/終了時刻(doc/14 F項)。未入力はnull。occurredAtとの関係は
+   * packages/db/src/schema/dailyReports.tsのヘッダーコメント参照。
+   */
+  startedAt: Date | null;
+  endedAt: Date | null;
   content: DailyReportContent;
   /** ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。 */
   updatedAt: Date;
@@ -433,6 +454,8 @@ export interface NewDailyReportInput {
   occurredAt: Date;
   riskRating: number | null;
   esRating: number | null;
+  startedAt: Date | null;
+  endedAt: Date | null;
   content: DailyReportContent;
 }
 

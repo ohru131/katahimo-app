@@ -1,4 +1,4 @@
-import { normalizeStaffName, splitJapaneseFullName } from '../domain';
+import { normalizeStaffName, parseDateOnly, parseLatLng, splitJapaneseFullName } from '../domain';
 import type {
   CustomerPatchInput,
   CustomerRecord,
@@ -56,6 +56,11 @@ export interface CreateCustomerInput {
   address2?: string;
   address2StartDate?: string;
   address2EndDate?: string;
+  /**
+   * 緯度・経度の元表記("38.26, 140.87"のような1本の文字列。RESERVA CSVの「緯度・経度」列と
+   * 同じ形)。数値2列への分解(doc/14 G項)はbuildCustomerRecordFieldsがparseLatLngで行う
+   * ため、呼び出し側(ingestion/デモ投入等)は従来通りCSVの生文字列をそのまま渡せばよい。
+   */
   latLng?: string;
   memberType?: string;
   memberStatus?: string;
@@ -72,6 +77,11 @@ export interface CreateCustomerInput {
 function buildCustomerRecordFields(tenantId: string, input: CreateCustomerInput): NewCustomerInput {
   const familyName = input.familyName ?? splitJapaneseFullName(input.name).familyName;
   const givenName = input.givenName ?? splitJapaneseFullName(input.name).givenName;
+
+  // doc/14 G項: latLng(元表記の1本の文字列)はlatLngRawへそのまま残しつつ、
+  // parseLatLngで分解できた場合だけlat/lngに数値を入れる(解析できない表記はnull)。
+  const latLngRaw = nullIfEmpty(input.latLng);
+  const { lat, lng } = latLngRaw ? parseLatLng(latLngRaw) : { lat: null, lng: null };
 
   return {
     tenantId,
@@ -97,7 +107,9 @@ function buildCustomerRecordFields(tenantId: string, input: CreateCustomerInput)
     address2: input.address2 ?? null,
     address2StartDate: input.address2StartDate ?? null,
     address2EndDate: input.address2EndDate ?? null,
-    latLng: nullIfEmpty(input.latLng),
+    lat,
+    lng,
+    latLngRaw,
     memberType: input.memberType ?? null,
     memberStatus: input.memberStatus ?? null,
     paymentMethod: input.paymentMethod ?? null,
@@ -115,13 +127,19 @@ function buildFamilyMemberInputs(
   customerId: string,
   members: FamilyMemberInput[],
 ): NewFamilyMemberInput[] {
-  return members.map((m) => ({
-    tenantId,
-    customerId,
-    name: m.name,
-    dob: nullIfEmpty(m.dob),
-    info: nullIfEmpty(m.info),
-  }));
+  return members.map((m) => {
+    // doc/14 F項: dob(自由記述由来の"YYYY/M/D"等)はdobRawへそのまま残しつつ、
+    // parseDateOnlyで解析できた場合だけdobDateに'YYYY-MM-DD'を入れる。
+    const dobRaw = nullIfEmpty(m.dob);
+    return {
+      tenantId,
+      customerId,
+      name: m.name,
+      dobDate: dobRaw ? parseDateOnly(dobRaw) : null,
+      dobRaw,
+      info: nullIfEmpty(m.info),
+    };
+  });
 }
 
 /**
@@ -219,7 +237,8 @@ export async function listCustomers(deps: CustomerDeps, tenantId: string): Promi
 export interface FamilyMemberView {
   id: string;
   name: string;
-  dob: string | null;
+  dobDate: string | null;
+  dobRaw: string | null;
   info: string | null;
 }
 
@@ -245,7 +264,9 @@ export interface CustomerDetailView {
   address2: string | null;
   address2StartDate: string | null;
   address2EndDate: string | null;
-  latLng: string | null;
+  lat: number | null;
+  lng: number | null;
+  latLngRaw: string | null;
   memberType: string | null;
   memberStatus: string | null;
   paymentMethod: string | null;
@@ -260,7 +281,7 @@ export interface CustomerDetailView {
 
 /** FamilyMemberRecordを、詳細画面用のFamilyMemberViewに変換する。 */
 function toFamilyMemberView(row: FamilyMemberRecord): FamilyMemberView {
-  return { id: row.id, name: row.name, dob: row.dob, info: row.info };
+  return { id: row.id, name: row.name, dobDate: row.dobDate, dobRaw: row.dobRaw, info: row.info };
 }
 
 /** 顧客1件の全項目を、世帯構成員一覧とあわせて返す(詳細画面用)。 */
@@ -295,7 +316,9 @@ export async function getCustomerDetail(
     address2: row.address2,
     address2StartDate: row.address2StartDate,
     address2EndDate: row.address2EndDate,
-    latLng: row.latLng,
+    lat: row.lat,
+    lng: row.lng,
+    latLngRaw: row.latLngRaw,
     memberType: row.memberType,
     memberStatus: row.memberStatus,
     paymentMethod: row.paymentMethod,

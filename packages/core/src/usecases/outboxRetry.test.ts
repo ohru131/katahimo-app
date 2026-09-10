@@ -45,7 +45,9 @@ describe('ミラージョブの再試行', () => {
       occurredAt: new Date('2026-08-30T01:00:00.000Z'),
       riskRating: null,
       esRating: null,
-      content: { startTime: '09:00', endTime: '', inputText: '', internalText: '', customerText: '' },
+      startedAt: new Date('2026-08-30T01:00:00.000Z'),
+      endedAt: null,
+      content: { inputText: '', internalText: '', customerText: '' },
     });
     await outbox.enqueue({
       tenantId,

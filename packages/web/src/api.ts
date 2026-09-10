@@ -23,7 +23,10 @@ export interface CustomerView {
 export interface FamilyMemberView {
   id: string;
   name: string;
-  dob: string | null;
+  /** 'YYYY-MM-DD'。解析できた場合のみ(doc/14 F項)。 */
+  dobDate: string | null;
+  /** 生年月日の元表記。dobDateの解析成否によらず常に入る。 */
+  dobRaw: string | null;
   info: string | null;
 }
 
@@ -48,7 +51,10 @@ export interface CustomerDetailView {
   address2: string | null;
   address2StartDate: string | null;
   address2EndDate: string | null;
-  latLng: string | null;
+  /** 緯度・経度(doc/14 G項)。解析できた場合のみ数値、解析できない場合はlatLngRawだけが入る。 */
+  lat: number | null;
+  lng: number | null;
+  latLngRaw: string | null;
   memberType: string | null;
   memberStatus: string | null;
   paymentMethod: string | null;

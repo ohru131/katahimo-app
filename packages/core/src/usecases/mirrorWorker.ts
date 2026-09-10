@@ -2,7 +2,7 @@ import { attendanceRowDataSchema } from '@katahimo/shared';
 import type { AttendanceColumnRow } from '../domain/attendance';
 import { toColumnRow } from '../domain/attendance';
 import { nextOutboxRetryDelayMs } from '../domain/mirror/retry';
-import { formatJstDateTime } from '../domain/reports/jstTime';
+import { formatJstDateTime, formatJstTimeOnly } from '../domain/reports/jstTime';
 import type { OutboxJobRecord, OutboxRepositoryPort } from '../ports/mirror';
 import type { MirrorSenderPort } from '../ports/mirrorSender';
 import type {
@@ -70,8 +70,10 @@ export async function processOutboxJob(
       await deps.sender.sendDailyReport({
         reportId: record.id,
         timestampJst: formatJstDateTime(record.occurredAt),
-        startTime: content.startTime,
-        endTime: content.endTime,
+        // doc/14 F項。started_at/ended_atは"HH:mm"では保存していないため、ミラー送信時に
+        // その場で整形する(未入力=nullは空文字にフォールバックし、GAS側の見え方を崩さない)。
+        startTime: record.startedAt ? formatJstTimeOnly(record.startedAt) : '',
+        endTime: record.endedAt ? formatJstTimeOnly(record.endedAt) : '',
         staffName: staffRecord?.name ?? '',
         customerId: record.customerId,
         customerName: customerRecord?.name ?? '',
@@ -99,7 +101,9 @@ export async function processOutboxJob(
         customerId: record.customerId,
         customerName: customerRecord?.name ?? '',
         targetName: content.targetName,
-        targetDob: content.targetDob,
+        // GAS側は'yyyy/MM/dd'の自由記述をそのまま受け取る列のため、元表記(targetDobRaw)を送る
+        // (targetDobDateへ変換してから書式を戻すような回り道はしない)。
+        targetDob: content.targetDobRaw,
         occurrenceTime: content.occurrenceTime,
         location: content.location,
         accidentContent: content.accidentContent,

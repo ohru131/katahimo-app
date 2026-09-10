@@ -70,6 +70,14 @@ export const outboxJobs = pgTable(
     uniqueIndex('outbox_jobs_tenant_idempotency_key_idx').on(t.tenantId, t.idempotencyKey),
     // ワーカーのポーリング(claimPending)が status と next_attempt_at で絞って
     // created_at 順に取り出すため、done/failedが積み上がってもフルスキャンにならないようにする。
+    //
+    // doc/14 H項は (tenant_id, status, created_at) という役割の重複したインデックス
+    // (outbox_jobs_tenant_status_created_at_idx)の削除を指示しているが、それは実際には
+    // 0002_outbox_retry.sql(このインデックスをnext_attempt_at付きで作り直した際)で
+    // 既に削除済みで、このリポジトリには残っていない(repositories/outboxRepository.ts の
+    // claimPendingがstatus/next_attempt_atで絞ってnext_attempt_at, created_at順に読むのは
+    // 昔からこのインデックス1本で足りている)。0013では重複インデックスが無いため
+    // DROP INDEXは発生しない。
     index('outbox_jobs_tenant_status_next_attempt_idx').on(
       t.tenantId,
       t.status,

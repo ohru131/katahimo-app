@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { foreignKey, index, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { date, foreignKey, index, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { tenants } from './tenants';
@@ -28,8 +28,18 @@ export const familyMembers = pgTable(
     /** 氏名。DEFAULT '' は行が残っているDBでも ADD COLUMN ... NOT NULL が失敗しないようにするため。 */
     name: text().notNull().default(''),
 
-    /** 生年月日(normalizeDateStrで正規化済みの "YYYY/M/D" 形式)。未取得の場合はnull。 */
-    dob: text(),
+    // doc/14 F項: 生年月日を日付型にする。dob(text)は廃止し、date型のdobDateと元表記のdobRawに分ける。
+    /**
+     * 生年月日(parseDateOnlyで解析できた場合のみ)。'YYYY/M/D'のうち年だけ・年月だけの
+     * ような不完全な表記は、1月1日等を勝手に補わずnullのままにする(dobRawにだけ残す)。
+     */
+    dobDate: date(),
+    /**
+     * 生年月日の元表記(normalizeDateStrで正規化済みの"YYYY/M/D"形式)。dobDateが
+     * 解析できてもできなくても常にここへ保存する(自由記述由来で解析できない値も
+     * 捨てると情報を失うため)。
+     */
+    dobRaw: text(),
 
     /** 職業・アレルギー・その他共有事項などの自由記述(parseFamilyInfoのinfo)。 */
     info: text(),

@@ -386,4 +386,88 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
       );
     });
   });
+
+  describe('daily_reports_time_order(doc/14 F項)', () => {
+    it('started_at <= ended_at、またはどちらかがnullなら通る', async () => {
+      for (const [startedAt, endedAt] of [
+        ["'2026-08-30 09:00:00+09'", "'2026-08-30 11:00:00+09'"],
+        ["'2026-08-30 09:00:00+09'", "'2026-08-30 09:00:00+09'"],
+        ['null', "'2026-08-30 11:00:00+09'"],
+        ["'2026-08-30 09:00:00+09'", 'null'],
+        ['null', 'null'],
+      ]) {
+        await expect(
+          fixture.client.query(
+            `INSERT INTO daily_reports (tenant_id, staff_id, customer_id, occurred_at, started_at, ended_at)
+             VALUES ($1, $2, $3, now(), ${startedAt}, ${endedAt});`,
+            [fixture.tenantId, fixture.staffId, fixture.customerId],
+          ),
+        ).resolves.toBeDefined();
+      }
+    });
+
+    it('ended_at < started_atは拒否される', async () => {
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO daily_reports (tenant_id, staff_id, customer_id, occurred_at, started_at, ended_at)
+           VALUES ($1, $2, $3, now(), '2026-08-30 09:00:00+09', '2026-08-30 08:00:00+09');`,
+          [fixture.tenantId, fixture.staffId, fixture.customerId],
+        ),
+        'daily_reports_time_order',
+      );
+    });
+
+    it('日跨ぎ勤務(22:00〜翌01:00)は、endedAtを翌日にずらして保存すれば通る', async () => {
+      // usecases/reports.tsのcomputeDailyReportTimesが行う「end<startなら翌日にずらす」
+      // 変換を経た後の値がCHECK制約を通ることを固定する(doc/14 F項の検証項目)。
+      await expect(
+        fixture.client.query(
+          `INSERT INTO daily_reports (tenant_id, staff_id, customer_id, occurred_at, started_at, ended_at)
+           VALUES ($1, $2, $3, now(), '2026-08-30 22:00:00+09', '2026-08-31 01:00:00+09');`,
+          [fixture.tenantId, fixture.staffId, fixture.customerId],
+        ),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe('customers_lat_range / customers_lng_range(doc/14 G項)', () => {
+    it('値域内、またはnullは通る', async () => {
+      for (const [lat, lng] of [
+        ['38.26', '140.87'],
+        ['-90', '-180'],
+        ['90', '180'],
+        ['null', 'null'],
+      ]) {
+        await expect(
+          fixture.client.query(
+            `INSERT INTO customers (tenant_id, name, family_name, given_name, lat, lng)
+             VALUES ($1, 'テスト利用者', 'テスト', '太郎', ${lat}, ${lng});`,
+            [fixture.tenantId],
+          ),
+        ).resolves.toBeDefined();
+      }
+    });
+
+    it('緯度が値域外(-90〜90の外)は拒否される', async () => {
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO customers (tenant_id, name, family_name, given_name, lat)
+           VALUES ($1, 'テスト利用者', 'テスト', '太郎', 91);`,
+          [fixture.tenantId],
+        ),
+        'customers_lat_range',
+      );
+    });
+
+    it('経度が値域外(-180〜180の外)は拒否される', async () => {
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO customers (tenant_id, name, family_name, given_name, lng)
+           VALUES ($1, 'テスト利用者', 'テスト', '太郎', 181);`,
+          [fixture.tenantId],
+        ),
+        'customers_lng_range',
+      );
+    });
+  });
 });

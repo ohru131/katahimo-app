@@ -332,7 +332,9 @@ const EMPTY_PROFILE_FIELDS: CustomerProfileFields = {
   address2: null,
   address2StartDate: null,
   address2EndDate: null,
-  latLng: null,
+  lat: null,
+  lng: null,
+  latLngRaw: null,
   memberType: null,
   memberStatus: null,
   paymentMethod: null,
@@ -434,7 +436,8 @@ export class FakeFamilyMemberRepository implements FamilyMemberRepositoryPort {
       tenantId: input.tenantId,
       customerId: input.customerId,
       name: input.name,
-      dob: input.dob,
+      dobDate: input.dobDate,
+      dobRaw: input.dobRaw,
       info: input.info,
     };
   }

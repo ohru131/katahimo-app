@@ -436,7 +436,9 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     setSelectedFamilyId(id);
     const fam = customerQuery.data?.familyMembers.find((f) => f.id === id);
     setAccTargetName(fam?.name ?? '');
-    setAccTargetDob(fam?.dob ?? '');
+    // doc/14 F項でdobはdobDate/dobRawに分かれた。ここは自由記述テキストとして事故報告の
+    // 対象者生年月日欄に流し込む用途のため、元表記(dobRaw)を優先する。
+    setAccTargetDob(fam?.dobRaw ?? fam?.dobDate ?? '');
   };
 
   const handleGenerateDaily = async () => {
@@ -752,7 +754,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                 <option value="">(選択してください)</option>
                 {customerQuery.data.familyMembers.map((f) => (
                   <option key={f.id} value={f.id}>
-                    {f.name} {calculateAgeLabel(f.dob)}
+                    {f.name} {calculateAgeLabel(f.dobDate ?? f.dobRaw)}
                   </option>
                 ))}
               </select>
