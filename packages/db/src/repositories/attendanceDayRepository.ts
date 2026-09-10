@@ -11,6 +11,7 @@ import { withTenant } from '../tenantScope';
 
 type AttendanceDayRow = typeof attendanceDays.$inferSelect;
 
+/** DrizzleのattendanceDaysテーブルのSELECT結果行を、ポート層のAttendanceDayRecordに変換する。 */
 function toRecord(row: AttendanceDayRow): AttendanceDayRecord {
   return {
     id: row.id,

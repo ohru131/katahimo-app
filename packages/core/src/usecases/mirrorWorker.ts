@@ -137,10 +137,16 @@ export async function processOutboxJob(
       const record = await deps.attendanceDays.findById(tenantId, job.targetId);
       if (!record) return;
       const staffRecord = await deps.staff.findById(tenantId, record.staffId);
-      // jsonb列から読んだ値なので、文字列以外が混ざっていないかを念のため確認して落とす。
+      // jsonb列から読んだ値なので、文字列以外が混ざっていないかを念のため確認する。
+      // undefinedはAttendanceRowDataの任意項目として許容するが、それ以外の非文字列値は
+      // データ破損の疑いがあるため再試行しても直らない -> デッドレターに落とす。
       const values: Record<string, string> = {};
       for (const [key, value] of Object.entries(record.rowData)) {
-        if (typeof value === 'string') values[key] = value;
+        if (value === undefined) continue;
+        if (typeof value !== 'string') {
+          throw new PermanentMirrorError(`勤怠rowDataの値が文字列ではありません: ${key}`);
+        }
+        values[key] = value;
       }
       await deps.sender.sendAttendanceDay({
         staffName: staffRecord?.name ?? '',

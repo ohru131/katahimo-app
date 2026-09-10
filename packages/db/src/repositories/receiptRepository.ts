@@ -11,6 +11,7 @@ import { withTenant } from '../tenantScope';
 
 type ReceiptRow = typeof receipts.$inferSelect;
 
+/** DrizzleのreceiptsテーブルのSELECT結果行を、ポート層のReceiptRecordに変換する。 */
 function toRecord(row: ReceiptRow): ReceiptRecord {
   return {
     id: row.id,
@@ -66,6 +67,7 @@ export class DrizzleReceiptRepository implements ReceiptRepositoryPort {
     });
   }
 
+  /** 渡されたdedupeKeyのうち、このテナントで既に登録済みのものだけを返す。 */
   async findExistingDedupeKeys(tenantId: string, dedupeKeys: string[]): Promise<Set<string>> {
     if (dedupeKeys.length === 0) return new Set();
     return withTenant(this.db, tenantId, async (tx) => {

@@ -37,7 +37,9 @@ SQLで絞り込み・集計・全文検索したい(検索性)。(3) 日報デ�
 - **ミラーワーカーは復号しなくなった**ため、`packages/worker`から`LOCAL_DEV_KEK`・KMS/暗号化まわりの
   配線を削除。APIサーバーは資格情報の復号のため引き続き`LOCAL_DEV_KEK`が必要。
 - **マイグレーション`0005_drop_field_encryption`(暗号化列・blind index列の削除)/`0006_plaintext_columns`
-  (平文列と`receipts_tenant_dedupe_key_idx`の追加)**。同一テーブルでの列追加・削除を2回に分けて
+  (平文列の追加)/`0007_receipts_dedupe_key_unique`(`(tenant_id, dedupe_key)`の部分一意インデックス。
+  同時アップロードが`findExistingDedupeKeys`をすり抜けてもDB側で重複を止め、usecaseは一意制約違反を
+  通常の重複として扱う。CodeRabbitの指摘で追加)**。同一テーブルでの列追加・削除を2回に分けて
   generateするのはVer. 1.1.22と同じ回避策。**既存の暗号化済みデータは引き継がない**(復号移行スクリプト
   は作らない)。`NOT NULL`列には`DEFAULT ''`/`'{}'`を付けてあるので行が残っているDBでも適用は通るが本文は
   空になるため、ローカル開発DBは`pnpm db:migrate`→`pnpm db:seed`で作り直す。公開デモは旧スキーマの

@@ -56,9 +56,18 @@ export interface DemoMigration {
  *
  * タグは `packages/db/drizzle/*.sql` のファイル名(拡張子なし)と一致させる。
  * 実在しないタグを書くとルールが黙って無効になるので、applyPendingMigrations が検査する。
+ *
+ * 両方を列挙する理由: 0005適用直後に起動が止まると、次回は0006だけが当たって
+ * isFresh=falseになりシードが走らない(0005が既に台帳にあるため作り直し対象と
+ * 判定されない)。0006も列挙しておけば、その次回起動で0006が未適用と分かり
+ * 作り直し+シードのやり直しに入れる。
  */
-export const REBUILD_REQUIRED_MIGRATIONS: readonly string[] = ['0005_drop_field_encryption'];
+export const REBUILD_REQUIRED_MIGRATIONS: readonly string[] = [
+  '0005_drop_field_encryption',
+  '0006_plaintext_columns',
+];
 
+/** 適用済みマイグレーションの台帳(LEDGER_TABLE)から、タグの集合を読み出す。 */
 async function readAppliedTags(client: PGlite): Promise<Set<string>> {
   const { rows } = await client.query<{ tag: string }>(`SELECT tag FROM ${LEDGER_TABLE};`);
   return new Set(rows.map((row) => row.tag));

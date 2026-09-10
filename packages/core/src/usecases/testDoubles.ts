@@ -484,6 +484,7 @@ export class FakeAttendanceDayRepository implements AttendanceDayRepositoryPort,
     return this.rows.find((r) => r.tenantId === tenantId && r.id === id) ?? null;
   }
 
+  /** 指定スタッフ・指定日の勤怠行があれば上書き、無ければ新規作成する。 */
   async upsert(
     tenantId: string,
     staffId: string,
@@ -693,7 +694,23 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
   private readonly rows: StoredReceipt[] = [];
   private seq = 0;
 
+  /**
+   * 領収書を1件作成する。`receipts_tenant_dedupe_key_uidx`(dedupeKeyがある行だけの一意
+   * インデックス)を再現するため、同一tenantId・同一dedupeKeyの行が既にあれば
+   * PostgreSQLの一意制約違反(SQLSTATE 23505)と同じ形のエラーを投げる。
+   */
   async create(input: NewReceiptInput): Promise<ReceiptRecord> {
+    if (input.dedupeKey !== null) {
+      const conflict = this.rows.some(
+        (r) => r.record.tenantId === input.tenantId && r.dedupeKey === input.dedupeKey,
+      );
+      if (conflict) {
+        throw Object.assign(
+          new Error('duplicate key value violates unique constraint "receipts_tenant_dedupe_key_uidx"'),
+          { code: '23505' },
+        );
+      }
+    }
     const record: ReceiptRecord = {
       id: `receipt-${++this.seq}`,
       tenantId: input.tenantId,
@@ -715,6 +732,7 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
     return this.rows.find((r) => r.record.tenantId === tenantId && r.record.id === id)?.record ?? null;
   }
 
+  /** 渡されたdedupeKeyのうち、このテナントで既に登録済みのものだけを返す。 */
   async findExistingDedupeKeys(tenantId: string, dedupeKeys: string[]): Promise<Set<string>> {
     const keys = new Set(dedupeKeys);
     return new Set(

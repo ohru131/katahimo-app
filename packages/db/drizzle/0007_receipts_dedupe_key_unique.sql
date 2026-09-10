@@ -1,0 +1,2 @@
+DROP INDEX "receipts_tenant_dedupe_key_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "receipts_tenant_dedupe_key_uidx" ON "receipts" USING btree ("tenant_id","dedupe_key") WHERE "receipts"."dedupe_key" IS NOT NULL;

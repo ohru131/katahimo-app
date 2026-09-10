@@ -10,6 +10,7 @@ import { withTenant } from '../tenantScope';
 
 type FamilyMemberRow = typeof familyMembers.$inferSelect;
 
+/** NewFamilyMemberInputをDrizzleのinsert値に変換する。 */
 function toInsertValues(input: NewFamilyMemberInput) {
   return {
     tenantId: input.tenantId,
@@ -20,6 +21,7 @@ function toInsertValues(input: NewFamilyMemberInput) {
   };
 }
 
+/** DrizzleのfamilyMembersテーブルのSELECT結果行を、ポート層のFamilyMemberRecordに変換する。 */
 function toRecord(row: FamilyMemberRow): FamilyMemberRecord {
   return {
     id: row.id,

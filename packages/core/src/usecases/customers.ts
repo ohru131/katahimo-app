@@ -68,6 +68,7 @@ export interface CreateCustomerInput {
   familyMembers?: FamilyMemberInput[];
 }
 
+/** CreateCustomerInputを、氏名分割・空文字正規化を済ませたNewCustomerInput(保存用の形)に変換する。 */
 function buildCustomerRecordFields(tenantId: string, input: CreateCustomerInput): NewCustomerInput {
   const familyName = input.familyName ?? splitJapaneseFullName(input.name).familyName;
   const givenName = input.givenName ?? splitJapaneseFullName(input.name).givenName;
@@ -108,6 +109,7 @@ function buildCustomerRecordFields(tenantId: string, input: CreateCustomerInput)
   };
 }
 
+/** 家族構成員の入力配列を、指定顧客に紐付くNewFamilyMemberInputの配列に変換する。 */
 function buildFamilyMemberInputs(
   tenantId: string,
   customerId: string,
@@ -256,6 +258,7 @@ export interface CustomerDetailView {
   familyMembers: FamilyMemberView[];
 }
 
+/** FamilyMemberRecordを、詳細画面用のFamilyMemberViewに変換する。 */
 function toFamilyMemberView(row: FamilyMemberRecord): FamilyMemberView {
   return { id: row.id, name: row.name, dob: row.dob, info: row.info };
 }

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { foreignKey, index, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { foreignKey, pgPolicy, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
 import { staff } from './staff';
@@ -66,6 +66,11 @@ export const receipts = pgTable(
       foreignColumns: [customers.tenantId, customers.id],
     }),
     // findExistingDedupeKeys()の絞り込み(tenant_id + dedupe_key)を支えるインデックス。
-    index('receipts_tenant_dedupe_key_idx').on(t.tenantId, t.dedupeKey),
+    // 同時に同じ領収書が2リクエストで登録された場合にfindExistingDedupeKeysをすり抜けても
+    // DB側で止めるため、dedupeKeyがある行に限定した一意インデックスにしている
+    // (null同士は重複とみなさない=金額/店舗名が空でdedupeKeyがnullの行は複数許容)。
+    uniqueIndex('receipts_tenant_dedupe_key_uidx')
+      .on(t.tenantId, t.dedupeKey)
+      .where(sql`${t.dedupeKey} IS NOT NULL`),
   ],
 ).enableRLS();

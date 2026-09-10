@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { AttendanceRowData } from '../domain/attendance';
 import type { AttendanceDeps } from './attendance';
 import { saveAttendanceDay } from './attendance';
 import type { AuthDeps } from './auth';
@@ -309,6 +310,40 @@ describe('runOutboxBatch / processOutboxJob', () => {
 
     expect(result).toEqual({ processed: 0, failed: 1, deadLettered: 0 });
     expect(sender.receipts).toEqual([]);
+  });
+
+  it('勤怠rowDataに文字列以外の値が混ざっている場合は再試行せず、その場でデッドレターに落とす', async () => {
+    const attendanceDays = new FakeAttendanceDayRepository();
+    const attendanceDeps: AttendanceDeps = {
+      attendanceDays,
+      mirror: outbox,
+      unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
+    };
+
+    // DBのjsonb列が何らかの理由で破損し、数値が混入した状況を再現する。
+    await saveAttendanceDay(attendanceDeps, tenantId, staffId, '2026-08-30', {
+      C: '訪問先A',
+      D: 900,
+    } as unknown as AttendanceRowData);
+
+    const workerDeps: MirrorWorkerDeps = {
+      outbox,
+      dailyReports: new FakeDailyReportRepository(),
+      accidentReports: new FakeAccidentReportRepository(),
+      receipts: new FakeReceiptRepository(),
+      attendanceDays,
+      staff,
+      customers,
+      storage: new FakeStoragePort(),
+      sender,
+    };
+    const result = await runOutboxBatch(workerDeps, tenantId);
+
+    expect(result).toEqual({ processed: 0, failed: 1, deadLettered: 1 });
+    const row = outbox.listAllForTest().find((r) => r.kind === 'attendance_day');
+    expect(row?.status).toBe('failed');
+    expect(row?.lastError).toContain('勤怠rowDataの値が文字列ではありません');
+    expect(sender.attendanceDays).toEqual([]);
   });
 
   it('対象レコードが既に無い場合は何もせず成功扱いにする', async () => {

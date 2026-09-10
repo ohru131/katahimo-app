@@ -32,6 +32,7 @@ function toContentColumns(content: AccidentReportContent) {
   };
 }
 
+/** accident_reportsの項目別平文列から、AccidentReportContentを組み立てる。 */
 function toContent(row: AccidentReportRow): AccidentReportContent {
   return {
     targetName: row.targetName,
@@ -48,6 +49,7 @@ function toContent(row: AccidentReportRow): AccidentReportContent {
   };
 }
 
+/** DrizzleのaccidentReportsテーブルのSELECT結果行を、ポート層のAccidentReportRecordに変換する。 */
 function toRecord(row: AccidentReportRow): AccidentReportRecord {
   return {
     id: row.id,

@@ -117,6 +117,25 @@ describe('applyPendingMigrations', () => {
     expect(rows[0]?.count).toBe('0');
   });
 
+  it('0005適用直後に起動が止まった状態(0006未適用)でも、既定の設定で作り直してシード投入を要求する', async () => {
+    // 0005はコミット済み(台帳にもある)だが、0006がまだ当たっていない状態を再現する。
+    const rebuildIndex = migrations.findIndex((m) => m.tag === '0005_drop_field_encryption');
+    expect(rebuildIndex).toBeGreaterThan(0);
+    const upToAndIncluding0005 = migrations.slice(0, rebuildIndex + 1);
+    const firstRun = await applyPendingMigrations(client, upToAndIncluding0005, []);
+    expect(firstRun).toBe(true);
+    expect(await appliedTags(client)).toContain('0005_drop_field_encryption');
+    expect(await appliedTags(client)).not.toContain('0006_plaintext_columns');
+
+    // 既定のREBUILD_REQUIRED_MIGRATIONS(0005・0006の両方)で、フルのマイグレーションを当てる。
+    const secondRun = await applyPendingMigrations(client, migrations);
+
+    // 0005だけを見ていたら isFresh=false になってしまうところを、0006も列挙しているので
+    // 作り直し経路に入り、シード投入が必要と判定される。
+    expect(secondRun).toBe(true);
+    expect(await appliedTags(client)).toEqual(migrations.map((m) => m.tag));
+  });
+
   it('作り直し対象のタグが実在しなければ起動を止める(タイポで黙って無効にならない)', async () => {
     await expect(applyPendingMigrations(client, migrations, ['nonexistent'])).rejects.toThrow(
       /'nonexistent' が見つかりません/,
@@ -220,6 +239,46 @@ describe('attendance_days.row_data(jsonb)の往復', () => {
 
     const month = await repo.listByStaffAndMonth(tenantId, staffId, '2026-09');
     expect(month.map((r) => r.rowData)).toEqual([rowData]);
+
+    await client.close();
+  });
+});
+
+/**
+ * findExistingDedupeKeys()のアプリ側チェックをすり抜けても(同時に同じ領収書が2リクエストで
+ * 登録される競合状態)、DB側の一意インデックスで最終的に止まることを本物のPostgresで固定する。
+ */
+describe('receipts_tenant_dedupe_key_uidx(dedupeKeyがある行だけの一意インデックス)', () => {
+  it('同一テナント・同一dedupeKeyの2行目はINSERTできない', async () => {
+    const client = new PGlite();
+    await client.waitReady;
+    await applyPendingMigrations(client, loadMigrations());
+
+    const { rows: tenants } = await client.query<{ id: string }>(
+      "INSERT INTO tenants (name, slug) VALUES ('テスト法人', 'demo') RETURNING id;",
+    );
+    const tenantId = tenants[0]?.id;
+    if (!tenantId) throw new Error('テナントの準備に失敗しました');
+    const { rows: staffRows } = await client.query<{ id: string }>(
+      "INSERT INTO staff (tenant_id, name, email) VALUES ($1, 'スタッフ', 's@example.test') RETURNING id;",
+      [tenantId],
+    );
+    const staffId = staffRows[0]?.id;
+    if (!staffId) throw new Error('スタッフの準備に失敗しました');
+
+    const insertReceipt = (dedupeKey: string | null) =>
+      client.query(
+        `INSERT INTO receipts (tenant_id, staff_id, receipt_timestamp, dedupe_key, file_key, content_type)
+         VALUES ($1, $2, now(), $3, 'file-key', 'image/jpeg');`,
+        [tenantId, staffId, dedupeKey],
+      );
+
+    await insertReceipt('same-key');
+    await expect(insertReceipt('same-key')).rejects.toThrow(/duplicate key value/i);
+
+    // dedupeKeyがnullの行同士は重複とみなさない(金額/店舗名が空で判定対象外の領収書)。
+    await expect(insertReceipt(null)).resolves.toBeDefined();
+    await expect(insertReceipt(null)).resolves.toBeDefined();
 
     await client.close();
   });

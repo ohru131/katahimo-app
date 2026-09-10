@@ -26,6 +26,7 @@ function toContentColumns(content: DailyReportContent) {
   };
 }
 
+/** daily_reportsの項目別平文列から、DailyReportContentを組み立てる。 */
 function toContent(row: DailyReportRow): DailyReportContent {
   return {
     startTime: row.startTime,
@@ -36,6 +37,7 @@ function toContent(row: DailyReportRow): DailyReportContent {
   };
 }
 
+/** DrizzleのdailyReportsテーブルのSELECT結果行を、ポート層のDailyReportRecordに変換する。 */
 function toRecord(row: DailyReportRow): DailyReportRecord {
   return {
     id: row.id,

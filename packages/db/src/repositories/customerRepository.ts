@@ -11,6 +11,7 @@ import { withTenant } from '../tenantScope';
 
 type CustomerRow = typeof customers.$inferSelect;
 
+/** DrizzleのcustomersテーブルのSELECT結果行を、ポート層のCustomerRecordに変換する。 */
 function toRecord(row: CustomerRow): CustomerRecord {
   return {
     id: row.id,

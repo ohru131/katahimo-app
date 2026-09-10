@@ -63,6 +63,25 @@ export interface UploadReceiptsResult {
   duplicates: ReceiptDuplicateInfo[];
 }
 
+/**
+ * PostgreSQLの一意制約違反(SQLSTATE 23505)かどうかを判定する。
+ * `receipts_tenant_dedupe_key_uidx`との競合(同時アップロードのすり抜け)を、
+ * それ以外のDBエラーと区別して握りつぶすために使う。エラーの形はドライバ依存
+ * (postgres-js/PGliteはトップレベルまたはcauseに`code`を持つ)なので、両方見た上で
+ * メッセージによるフォールバック判定も行う。
+ */
+function isUniqueViolation(error: unknown): boolean {
+  const candidates = [error, error instanceof Error ? error.cause : undefined];
+  return candidates.some((candidate) => {
+    if (!candidate || typeof candidate !== 'object') return false;
+    if ('code' in candidate && (candidate as { code?: unknown }).code === '23505') return true;
+    return (
+      candidate instanceof Error &&
+      candidate.message.includes('duplicate key value violates unique constraint')
+    );
+  });
+}
+
 function decodeDataUrl(dataUrl: string): { contentType: string; bytes: Uint8Array } | null {
   const commaIndex = dataUrl.indexOf(',');
   if (commaIndex < 0) return null;
@@ -177,6 +196,17 @@ export async function uploadReceipts(
       });
     } catch (error) {
       await deps.storage.delete(fileKey).catch(() => undefined);
+      if (isUniqueViolation(error)) {
+        // findExistingDedupeKeys()をすり抜けて同時に登録された同一領収書。DB側の一意
+        // インデックスで検出できたので、通常の重複と同じ扱いにして処理を続ける。
+        duplicates.push({
+          index: p.index,
+          timestamp: p.timestamp,
+          amount: normalizeAmount(p.img.amount),
+          storeName: normalizeText(p.img.storeName),
+        });
+        continue;
+      }
       throw error;
     }
 
