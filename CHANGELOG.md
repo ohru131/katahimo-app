@@ -2,6 +2,52 @@
 
 > 旧モノレポ `C001-cutest-internal/01_GAS/CHANGELOG.md`(全プロジェクト横断)から、katahimo-app に関するエントリ(Ver. 1.1.0〜1.1.23、Phase 0〜Phase 5継続)のみを抜粋・独立化したもの。それ以前(Ver. 1.0.x以前)は katahimo-app 誕生前の他 `gas-*` プロジェクトのエントリのため含めていない。Ver. 1.1.23 は `gas-childcare-visit-app`(GAS版、旧モノレポに残置)側の `Bridge.js` 変更も含む合同エントリだが、katahimo-app 側の変更点の文脈として必要なためそのまま残してある。今後この新リポジトリでの更新はこのファイルに追記していく。
 
+## [Ver. 1.1.24] - 2026-09-10
+
+### katahimo-app(データベース暗号化の見直し: フィールド暗号化を資格情報のみに縮小)
+
+2026-08 のレビュー(Ver. 1.1.22)で要配慮項目に絞ったアプリ層のフィールド暗号化を、さらに
+`app_settings`の資格情報3項目(Gemini APIキー・Google Chat Webhook URL 2本)だけに縮小した。
+背景は3つ。(1) 実証協力事業者との秘密保持契約(案)第6条が求める安全管理措置は「アクセス制限、
+通信および保存時の暗号化、パスワード管理等」であり、フィールド単位の暗号化は要求されていない
+(保存時の暗号化はCloud SQLの既定の保存時暗号化で満たす。第3条2/第4条の統計化・匿名化・仮名化は
+出力側の要件で、DBが平文であるほうがSQLで実施しやすい)。(2) 日報・事故報告・勤怠・領収書を
+SQLで絞り込み・集計・全文検索したい(検索性)。(3) 日報データのAI活用を見越すと、都度復号と
+鍵の配線が分析側まで広がるのを避けたい。
+
+- **平文化した項目**: 顧客(緊急連絡先・続柄・避難場所・メモ・Benefit会員ID・緯度経度)、世帯構成員
+  (氏名・生年月日・付帯情報)、日報本文、事故報告本文、勤怠rowData、領収書(金額・店舗名・申し送り)。
+  `*_ciphertext`/`*_key_version`の列ペアは`app_settings`の3ペアだけになった。
+- **日報/事故報告の本文は項目ごとの`text`列に分離**(`daily_reports.start_time/end_time/input_text/
+  internal_text/customer_text`、`accident_reports.target_name/target_dob/occurrence_time/location/
+  accident_content/situation/immediate_response/parent_correspondence/diagnosis_treatment/prevention/
+  input_text`。`DailyReportContent`/`AccidentReportContent`と1:1)。勤怠は列記号キーの動的オブジェクト
+  で常に1日分をまるごと読み書きするため`attendance_days.row_data jsonb`(リポジトリ内で初のjsonb列)。
+- **ブラインドインデックス(HMAC)を廃止**: `receipts.dedupe_blind_index`→`receipts.dedupe_key`。
+  `buildReceiptDedupeKey()`の正規化済み文字列をそのまま保存し等値一致で重複検出する(GAS版`buildKey`
+  と同じ挙動)。`BlindIndexPort`/`LocalBlindIndexPort`/`domain/pii/blindIndex.ts`と、その鍵だった
+  環境変数`LOCAL_DEV_MASTER_KEY`を削除した。
+- **資格情報は暗号化を維持**(個人情報ではなく検索/AI活用の対象外、DBダンプ流出時にAPIキーが平文で
+  漏れるのを防ぐ)。エンベロープ暗号化・`tenant_keys`のDEK世代・`LocalKmsPort`・`AuditLogPort.recordDecrypt`
+  は従来どおり。usecasesから`crypto`/`blindIndex`依存を外し、復号するのは管理者設定の読み出し・
+  Gemini呼び出し・Chat通知の3経路のみ。
+- **`tenant_keys.revoke()`の効果範囲が変わった**: 暗号学的削除が及ぶのは資格情報だけ。顧客等の業務
+  データの返還・廃棄(NDA第7条)はテナント単位の物理DELETE+バックアップ保持期間の満了で担保する
+  (README「データ保護の方針」・`doc/09`§1.3のNDA対応表に明記)。
+- **ミラーワーカーは復号しなくなった**ため、`packages/worker`から`LOCAL_DEV_KEK`・KMS/暗号化まわりの
+  配線を削除。APIサーバーは資格情報の復号のため引き続き`LOCAL_DEV_KEK`が必要。
+- **マイグレーション`0005_drop_field_encryption`(暗号化列・blind index列の削除)/`0006_plaintext_columns`
+  (平文列と`receipts_tenant_dedupe_key_idx`の追加)**。同一テーブルでの列追加・削除を2回に分けて
+  generateするのはVer. 1.1.22と同じ回避策。**既存の暗号化済みデータは引き継がない**(復号移行スクリプト
+  は作らない)。`NOT NULL`列には`DEFAULT ''`/`'{}'`を付けてあるので行が残っているDBでも適用は通るが本文は
+  空になるため、ローカル開発DBは`pnpm db:migrate`→`pnpm db:seed`で作り直す。公開デモは旧スキーマの
+  IndexedDBを検知(`REBUILD_REQUIRED_MIGRATIONS`)して自動で作り直す。
+- ドキュメント: README「PII暗号化の方針」を「データ保護の方針(2026-09 見直し)」に書き換え(NDA対応表を
+  追加)、`doc/09_データベース構造解説.md`のER図・§1.3・§3・§4.1・§5、
+  `doc/11_アーキテクチャ説明スライド.html`のデータ保護スライドを更新。
+
+`pnpm lint` / `pnpm typecheck` / `pnpm test` で確認。
+
 ## [Ver. 1.1.23] - 2026-08-30
 
 ### katahimo-app / gas-childcare-visit-app(Phase 5継続: outboxミラー基盤+日報/事故報告/領収書/勤怠のGAS版スプレッドシート/Driveへのミラー書き込みを実装)
