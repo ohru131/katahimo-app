@@ -9,10 +9,12 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
+import { reservations } from './reservations';
 import { staff } from './staff';
 import { tenants } from './tenants';
 
@@ -50,6 +52,14 @@ export const dailyReports = pgTable(
       .references(() => tenants.id),
     staffId: uuid().notNull(),
     customerId: uuid().notNull(),
+    /**
+     * この日報が実施記録になっている予約。予約を伴わない訪問(緊急対応・当日依頼)は null。
+     *
+     * 予約(約束)と日報(実際に行ったことの記録)を1テーブルにまとめない理由は
+     * reservations.ts のコメント参照。紐付けを日報側に持たせるのは、1つの予約から
+     * 日報が2件できることが無い(1回の訪問=1件)一方で、予約の無い日報はあるため。
+     */
+    reservationId: uuid(),
 
     occurredAt: timestamp({ withTimezone: true }).notNull(),
     /** PSI評価(1〜5)。未評価はnull(2026-08-28のGAS版仕様変更で未評価に戻せるようにしたのを踏襲)。 */
@@ -90,6 +100,18 @@ export const dailyReports = pgTable(
       columns: [t.tenantId, t.customerId],
       foreignColumns: [customers.tenantId, customers.id],
     }),
+    // reservationIdはnull許容。nullの行はMATCH SIMPLE(既定)によりFK制約の対象外になる
+    // (予約を伴わない訪問を許容する仕様と両立する)。
+    foreignKey({
+      name: 'daily_reports_tenant_reservation_fk',
+      columns: [t.tenantId, t.reservationId],
+      foreignColumns: [reservations.tenantId, reservations.id],
+    }),
+    // 1つの予約に日報が2件付くのを止める(二重登録で実施記録が重複すると、
+    // サービス提供分の請求も二重になる)。nullの行同士は重複とみなさない。
+    uniqueIndex('daily_reports_tenant_reservation_uidx')
+      .on(t.tenantId, t.reservationId)
+      .where(sql`${t.reservationId} IS NOT NULL`),
     // doc/14 4.1章: coupon_redemptions.daily_report_id からの複合外部キー
     // (tenant_id, daily_report_id)の参照先。customers.ts の customers_tenant_id_uk と同じ理由
     // (RLSはFK制約をバイパスするため、単一列PKだけでは他テナントのdaily_report_idを誤って

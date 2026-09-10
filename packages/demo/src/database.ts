@@ -51,45 +51,19 @@ export interface DemoMigration {
 /**
  * 「台帳にこのタグが無いDBは、増分適用ではなく作り直す」対象のマイグレーション。
  *
- * 0005 は顧客・日報・勤怠・領収書の暗号化列(`*_ciphertext`/`*_key_version`)を落とし、
- * 続く 0006 が同名の平文列を追加する。暗号文→平文への切り替えなので、既存行の本文は
- * SQL だけでは引き継げない(復号の移行処理は本番でも作らない方針)。増分で当てると
- * 「顧客は残っているのに連絡先や日報の本文が全部空」という中途半端なデモになるため、
- * 既にデモを開いたことがある訪問者の IndexedDB は丸ごと作り直してシードし直す。
+ * マイグレーションは1本(0000_baseline_schema)に統合されている。実運用前で過去データの
+ * 引き継ぎが不要になったため、以前の 0000〜0015(途中に暗号化列の廃止・領収書金額の型変更・
+ * 勤怠row_dataのキー変更といった破壊的変更を含んでいた)を最終形のDDLだけの1本に置き換えた。
+ *
+ * そのため、既にデモを開いたことがある訪問者のIndexedDBには古いタグ(0000_init_schema 等)
+ * しか無く、新しい1本を増分で当てると「テーブルが既に存在する」で落ちる。ここに
+ * ベースラインのタグを挙げておくことで、そういうDBは丸ごと作り直してシードし直す。
  * 消えるのは架空のシードデータと訪問者がデモで入力した内容だけなので、それで良い。
  *
  * タグは `packages/db/drizzle/*.sql` のファイル名(拡張子なし)と一致させる。
  * 実在しないタグを書くとルールが黙って無効になるので、applyPendingMigrations が検査する。
- *
- * 両方を列挙する理由: 0005適用直後に起動が止まると、次回は0006だけが当たって
- * isFresh=falseになりシードが走らない(0005が既に台帳にあるため作り直し対象と
- * 判定されない)。0006も列挙しておけば、その次回起動で0006が未適用と分かり
- * 作り直し+シードのやり直しに入れる。
- *
- * 0011〜0013(doc/14 の改修)は0005/0006と理由が違う点に注意: マイグレーションSQL自体
- * (packages/db/drizzle/0011〜0013_*.sql)は既存行をDROP COLUMNの前にamount_raw/amount_yen・
- * visits/officeWork・dob_date/dob_raw等へ移し替えるDML(UPDATE)を含んでおり、本番の
- * PostgreSQLに増分で当てても値は失われない(CodeRabbit指摘対応)。
- *
- * それでもここに残しているのは、デモ側の事情のため: packages/demo/src/seed/seedDemoData.ts
- * が作るシードデータ自体、0011〜0013より前は列記号形式(row_data)や結合済みのlatLng文字列など
- * 「移行前の表し方」で書かれていたが、doc/14の改修に合わせてシード側も新しい表し方
- * (visits/officeWorkの配列、dob文字列を渡すとparseDateOnly経由でdob_date/dob_rawに分かれる、
- * 等)で書き直した。つまり「移行前の形で入っている架空のシードデータ」は元々デモにしか
- * 存在せず、増分適用で救うべき実データがそもそも無い。中途半端に新旧が混ざった見せ方に
- * なるくらいなら、既にデモを開いたことがある訪問者のIndexedDBも丸ごと作り直して
- * 新しいシードを入れ直す方がシンプルで良い、という判断。
- * - 0011: receipts.amount(text) → amount_yen(integer)/amount_raw(text)
- * - 0012: attendance_days.row_data のキーが列記号(C/D/E…)から visits/officeWork の配列に変わる
- * - 0013: dob / target_dob / start_time / end_time / lat_lng を落として型のある列に置き換える
  */
-export const REBUILD_REQUIRED_MIGRATIONS: readonly string[] = [
-  '0005_drop_field_encryption',
-  '0006_plaintext_columns',
-  '0011_receipt_amount_integer',
-  '0012_attendance_row_data_shape',
-  '0013_typed_dates_and_coordinates',
-];
+export const REBUILD_REQUIRED_MIGRATIONS: readonly string[] = ['0000_baseline_schema'];
 
 /** 適用済みマイグレーションの台帳(LEDGER_TABLE)から、タグの集合を読み出す。 */
 async function readAppliedTags(client: PGlite): Promise<Set<string>> {

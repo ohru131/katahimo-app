@@ -48,8 +48,9 @@ describe('applyPendingMigrations', () => {
     client = new PGlite();
     await client.waitReady;
     migrations = loadMigrations();
-    // 2件以上ある状態を前提にしたテストなので、そこも一緒に固定する。
-    expect(migrations.length).toBeGreaterThan(1);
+    // マイグレーションは1本(0000_baseline_schema)に統合されている。増える方向の変更
+    // (次のリリースで0001が足される)はテスト内で合成のマイグレーションを足して再現する。
+    expect(migrations.length).toBe(1);
   });
 
   it('空のDBには全て当てて、台帳に記録する', async () => {
@@ -77,8 +78,8 @@ describe('applyPendingMigrations', () => {
 
   it('台帳があって未適用が残っているDBには、その分だけを当てる(既存データは残す)', async () => {
     // 「今の全マイグレーションが当たっている状態」に、次のリリースで1件増えた状況を再現する。
-    // (0000だけ当ててから残りを当てる形だと、作り直し対象の 0005 が未適用なので
-    // 増分ではなく再構築の経路に入ってしまい、増分適用の検証にならない。)
+    // (ベースラインを当てずに合成分だけを当てると再構築の経路に入ってしまい、
+    // 増分適用の検証にならない。)
     const isFresh = await applyPendingMigrations(client, migrations);
     expect(isFresh).toBe(true);
     await client.exec("INSERT INTO tenants (name, slug) VALUES ('テスト法人', 'demo');");
@@ -95,45 +96,32 @@ describe('applyPendingMigrations', () => {
     expect(rows).toEqual([{ slug: 'demo' }]);
   });
 
-  it('台帳はあるが作り直し対象(0005)が未適用なら、作り直してシード投入を要求する', async () => {
-    // 暗号化列を持つ旧スキーマまで当たっていて、暗号文の行が残っているデモDBを再現する。
-    const [firstRebuildTag] = REBUILD_REQUIRED_MIGRATIONS;
-    if (!firstRebuildTag) throw new Error('REBUILD_REQUIRED_MIGRATIONS が空です');
-    const rebuildIndex = migrations.findIndex((m) => m.tag === firstRebuildTag);
-    expect(rebuildIndex).toBeGreaterThan(0);
-    const legacy = migrations.slice(0, rebuildIndex);
+  it('台帳にベースラインのタグが無いDBは、作り直してシード投入を要求する', async () => {
+    // マイグレーションを1本に統合する前(0000_init_schema 〜 0015_*)のタグを台帳に持つ
+    // デモDBを再現する。旧マイグレーションのSQLをここに写経しても意味がないので、
+    // 「tenantsだけを持つ古いスキーマ」を旧タグ名で当てた状態にする。
+    const legacy: DemoMigration = {
+      tag: '0000_init_schema',
+      sql: 'CREATE TABLE tenants (id uuid PRIMARY KEY, name text NOT NULL, slug text NOT NULL);',
+    };
     // 旧スキーマを当てる段階では作り直しルールを外す(そうしないとガードに引っかかる)。
-    const firstRun = await applyPendingMigrations(client, legacy, []);
+    const firstRun = await applyPendingMigrations(client, [legacy], []);
     expect(firstRun).toBe(true);
-    await client.exec("INSERT INTO tenants (name, slug) VALUES ('テスト法人', 'demo');");
-    expect(await appliedTags(client)).not.toContain(firstRebuildTag);
+    await client.exec(
+      "INSERT INTO tenants (id, name, slug) VALUES (gen_random_uuid(), 'テスト法人', 'demo');",
+    );
+    expect(await appliedTags(client)).toEqual(['0000_init_schema']);
 
     const secondRun = await applyPendingMigrations(client, migrations);
 
-    // 増分ではなく作り直し: 既存行は消え、全マイグレーションが当たり、シード投入が必要になる。
+    // 増分ではなく作り直し: 旧スキーマの行は消え、ベースラインが当たり、シード投入が必要になる。
+    // (増分で当てようとすると「テーブルが既に存在する」で落ちるため、ここが効かないと
+    // 一度デモを開いた訪問者はリセットするまでデモを使えなくなる。)
     expect(secondRun).toBe(true);
     expect(await appliedTags(client)).toEqual(migrations.map((m) => m.tag));
+    expect(await tableExists(client, 'password_reset_codes')).toBe(true);
     const { rows } = await client.query<{ count: string }>('SELECT count(*)::text AS count FROM tenants;');
     expect(rows[0]?.count).toBe('0');
-  });
-
-  it('0005適用直後に起動が止まった状態(0006未適用)でも、既定の設定で作り直してシード投入を要求する', async () => {
-    // 0005はコミット済み(台帳にもある)だが、0006がまだ当たっていない状態を再現する。
-    const rebuildIndex = migrations.findIndex((m) => m.tag === '0005_drop_field_encryption');
-    expect(rebuildIndex).toBeGreaterThan(0);
-    const upToAndIncluding0005 = migrations.slice(0, rebuildIndex + 1);
-    const firstRun = await applyPendingMigrations(client, upToAndIncluding0005, []);
-    expect(firstRun).toBe(true);
-    expect(await appliedTags(client)).toContain('0005_drop_field_encryption');
-    expect(await appliedTags(client)).not.toContain('0006_plaintext_columns');
-
-    // 既定のREBUILD_REQUIRED_MIGRATIONS(0005・0006の両方)で、フルのマイグレーションを当てる。
-    const secondRun = await applyPendingMigrations(client, migrations);
-
-    // 0005だけを見ていたら isFresh=false になってしまうところを、0006も列挙しているので
-    // 作り直し経路に入り、シード投入が必要と判定される。
-    expect(secondRun).toBe(true);
-    expect(await appliedTags(client)).toEqual(migrations.map((m) => m.tag));
   });
 
   it('作り直し対象のタグが実在しなければ起動を止める(タイポで黙って無効にならない)', async () => {
@@ -147,7 +135,7 @@ describe('applyPendingMigrations', () => {
   });
 
   it('台帳が無い時代のDBは作り直す(古いスキーマのまま使わせない)', async () => {
-    // 台帳を持たない実装が作ったDBを再現する: 0000だけを直に流す。
+    // 台帳を持たない実装が作ったDBを再現する: ベースラインを台帳なしで直に流す。
     const [first] = migrations;
     if (!first) throw new Error('マイグレーションが空です');
     await client.exec(first.sql);

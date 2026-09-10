@@ -147,6 +147,9 @@ export const couponRedemptions = pgTable(
     }),
     // 二重送信・二重クリックで同じクーポンが同じ日報に2回付くのを止める。
     unique('coupon_redemptions_report_coupon_uidx').on(t.tenantId, t.dailyReportId, t.couponId),
+    // invoice_lines.coupon_redemption_id からの複合外部キー(tenant_id, coupon_redemption_id)の
+    // 参照先。coupons_tenant_id_uk と同じ理由。
+    unique('coupon_redemptions_tenant_id_uk').on(t.tenantId, t.id),
     check('coupon_redemptions_discount_kind_check', sql`${t.discountKind} IN ('amount', 'percent')`),
     check(
       'coupon_redemptions_discount_value_check',
