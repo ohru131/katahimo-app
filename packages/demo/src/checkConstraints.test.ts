@@ -403,6 +403,43 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
     });
   });
 
+  describe('attendance_days_row_data_object(doc/14 B項)', () => {
+    // row_data(jsonb)の中身の形はアプリ境界(attendanceRowDataSchema)で検証しており、DB側は
+    // 「そもそもオブジェクトかどうか」だけを縛っている。その最低線が実際に効いていることを
+    // 固定する(配列やスカラを入れられると、アプリが visits/officeWork を読む前に壊れる)。
+    it('オブジェクトのrow_dataは通る', async () => {
+      await expect(
+        fixture.client.query(
+          `INSERT INTO attendance_days (tenant_id, staff_id, business_date, row_data)
+           VALUES ($1, $2, '2026-03-01', $3::jsonb);`,
+          [fixture.tenantId, fixture.staffId, '{"visits":[{"place":"○○様宅","start":"09:00"}]}'],
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('配列のrow_dataは拒否される', async () => {
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO attendance_days (tenant_id, staff_id, business_date, row_data)
+           VALUES ($1, $2, '2026-03-02', '[]'::jsonb);`,
+          [fixture.tenantId, fixture.staffId],
+        ),
+        'attendance_days_row_data_object',
+      );
+    });
+
+    it('スカラのrow_dataは拒否される', async () => {
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO attendance_days (tenant_id, staff_id, business_date, row_data)
+           VALUES ($1, $2, '2026-03-03', '"C"'::jsonb);`,
+          [fixture.tenantId, fixture.staffId],
+        ),
+        'attendance_days_row_data_object',
+      );
+    });
+  });
+
   describe('daily_reports_time_order(doc/14 F項)', () => {
     it('started_at <= ended_at、またはどちらかがnullなら通る', async () => {
       for (const [startedAt, endedAt] of [
