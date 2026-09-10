@@ -11,6 +11,14 @@ import { z } from 'zod';
  * 一方で「値」の側(customer_traits / staff_traits)はテーブルを分ける。1テーブルにして
  * subject_id を顧客IDとスタッフIDの兼用にすると、外部キーを張れなくなり
  * (どちらのテーブルを指すか行ごとに違うため)、テナント越えの取り違えをDBで検知できなくなる。
+ *
+ * 【値テーブルが「反対側の項目」を参照できないようにする方法】
+ * テーブルを分けただけでは、customer_traits の行が subject_kind='staff' の項目を
+ * 指すことを止められない(参照先が (tenant_id, id) だけだと区別子がFKに入らない)。
+ * そこで値テーブル側に固定値の区別子列(definition_subject_kind)を持たせ、
+ * (tenant_id, definition_subject_kind, definition_id) で
+ * trait_definitions(tenant_id, subject_kind, id) を参照する。
+ * 固定値であることはCHECK制約で縛る。tenant_id の取り違えを複合FKで防いでいるのと同じ手。
  */
 export const traitSubjectKindSchema = z.enum(['customer', 'staff']);
 export const TRAIT_SUBJECT_KINDS = traitSubjectKindSchema.options;

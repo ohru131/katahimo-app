@@ -217,6 +217,25 @@ export const invoiceLines = pgTable(
     /** 元データ: 適用したクーポン。 */
     couponRedemptionId: uuid(),
 
+    /**
+     * この明細を無効にした時刻。nullなら有効。
+     *
+     * 【必要な理由】
+     * 下の二重請求防止の一意索引を「有効な明細だけ」に限定するために持つ。これが無いと、
+     * 誤請求を void して作り直す運用が成立しない: void した請求書の明細も領収書
+     * (receipt_id)を掴んだままなので、同じ領収書を新しい請求書に載せた瞬間に
+     * 23505 で弾かれる。一方で索引の条件には別テーブル(invoices.status)を書けないため、
+     * 「有効かどうか」を明細側に持たせる必要がある。
+     *
+     * 【invoices.status と二重管理にならないようにする責任の置き場所】
+     * 請求書を void にする操作は必ず「invoices の更新 + その明細への superseded_at 設定」を
+     * 同一トランザクションで行う(usecase の責務)。DBのCHECK制約では別テーブルの状態を
+     * 参照できないため、ここはトリガーを増やすよりも「voidする経路が1つしかない」ことで
+     * 担保する。索引が守る不変条件(「1つの領収書は有効な明細1つにしか載らない」)自体は
+     * DB側で保証される。
+     */
+    supersededAt: timestamp({ withTimezone: true }),
+
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
@@ -245,14 +264,16 @@ export const invoiceLines = pgTable(
       foreignColumns: [couponRedemptions.tenantId, couponRedemptions.id],
     }),
     unique('invoice_lines_invoice_line_no_uk').on(t.tenantId, t.invoiceId, t.lineNo),
-    // 同じ領収書・同じクーポン適用を2つの明細に載せられないようにする(二重請求の防止)。
-    // 日報は「サービス提供分」と「移動手当」で複数明細に分かれるため一意にしない。
+    // 同じ領収書・同じクーポン適用を2つの「有効な」明細に載せられないようにする
+    // (二重請求の防止)。日報は「サービス提供分」と「移動手当」で複数明細に分かれるため
+    // 一意にしない。superseded_at IS NULL を条件に含める理由は supersededAt のコメント参照
+    // (void した請求書の明細が元データを掴んだままだと、作り直しができなくなる)。
     uniqueIndex('invoice_lines_tenant_receipt_uidx')
       .on(t.tenantId, t.receiptId)
-      .where(sql`${t.receiptId} IS NOT NULL`),
+      .where(sql`${t.receiptId} IS NOT NULL AND ${t.supersededAt} IS NULL`),
     uniqueIndex('invoice_lines_tenant_coupon_redemption_uidx')
       .on(t.tenantId, t.couponRedemptionId)
-      .where(sql`${t.couponRedemptionId} IS NOT NULL`),
+      .where(sql`${t.couponRedemptionId} IS NOT NULL AND ${t.supersededAt} IS NULL`),
     check('invoice_lines_kind_check', sql`${t.kind} IN ${sqlInList(INVOICE_LINE_KINDS)}`),
     check('invoice_lines_line_no_check', sql`${t.lineNo} >= 1`),
     check('invoice_lines_quantity_check', sql`${t.quantity} > 0`),

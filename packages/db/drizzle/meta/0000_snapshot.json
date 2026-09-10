@@ -1,5 +1,5 @@
 {
-  "id": "a05f6526-4ef5-4a4c-b7fd-1c8174c1011f",
+  "id": "a16ddc35-045a-4fed-b815-7776c95ffa5a",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -680,6 +680,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "superseded_at": {
+          "name": "superseded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -713,7 +719,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"invoice_lines\".\"receipt_id\" IS NOT NULL",
+          "where": "\"invoice_lines\".\"receipt_id\" IS NOT NULL AND \"invoice_lines\".\"superseded_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -735,7 +741,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"invoice_lines\".\"coupon_redemption_id\" IS NOT NULL",
+          "where": "\"invoice_lines\".\"coupon_redemption_id\" IS NOT NULL AND \"invoice_lines\".\"superseded_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1452,7 +1458,7 @@
       "checkConstraints": {
         "payments_status_check": {
           "name": "payments_status_check",
-          "value": "\"payments\".\"status\" IN ('requires_payment_method', 'requires_action', 'processing', 'succeeded', 'canceled', 'failed')"
+          "value": "\"payments\".\"status\" IN ('requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture', 'succeeded', 'canceled')"
         },
         "payments_method_kind_check": {
           "name": "payments_method_kind_check",
@@ -3181,6 +3187,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "definition_subject_kind": {
+          "name": "definition_subject_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'customer'"
+        },
         "value_bool": {
           "name": "value_bool",
           "type": "boolean",
@@ -3292,10 +3305,12 @@
           "tableTo": "trait_definitions",
           "columnsFrom": [
             "tenant_id",
+            "definition_subject_kind",
             "definition_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "subject_kind",
             "id"
           ],
           "onDelete": "no action",
@@ -3342,6 +3357,10 @@
         }
       },
       "checkConstraints": {
+        "customer_traits_definition_subject_kind_check": {
+          "name": "customer_traits_definition_subject_kind_check",
+          "value": "\"customer_traits\".\"definition_subject_kind\" = 'customer'"
+        },
         "customer_traits_exactly_one_value_check": {
           "name": "customer_traits_exactly_one_value_check",
           "value": "(CASE WHEN \"customer_traits\".\"value_bool\" IS NULL THEN 0 ELSE 1 END)\n    + (CASE WHEN \"customer_traits\".\"value_int\" IS NULL THEN 0 ELSE 1 END)\n    + (CASE WHEN \"customer_traits\".\"value_text\" IS NULL THEN 0 ELSE 1 END) = 1"
@@ -3785,6 +3804,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "definition_subject_kind": {
+          "name": "definition_subject_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'staff'"
+        },
         "value_bool": {
           "name": "value_bool",
           "type": "boolean",
@@ -3896,10 +3922,12 @@
           "tableTo": "trait_definitions",
           "columnsFrom": [
             "tenant_id",
+            "definition_subject_kind",
             "definition_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "subject_kind",
             "id"
           ],
           "onDelete": "no action",
@@ -3946,6 +3974,10 @@
         }
       },
       "checkConstraints": {
+        "staff_traits_definition_subject_kind_check": {
+          "name": "staff_traits_definition_subject_kind_check",
+          "value": "\"staff_traits\".\"definition_subject_kind\" = 'staff'"
+        },
         "staff_traits_exactly_one_value_check": {
           "name": "staff_traits_exactly_one_value_check",
           "value": "(CASE WHEN \"staff_traits\".\"value_bool\" IS NULL THEN 0 ELSE 1 END)\n    + (CASE WHEN \"staff_traits\".\"value_int\" IS NULL THEN 0 ELSE 1 END)\n    + (CASE WHEN \"staff_traits\".\"value_text\" IS NULL THEN 0 ELSE 1 END) = 1"
@@ -4110,11 +4142,12 @@
             "code"
           ]
         },
-        "trait_definitions_tenant_id_uk": {
-          "name": "trait_definitions_tenant_id_uk",
+        "trait_definitions_tenant_subject_id_uk": {
+          "name": "trait_definitions_tenant_subject_id_uk",
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "subject_kind",
             "id"
           ]
         }
@@ -5219,6 +5252,10 @@
         }
       },
       "checkConstraints": {
+        "reservations_external_pair_check": {
+          "name": "reservations_external_pair_check",
+          "value": "(\"reservations\".\"external_source\" IS NULL) = (\"reservations\".\"external_id\" IS NULL)"
+        },
         "reservations_status_check": {
           "name": "reservations_status_check",
           "value": "\"reservations\".\"status\" IN ('requested', 'confirmed', 'completed', 'cancelled', 'no_show')"
@@ -5412,6 +5449,10 @@
         }
       },
       "checkConstraints": {
+        "service_menus_external_pair_check": {
+          "name": "service_menus_external_pair_check",
+          "value": "(\"service_menus\".\"external_source\" IS NULL) = (\"service_menus\".\"external_id\" IS NULL)"
+        },
         "service_menus_duration_minutes_check": {
           "name": "service_menus_duration_minutes_check",
           "value": "\"service_menus\".\"duration_minutes\" > 0 AND \"service_menus\".\"duration_minutes\" <= 1440"

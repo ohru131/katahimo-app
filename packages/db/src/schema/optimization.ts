@@ -84,7 +84,13 @@ export const traitDefinitions = pgTable(
     pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING }),
     unique('trait_definitions_tenant_subject_code_uk').on(t.tenantId, t.subjectKind, t.code),
     // customer_traits / staff_traits からの複合FKの参照先。
-    unique('trait_definitions_tenant_id_uk').on(t.tenantId, t.id),
+    //
+    // subject_kind を含めるのは、値テーブルが「反対側の項目」を参照するのを
+    // DBで止めるため。(tenant_id, id) だけの参照先にすると、customer_traits の行が
+    // subject_kind='staff' の項目を指せてしまい、相性計算の入力に顧客側とスタッフ側が
+    // 混ざる(しかも trait_definitions_tenant_subject_code_uk では検知できない)。
+    // tenant_id の取り違えを複合FKで防いでいるのと同じ手を、区別子にも当てる。
+    unique('trait_definitions_tenant_subject_id_uk').on(t.tenantId, t.subjectKind, t.id),
     check('trait_definitions_subject_kind_check', sql`${t.subjectKind} IN ${sqlInList(TRAIT_SUBJECT_KINDS)}`),
     check('trait_definitions_value_type_check', sql`${t.valueType} IN ${sqlInList(TRAIT_VALUE_TYPES)}`),
     // 'scale' のときだけ範囲を持ち、かつ下限より上限が大きい。範囲の無い段階評価は
@@ -154,6 +160,13 @@ export const customerTraits = pgTable(
       .references(() => tenants.id),
     customerId: uuid().notNull(),
     definitionId: uuid().notNull(),
+    /**
+     * 参照先の trait_definitions.subject_kind。この表では常に 'customer'。
+     * 値そのものはCHECK制約で固定してあり、人が入れるものではない。
+     * 複合FKに含めて「スタッフ側の項目を参照する行」をDBで禁止するために持つ
+     * (trait_definitions 側のコメント参照)。
+     */
+    definitionSubjectKind: text().notNull().default('customer'),
 
     valueBool: boolean(),
     valueInt: integer(),
@@ -177,8 +190,8 @@ export const customerTraits = pgTable(
     }),
     foreignKey({
       name: 'customer_traits_tenant_definition_fk',
-      columns: [t.tenantId, t.definitionId],
-      foreignColumns: [traitDefinitions.tenantId, traitDefinitions.id],
+      columns: [t.tenantId, t.definitionSubjectKind, t.definitionId],
+      foreignColumns: [traitDefinitions.tenantId, traitDefinitions.subjectKind, traitDefinitions.id],
     }),
     foreignKey({
       name: 'customer_traits_tenant_recorded_by_fk',
@@ -188,6 +201,9 @@ export const customerTraits = pgTable(
     // 1顧客1項目1行。2行あるとどちらが現在の値か決まらない(履歴が必要になったら
     // 別途 *_history を足す。ここは「今の値」だけを持つ)。
     unique('customer_traits_customer_definition_uk').on(t.tenantId, t.customerId, t.definitionId),
+    // 区別子は固定値。ここを書き換えて別の値にできると、上の複合FKが
+    // 「顧客側の項目だけを参照する」という保証を失う。
+    check('customer_traits_definition_subject_kind_check', sql`${t.definitionSubjectKind} = 'customer'`),
     check('customer_traits_exactly_one_value_check', exactlyOneTraitValue(t)),
     index('customer_traits_tenant_definition_idx').on(t.tenantId, t.definitionId),
   ],
@@ -203,6 +219,8 @@ export const staffTraits = pgTable(
       .references(() => tenants.id),
     staffId: uuid().notNull(),
     definitionId: uuid().notNull(),
+    /** 参照先の trait_definitions.subject_kind。この表では常に 'staff'(customer_traits と対)。 */
+    definitionSubjectKind: text().notNull().default('staff'),
 
     valueBool: boolean(),
     valueInt: integer(),
@@ -224,8 +242,8 @@ export const staffTraits = pgTable(
     }),
     foreignKey({
       name: 'staff_traits_tenant_definition_fk',
-      columns: [t.tenantId, t.definitionId],
-      foreignColumns: [traitDefinitions.tenantId, traitDefinitions.id],
+      columns: [t.tenantId, t.definitionSubjectKind, t.definitionId],
+      foreignColumns: [traitDefinitions.tenantId, traitDefinitions.subjectKind, traitDefinitions.id],
     }),
     foreignKey({
       name: 'staff_traits_tenant_recorded_by_fk',
@@ -233,6 +251,7 @@ export const staffTraits = pgTable(
       foreignColumns: [staff.tenantId, staff.id],
     }),
     unique('staff_traits_staff_definition_uk').on(t.tenantId, t.staffId, t.definitionId),
+    check('staff_traits_definition_subject_kind_check', sql`${t.definitionSubjectKind} = 'staff'`),
     check('staff_traits_exactly_one_value_check', exactlyOneTraitValue(t)),
     index('staff_traits_tenant_definition_idx').on(t.tenantId, t.definitionId),
   ],

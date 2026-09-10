@@ -75,6 +75,14 @@ export const serviceMenus = pgTable(
     uniqueIndex('service_menus_tenant_external_uidx')
       .on(t.tenantId, t.externalSource, t.externalId)
       .where(sql`${t.externalId} IS NOT NULL`),
+    // 取込元と取込元IDは必ず対で入る。片方だけの行を許すと、上の一意索引が
+    // 一意性を保証しなくなる: 一意索引はNULL同士を「別の値」として扱うため、
+    // external_source が NULL の行は external_id が同じでも2件通ってしまう
+    // (再取込の冪等性が崩れる)。
+    check(
+      'service_menus_external_pair_check',
+      sql`(${t.externalSource} IS NULL) = (${t.externalId} IS NULL)`,
+    ),
     // 0分のメニューは予約枠を作れず、上限を設けないと入力ミス(6000分等)がそのまま
     // カレンダーを埋めてしまう。1日を超える訪問は運用に無い。
     check(
@@ -175,6 +183,9 @@ export const reservations = pgTable(
     uniqueIndex('reservations_tenant_external_uidx')
       .on(t.tenantId, t.externalSource, t.externalId)
       .where(sql`${t.externalId} IS NOT NULL`),
+    // service_menus_external_pair_check と同じ理由。RESERVAからの再取込を冪等にするのが
+    // 上の一意索引の目的なので、一意性が効かなくなる組み合わせをDBで禁止する。
+    check('reservations_external_pair_check', sql`(${t.externalSource} IS NULL) = (${t.externalId} IS NULL)`),
     check('reservations_status_check', sql`${t.status} IN ${sqlInList(RESERVATION_STATUSES)}`),
     check('reservations_source_check', sql`${t.source} IN ${sqlInList(RESERVATION_SOURCES)}`),
     // 終了が開始以前の予約は枠の長さが0以下になり、空き枠の計算が壊れる。

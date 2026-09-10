@@ -1474,4 +1474,222 @@ describe('新規テーブルのCHECK制約が不正値のINSERTを拒否する(P
       );
     });
   });
+  /**
+   * CodeRabbitのレビュー(PR #8)で指摘された穴に対する回帰テスト。
+   * どれも「制約はあるのに、ある組み合わせでは効かない」種類の抜けだったので、
+   * 効くようになったことを実際のPostgresで固定する。
+   */
+  describe('レビュー指摘への対応(取込元キーの対・特性の区別子・void後の再請求・Stripeの状態)', () => {
+    it('取込元IDだけ入れた予約は拒否される(一意索引がNULL比較で重複を通してしまうため)', async () => {
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO reservations
+             (tenant_id, customer_id, service_menu_id, status, source, start_at, end_at, external_id)
+           VALUES ($1, $2, $3, 'requested', 'reserva',
+                   '2026-05-01T09:00:00+09', '2026-05-01T11:00:00+09', 'RSV-1');`,
+          [
+            fixture.tenantId,
+            fixture.customerId,
+            await createServiceMenu(fixture.client, fixture.tenantId, 'EXT-1'),
+          ],
+        ),
+        'reservations_external_pair_check',
+      );
+    });
+
+    it('取込元だけ入れた予約も拒否される', async () => {
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO reservations
+             (tenant_id, customer_id, service_menu_id, status, source, start_at, end_at, external_source)
+           VALUES ($1, $2, $3, 'requested', 'reserva',
+                   '2026-05-02T09:00:00+09', '2026-05-02T11:00:00+09', 'reserva');`,
+          [
+            fixture.tenantId,
+            fixture.customerId,
+            await createServiceMenu(fixture.client, fixture.tenantId, 'EXT-2'),
+          ],
+        ),
+        'reservations_external_pair_check',
+      );
+    });
+
+    it('取込元と取込元IDが揃っていれば受理される', async () => {
+      const menuId = await createServiceMenu(fixture.client, fixture.tenantId, 'EXT-3');
+      await expect(
+        fixture.client.query(
+          `INSERT INTO reservations
+             (tenant_id, customer_id, service_menu_id, status, source, start_at, end_at,
+              external_source, external_id)
+           VALUES ($1, $2, $3, 'requested', 'reserva',
+                   '2026-05-03T09:00:00+09', '2026-05-03T11:00:00+09', 'reserva', 'RSV-3');`,
+          [fixture.tenantId, fixture.customerId, menuId],
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('取込元IDだけ入れたサービスメニューは拒否される', async () => {
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO service_menus (tenant_id, code, name, duration_minutes, base_price_yen, external_id)
+           VALUES ($1, 'EXT-ONLY-ID', 'テストメニュー', 60, 5000, 'SVC-1');`,
+          [fixture.tenantId],
+        ),
+        'service_menus_external_pair_check',
+      );
+    });
+
+    it('顧客側の特性値が、スタッフ側の特性項目を参照することはできない', async () => {
+      // definition_subject_kind は既定値の 'customer' のまま入るので、複合FKは
+      // (tenant_id, 'customer', そのID) を探しに行き、スタッフ側の項目には当たらない。
+      const staffSideDefinitionId = await createTraitDefinition(
+        fixture.client,
+        fixture.tenantId,
+        'staff',
+        'STAFF-SIDE-ONLY',
+      );
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO customer_traits (tenant_id, customer_id, definition_id, value_bool)
+           VALUES ($1, $2, $3, true);`,
+          [fixture.tenantId, fixture.customerId, staffSideDefinitionId],
+        ),
+        'customer_traits_tenant_definition_fk',
+      );
+    });
+
+    it('スタッフ側の特性値が、顧客側の特性項目を参照することはできない', async () => {
+      const customerSideDefinitionId = await createTraitDefinition(
+        fixture.client,
+        fixture.tenantId,
+        'customer',
+        'CUSTOMER-SIDE-ONLY',
+      );
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO staff_traits (tenant_id, staff_id, definition_id, value_bool)
+           VALUES ($1, $2, $3, true);`,
+          [fixture.tenantId, fixture.staffId, customerSideDefinitionId],
+        ),
+        'staff_traits_tenant_definition_fk',
+      );
+    });
+
+    it('区別子を書き換えて反対側を参照しようとしても拒否される', async () => {
+      const staffSideDefinitionId = await createTraitDefinition(
+        fixture.client,
+        fixture.tenantId,
+        'staff',
+        'STAFF-SIDE-FORCED',
+      );
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO customer_traits
+             (tenant_id, customer_id, definition_id, definition_subject_kind, value_bool)
+           VALUES ($1, $2, $3, 'staff', true);`,
+          [fixture.tenantId, fixture.customerId, staffSideDefinitionId],
+        ),
+        'customer_traits_definition_subject_kind_check',
+      );
+    });
+
+    it('無効にした明細があれば、同じ領収書を新しい請求書に載せ直せる', async () => {
+      // 誤請求を void して作り直す運用。void 側の明細に superseded_at が入っていれば、
+      // 二重請求防止の一意索引(有効な明細だけを対象にする)には引っかからない。
+      const receiptId = await createReceipt(
+        fixture.client,
+        fixture.tenantId,
+        fixture.staffId,
+        fixture.customerId,
+      );
+      const voidedInvoiceId = await createInvoice(
+        fixture.client,
+        fixture.tenantId,
+        fixture.customerId,
+        'INV-VOIDED',
+      );
+      const reissuedInvoiceId = await createInvoice(
+        fixture.client,
+        fixture.tenantId,
+        fixture.customerId,
+        'INV-REISSUED',
+      );
+      await fixture.client.query(
+        `INSERT INTO invoice_lines
+           (tenant_id, invoice_id, line_no, kind, description, amount_yen, receipt_id, superseded_at)
+         VALUES ($1, $2, 1, 'receipt_billable', 'ガレージ代', 1000, $3, now());`,
+        [fixture.tenantId, voidedInvoiceId, receiptId],
+      );
+
+      await expect(
+        fixture.client.query(
+          `INSERT INTO invoice_lines
+             (tenant_id, invoice_id, line_no, kind, description, amount_yen, receipt_id)
+           VALUES ($1, $2, 1, 'receipt_billable', 'ガレージ代', 1000, $3);`,
+          [fixture.tenantId, reissuedInvoiceId, receiptId],
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('有効な明細が2つになる形では、同じ領収書を載せられない', async () => {
+      const receiptId = await createReceipt(
+        fixture.client,
+        fixture.tenantId,
+        fixture.staffId,
+        fixture.customerId,
+      );
+      const firstInvoiceId = await createInvoice(
+        fixture.client,
+        fixture.tenantId,
+        fixture.customerId,
+        'INV-ACTIVE-1',
+      );
+      const secondInvoiceId = await createInvoice(
+        fixture.client,
+        fixture.tenantId,
+        fixture.customerId,
+        'INV-ACTIVE-2',
+      );
+      await fixture.client.query(
+        `INSERT INTO invoice_lines
+           (tenant_id, invoice_id, line_no, kind, description, amount_yen, receipt_id)
+         VALUES ($1, $2, 1, 'receipt_billable', 'ガレージ代', 1000, $3);`,
+        [fixture.tenantId, firstInvoiceId, receiptId],
+      );
+
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO invoice_lines
+             (tenant_id, invoice_id, line_no, kind, description, amount_yen, receipt_id)
+           VALUES ($1, $2, 1, 'receipt_billable', 'ガレージ代', 1000, $3);`,
+          [fixture.tenantId, secondInvoiceId, receiptId],
+        ),
+        'invoice_lines_tenant_receipt_uidx',
+      );
+    });
+
+    it("Stripeが返す 'requires_capture'(手動キャプチャ)は受理される", async () => {
+      await expect(
+        fixture.client.query(
+          `INSERT INTO payments
+             (tenant_id, customer_id, status, method_kind, amount_yen, stripe_payment_intent_id)
+           VALUES ($1, $2, 'requires_capture', 'card', 5000, $3);`,
+          [fixture.tenantId, fixture.customerId, `pi_capture_${randomUUID()}`],
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it("Stripeに存在しない 'failed' は拒否される", async () => {
+      // 決済の失敗は 'requires_payment_method' に戻り、内容は failure_code/failure_message に入る。
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO payments
+             (tenant_id, customer_id, status, method_kind, amount_yen, stripe_payment_intent_id)
+           VALUES ($1, $2, 'failed', 'card', 5000, $3);`,
+          [fixture.tenantId, fixture.customerId, `pi_failed_${randomUUID()}`],
+        ),
+        'payments_status_check',
+      );
+    });
+  });
 });

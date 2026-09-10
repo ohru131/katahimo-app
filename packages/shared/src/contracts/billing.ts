@@ -35,17 +35,33 @@ export const INVOICE_LINE_KINDS = invoiceLineKindSchema.options;
 export type InvoiceLineKind = z.infer<typeof invoiceLineKindSchema>;
 
 /**
- * 決済の状態。Stripe PaymentIntent の status に合わせる(理由は invoiceStatusSchema と同じ)。
+ * 決済の状態。**Stripe PaymentIntent の status と完全に同じ7値**(理由は invoiceStatusSchema と同じ)。
+ * https://docs.stripe.com/payments/payment-intents/verifying-status
+ *
  * 'onsite_cash' 等の現地決済はStripeを通らないが、状態は同じ語で表す
- * (succeeded で作られ、requires_action を経由しないだけ)。
+ * (succeeded で作られ、requires_action 等を経由しないだけ)。
+ *
+ * 【'failed' を持たない理由】
+ * Stripe に 'failed' という status は存在しない。決済が失敗した PaymentIntent は
+ * 'requires_payment_method' に戻り、失敗の内容は last_payment_error に入る
+ * (本テーブルの failure_code / failure_message がそれに対応する)。
+ * 独自に 'failed' を足すと、Webhook で届いた status をそのまま保存できず
+ * 対応表が必要になり、しかも「アプリは 'failed' にしたいのにDBのCHECKが
+ * Stripe の値を拒否する」というズレが起きる。
+ *
+ * 【'requires_confirmation' と 'requires_capture' を含める理由】
+ * Stripe が返す7値のうちの2つ。手動キャプチャ(与信だけ先に取る)を使うと
+ * 'requires_capture' が実際に届く。列挙から漏らすと、届いた瞬間に
+ * payments_status_check が 23514 で書き込みを拒否し、Webhook の処理が止まる。
  */
 export const paymentStatusSchema = z.enum([
   'requires_payment_method',
+  'requires_confirmation',
   'requires_action',
   'processing',
+  'requires_capture',
   'succeeded',
   'canceled',
-  'failed',
 ]);
 export const PAYMENT_STATUSES = paymentStatusSchema.options;
 export type PaymentStatus = z.infer<typeof paymentStatusSchema>;

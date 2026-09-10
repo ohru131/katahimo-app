@@ -111,6 +111,7 @@ CREATE TABLE "invoice_lines" (
 	"daily_report_id" uuid,
 	"receipt_id" uuid,
 	"coupon_redemption_id" uuid,
+	"superseded_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "invoice_lines_invoice_line_no_uk" UNIQUE("tenant_id","invoice_id","line_no"),
@@ -176,7 +177,7 @@ CREATE TABLE "payments" (
 	"paid_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "payments_status_check" CHECK ("payments"."status" IN ('requires_payment_method', 'requires_action', 'processing', 'succeeded', 'canceled', 'failed')),
+	CONSTRAINT "payments_status_check" CHECK ("payments"."status" IN ('requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture', 'succeeded', 'canceled')),
 	CONSTRAINT "payments_method_kind_check" CHECK ("payments"."method_kind" IN ('card', 'konbini', 'bank_transfer', 'onsite_cash')),
 	CONSTRAINT "payments_currency_check" CHECK ("payments"."currency" IN ('jpy')),
 	CONSTRAINT "payments_amount_check" CHECK ("payments"."amount_yen" > 0),
@@ -374,6 +375,7 @@ CREATE TABLE "customer_traits" (
 	"tenant_id" uuid NOT NULL,
 	"customer_id" uuid NOT NULL,
 	"definition_id" uuid NOT NULL,
+	"definition_subject_kind" text DEFAULT 'customer' NOT NULL,
 	"value_bool" boolean,
 	"value_int" integer,
 	"value_text" text,
@@ -383,6 +385,7 @@ CREATE TABLE "customer_traits" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "customer_traits_customer_definition_uk" UNIQUE("tenant_id","customer_id","definition_id"),
+	CONSTRAINT "customer_traits_definition_subject_kind_check" CHECK ("customer_traits"."definition_subject_kind" = 'customer'),
 	CONSTRAINT "customer_traits_exactly_one_value_check" CHECK ((CASE WHEN "customer_traits"."value_bool" IS NULL THEN 0 ELSE 1 END)
     + (CASE WHEN "customer_traits"."value_int" IS NULL THEN 0 ELSE 1 END)
     + (CASE WHEN "customer_traits"."value_text" IS NULL THEN 0 ELSE 1 END) = 1)
@@ -434,6 +437,7 @@ CREATE TABLE "staff_traits" (
 	"tenant_id" uuid NOT NULL,
 	"staff_id" uuid NOT NULL,
 	"definition_id" uuid NOT NULL,
+	"definition_subject_kind" text DEFAULT 'staff' NOT NULL,
 	"value_bool" boolean,
 	"value_int" integer,
 	"value_text" text,
@@ -443,6 +447,7 @@ CREATE TABLE "staff_traits" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "staff_traits_staff_definition_uk" UNIQUE("tenant_id","staff_id","definition_id"),
+	CONSTRAINT "staff_traits_definition_subject_kind_check" CHECK ("staff_traits"."definition_subject_kind" = 'staff'),
 	CONSTRAINT "staff_traits_exactly_one_value_check" CHECK ((CASE WHEN "staff_traits"."value_bool" IS NULL THEN 0 ELSE 1 END)
     + (CASE WHEN "staff_traits"."value_int" IS NULL THEN 0 ELSE 1 END)
     + (CASE WHEN "staff_traits"."value_text" IS NULL THEN 0 ELSE 1 END) = 1)
@@ -466,7 +471,7 @@ CREATE TABLE "trait_definitions" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "trait_definitions_tenant_subject_code_uk" UNIQUE("tenant_id","subject_kind","code"),
-	CONSTRAINT "trait_definitions_tenant_id_uk" UNIQUE("tenant_id","id"),
+	CONSTRAINT "trait_definitions_tenant_subject_id_uk" UNIQUE("tenant_id","subject_kind","id"),
 	CONSTRAINT "trait_definitions_subject_kind_check" CHECK ("trait_definitions"."subject_kind" IN ('customer', 'staff')),
 	CONSTRAINT "trait_definitions_value_type_check" CHECK ("trait_definitions"."value_type" IN ('bool', 'scale', 'int', 'choice', 'text')),
 	CONSTRAINT "trait_definitions_scale_check" CHECK (("trait_definitions"."value_type" = 'scale' AND "trait_definitions"."scale_min" IS NOT NULL AND "trait_definitions"."scale_max" IS NOT NULL AND "trait_definitions"."scale_max" > "trait_definitions"."scale_min")
@@ -572,6 +577,7 @@ CREATE TABLE "reservations" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "reservations_tenant_id_uk" UNIQUE("tenant_id","id"),
+	CONSTRAINT "reservations_external_pair_check" CHECK (("reservations"."external_source" IS NULL) = ("reservations"."external_id" IS NULL)),
 	CONSTRAINT "reservations_status_check" CHECK ("reservations"."status" IN ('requested', 'confirmed', 'completed', 'cancelled', 'no_show')),
 	CONSTRAINT "reservations_source_check" CHECK ("reservations"."source" IN ('reserva', 'web', 'phone', 'admin')),
 	CONSTRAINT "reservations_time_order_check" CHECK ("reservations"."end_at" > "reservations"."start_at"),
@@ -597,6 +603,7 @@ CREATE TABLE "service_menus" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "service_menus_tenant_code_uk" UNIQUE("tenant_id","code"),
 	CONSTRAINT "service_menus_tenant_id_uk" UNIQUE("tenant_id","id"),
+	CONSTRAINT "service_menus_external_pair_check" CHECK (("service_menus"."external_source" IS NULL) = ("service_menus"."external_id" IS NULL)),
 	CONSTRAINT "service_menus_duration_minutes_check" CHECK ("service_menus"."duration_minutes" > 0 AND "service_menus"."duration_minutes" <= 1440),
 	CONSTRAINT "service_menus_base_price_yen_check" CHECK ("service_menus"."base_price_yen" >= 0),
 	CONSTRAINT "service_menus_sort_order_check" CHECK ("service_menus"."sort_order" >= 0)
@@ -778,7 +785,7 @@ ALTER TABLE "family_members" ADD CONSTRAINT "family_members_tenant_id_tenants_id
 ALTER TABLE "family_members" ADD CONSTRAINT "family_members_tenant_customer_fk" FOREIGN KEY ("tenant_id","customer_id") REFERENCES "public"."customers"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_traits" ADD CONSTRAINT "customer_traits_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_traits" ADD CONSTRAINT "customer_traits_tenant_customer_fk" FOREIGN KEY ("tenant_id","customer_id") REFERENCES "public"."customers"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "customer_traits" ADD CONSTRAINT "customer_traits_tenant_definition_fk" FOREIGN KEY ("tenant_id","definition_id") REFERENCES "public"."trait_definitions"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "customer_traits" ADD CONSTRAINT "customer_traits_tenant_definition_fk" FOREIGN KEY ("tenant_id","definition_subject_kind","definition_id") REFERENCES "public"."trait_definitions"("tenant_id","subject_kind","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_traits" ADD CONSTRAINT "customer_traits_tenant_recorded_by_fk" FOREIGN KEY ("tenant_id","recorded_by_staff_id") REFERENCES "public"."staff"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "staff_customer_compatibilities" ADD CONSTRAINT "staff_customer_compatibilities_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "staff_customer_compatibilities" ADD CONSTRAINT "staff_customer_compatibilities_tenant_staff_fk" FOREIGN KEY ("tenant_id","staff_id") REFERENCES "public"."staff"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -789,7 +796,7 @@ ALTER TABLE "staff_customer_travel_estimates" ADD CONSTRAINT "staff_customer_tra
 ALTER TABLE "staff_customer_travel_estimates" ADD CONSTRAINT "staff_customer_travel_estimates_tenant_customer_fk" FOREIGN KEY ("tenant_id","customer_id") REFERENCES "public"."customers"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "staff_traits" ADD CONSTRAINT "staff_traits_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "staff_traits" ADD CONSTRAINT "staff_traits_tenant_staff_fk" FOREIGN KEY ("tenant_id","staff_id") REFERENCES "public"."staff"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "staff_traits" ADD CONSTRAINT "staff_traits_tenant_definition_fk" FOREIGN KEY ("tenant_id","definition_id") REFERENCES "public"."trait_definitions"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "staff_traits" ADD CONSTRAINT "staff_traits_tenant_definition_fk" FOREIGN KEY ("tenant_id","definition_subject_kind","definition_id") REFERENCES "public"."trait_definitions"("tenant_id","subject_kind","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "staff_traits" ADD CONSTRAINT "staff_traits_tenant_recorded_by_fk" FOREIGN KEY ("tenant_id","recorded_by_staff_id") REFERENCES "public"."staff"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "trait_definitions" ADD CONSTRAINT "trait_definitions_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "outbox_jobs" ADD CONSTRAINT "outbox_jobs_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -820,8 +827,8 @@ ALTER TABLE "travel_legs" ADD CONSTRAINT "travel_legs_tenant_daily_report_fk" FO
 ALTER TABLE "travel_legs" ADD CONSTRAINT "travel_legs_tenant_allowance_rule_fk" FOREIGN KEY ("tenant_id","allowance_rule_id") REFERENCES "public"."transport_allowance_rules"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "accident_reports_tenant_customer_occurred_idx" ON "accident_reports" USING btree ("tenant_id","customer_id","occurred_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE UNIQUE INDEX "attendance_days_tenant_staff_date_idx" ON "attendance_days" USING btree ("tenant_id","staff_id","business_date");--> statement-breakpoint
-CREATE UNIQUE INDEX "invoice_lines_tenant_receipt_uidx" ON "invoice_lines" USING btree ("tenant_id","receipt_id") WHERE "invoice_lines"."receipt_id" IS NOT NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "invoice_lines_tenant_coupon_redemption_uidx" ON "invoice_lines" USING btree ("tenant_id","coupon_redemption_id") WHERE "invoice_lines"."coupon_redemption_id" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "invoice_lines_tenant_receipt_uidx" ON "invoice_lines" USING btree ("tenant_id","receipt_id") WHERE "invoice_lines"."receipt_id" IS NOT NULL AND "invoice_lines"."superseded_at" IS NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "invoice_lines_tenant_coupon_redemption_uidx" ON "invoice_lines" USING btree ("tenant_id","coupon_redemption_id") WHERE "invoice_lines"."coupon_redemption_id" IS NOT NULL AND "invoice_lines"."superseded_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "invoice_lines_tenant_invoice_idx" ON "invoice_lines" USING btree ("tenant_id","invoice_id","line_no");--> statement-breakpoint
 CREATE INDEX "invoice_lines_tenant_daily_report_idx" ON "invoice_lines" USING btree ("tenant_id","daily_report_id") WHERE "invoice_lines"."daily_report_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "invoices_tenant_stripe_invoice_uidx" ON "invoices" USING btree ("tenant_id","stripe_invoice_id") WHERE "invoices"."stripe_invoice_id" IS NOT NULL;--> statement-breakpoint
