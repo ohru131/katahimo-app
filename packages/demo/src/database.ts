@@ -61,10 +61,22 @@ export interface DemoMigration {
  * isFresh=falseになりシードが走らない(0005が既に台帳にあるため作り直し対象と
  * 判定されない)。0006も列挙しておけば、その次回起動で0006が未適用と分かり
  * 作り直し+シードのやり直しに入れる。
+ *
+ * 0011〜0013(doc/14 の改修)も同じ理由で対象に入れる。いずれも**列の型ではなく
+ * 中身の表し方が変わる**ため、SQLを当てるだけでは既存行を引き継げない。
+ * - 0011: receipts.amount(text)を落として amount_yen(integer)を足す。既存行の金額は空になる
+ * - 0012: attendance_days.row_data のキーが列記号(C/D/E…)から visits/officeWork の配列に
+ *   変わる。SQLの制約(jsonb_typeof='object')は古い形でも通ってしまうため、増分で当てると
+ *   「DBには残っているのにアプリが読めない勤怠」が残り、勤怠タブが検証エラーで壊れる。
+ *   **SQLの差分が小さいことは、データを引き継げることを意味しない**
+ * - 0013: dob / target_dob / start_time / end_time / lat_lng を落として型のある列に置き換える
  */
 export const REBUILD_REQUIRED_MIGRATIONS: readonly string[] = [
   '0005_drop_field_encryption',
   '0006_plaintext_columns',
+  '0011_receipt_amount_integer',
+  '0012_attendance_row_data_shape',
+  '0013_typed_dates_and_coordinates',
 ];
 
 /** 適用済みマイグレーションの台帳(LEDGER_TABLE)から、タグの集合を読み出す。 */
