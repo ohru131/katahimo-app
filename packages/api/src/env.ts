@@ -1,6 +1,32 @@
 import { z } from 'zod';
 
 /**
+ * 環境変数の真偽値。
+ *
+ * `z.coerce.boolean()` は使えない。中身が `Boolean(値)` なので、`.env` に
+ * `MIRROR_TO_GOOGLE_SHEETS=false` と書くと **true になる**(空文字列以外は全部true)。
+ * `.env.example` が `=false` を勧めているため、オフのつもりの設定がオンになる。
+ *
+ * 許可した表記だけを受け付け、それ以外(`yes` / `off` 等)は起動時に落とす。
+ * 未設定と空文字列は「設定していない」として既定値を使う。
+ */
+const booleanEnv = (defaultValue: boolean) =>
+  z
+    .preprocess(
+      (value) => {
+        if (typeof value !== 'string') return value;
+        const normalized = value.trim().toLowerCase();
+        return normalized === '' ? undefined : normalized;
+      },
+      z
+        .enum(['true', 'false', '1', '0'], {
+          errorMap: () => ({ message: 'true / false / 1 / 0 のいずれかにしてください' }),
+        })
+        .default(defaultValue ? 'true' : 'false'),
+    )
+    .transform((value) => value === 'true' || value === '1');
+
+/**
  * 環境変数の検証。起動時に一度だけ実行し、足りない設定は起動前に落とす。
  * GAS版は Script Properties の未設定に実行時まで気づけなかった(AUTH_SALT等)ため、
  * 新実装では起動時に明示的に検証する。
@@ -64,7 +90,7 @@ const envSchema = z.object({
   // スプレッドシート脱却時はここを false にするだけでミラーが止まる。
   // Googleカレンダーへのミラーは対象外(GAS版がカレンダーへ一度も書き込んでいないため
   // 書き戻し先が無い。packages/core/src/ports/mirror.ts の MirrorKind 参照)。
-  MIRROR_TO_GOOGLE_SHEETS: z.coerce.boolean().default(false),
+  MIRROR_TO_GOOGLE_SHEETS: booleanEnv(false),
 
   /**
    * 勤怠の保存時に「勤怠集計」シートの再計算(MirrorKind の attendance_aggregate)も積むか。
@@ -75,7 +101,7 @@ const envSchema = z.object({
    * 勤怠の保存ごとには走らせていない)。勤怠集計シートを新システム側から更新する運用に
    * 切り替えるときだけ有効にする。
    */
-  MIRROR_ATTENDANCE_AGGREGATE: z.coerce.boolean().default(false),
+  MIRROR_ATTENDANCE_AGGREGATE: booleanEnv(false),
 
   /**
    * 書き込み系APIを別オリジンから叩くことを許可するオリジン(カンマ区切り)。

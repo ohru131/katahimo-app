@@ -16,7 +16,8 @@ function toInsertValues(input: NewFamilyMemberInput) {
     tenantId: input.tenantId,
     customerId: input.customerId,
     name: input.name,
-    dob: input.dob,
+    dobDate: input.dobDate,
+    dobRaw: input.dobRaw,
     info: input.info,
   };
 }
@@ -28,7 +29,8 @@ function toRecord(row: FamilyMemberRow): FamilyMemberRecord {
     tenantId: row.tenantId,
     customerId: row.customerId,
     name: row.name,
-    dob: row.dob,
+    dobDate: row.dobDate,
+    dobRaw: row.dobRaw,
     info: row.info,
   };
 }

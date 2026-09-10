@@ -3,6 +3,8 @@ import type {
   AppSettingsRepositoryPort,
   AttendanceDayRepositoryPort,
   AuditLogPort,
+  CouponRedemptionRepositoryPort,
+  CouponRepositoryPort,
   CryptoPort,
   CustomerRepositoryPort,
   DailyReportRepositoryPort,
@@ -52,6 +54,9 @@ export interface Container {
   dailyReports: DailyReportRepositoryPort;
   accidentReports: AccidentReportRepositoryPort;
   receipts: ReceiptRepositoryPort;
+  /** 割引クーポンの種別マスタ・適用記録(doc/14 4.1章)。 */
+  coupons: CouponRepositoryPort;
+  couponRedemptions: CouponRedemptionRepositoryPort;
   appSettings: AppSettingsRepositoryPort;
   /**
    * app_settingsの資格情報(Gemini APIキー・Google Chat Webhook URL)の暗号化/復号にだけ使う。

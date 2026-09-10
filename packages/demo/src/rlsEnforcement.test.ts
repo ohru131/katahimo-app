@@ -331,3 +331,184 @@ describe('テナントコンテキストを張らない接続(安全側に倒れ
     await expect(attempt).rejects.toThrow(/row-level security/i);
   });
 });
+
+/**
+ * coupons/coupon_redemptions(doc/14 4.1章)専用のフィクスチャ。既存のcreateFixture()を
+ * 拡張しない理由: あちらは他の2つのdescribeブロック(FORCEの比較用テーブル・
+ * 未設定コンテキストの検証)でも使い回されており、そちらの期待値(staffの件数等)に
+ * 影響を与えたくないため、新テーブル専用に独立させる。
+ */
+interface CouponFixture {
+  client: PGlite;
+  tenantA: string;
+  tenantB: string;
+  couponA: string;
+  couponB: string;
+  dailyReportA: string;
+  dailyReportB: string;
+}
+
+async function createCouponFixture(): Promise<CouponFixture> {
+  const client = new PGlite();
+  await client.waitReady;
+
+  await client.exec(`
+    CREATE ROLE ${OWNER_ROLE} NOSUPERUSER NOBYPASSRLS NOLOGIN;
+    CREATE ROLE ${APP_ROLE} NOSUPERUSER NOBYPASSRLS NOLOGIN;
+    GRANT ALL ON SCHEMA public TO ${OWNER_ROLE};
+    GRANT ${OWNER_ROLE} TO CURRENT_USER;
+    GRANT ${APP_ROLE} TO CURRENT_USER;
+  `);
+
+  await client.exec(`SET ROLE ${OWNER_ROLE};`);
+  await applyPendingMigrations(client, loadMigrations());
+  await client.exec(`
+    GRANT USAGE ON SCHEMA public TO ${APP_ROLE};
+    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${APP_ROLE};
+    RESET ROLE;
+  `);
+
+  const { rows: tenantRows } = await client.query<{ id: string; slug: string }>(
+    "INSERT INTO tenants (name, slug) VALUES ('法人A', 'coupon-a'), ('法人B', 'coupon-b') RETURNING id, slug;",
+  );
+  const tenantA = tenantRows.find((row) => row.slug === 'coupon-a')?.id;
+  const tenantB = tenantRows.find((row) => row.slug === 'coupon-b')?.id;
+  if (!tenantA || !tenantB) throw new Error('テナントの準備に失敗しました');
+
+  const { rows: staffRows } = await client.query<{ id: string; tenant_id: string }>(
+    "INSERT INTO staff (tenant_id, name, email) VALUES ($1, 'Aのスタッフ', 'coupon-a@example.test'), ($2, 'Bのスタッフ', 'coupon-b@example.test') RETURNING id, tenant_id;",
+    [tenantA, tenantB],
+  );
+  const { rows: customerRows } = await client.query<{ id: string; tenant_id: string }>(
+    "INSERT INTO customers (tenant_id, name, family_name, given_name) VALUES ($1, 'Aの利用者', 'A', '一郎'), ($2, 'Bの利用者', 'B', '二郎') RETURNING id, tenant_id;",
+    [tenantA, tenantB],
+  );
+  const staffA = staffRows.find((row) => row.tenant_id === tenantA)?.id;
+  const staffB = staffRows.find((row) => row.tenant_id === tenantB)?.id;
+  const customerA = customerRows.find((row) => row.tenant_id === tenantA)?.id;
+  const customerB = customerRows.find((row) => row.tenant_id === tenantB)?.id;
+  if (!staffA || !staffB || !customerA || !customerB) throw new Error('スタッフ/顧客の準備に失敗しました');
+
+  const { rows: reportRows } = await client.query<{ id: string; tenant_id: string }>(
+    `INSERT INTO daily_reports (tenant_id, staff_id, customer_id, occurred_at)
+     VALUES ($1, $2, $3, now()), ($4, $5, $6, now())
+     RETURNING id, tenant_id;`,
+    [tenantA, staffA, customerA, tenantB, staffB, customerB],
+  );
+  const dailyReportA = reportRows.find((row) => row.tenant_id === tenantA)?.id;
+  const dailyReportB = reportRows.find((row) => row.tenant_id === tenantB)?.id;
+  if (!dailyReportA || !dailyReportB) throw new Error('日報の準備に失敗しました');
+
+  const { rows: couponRows } = await client.query<{ id: string; tenant_id: string }>(
+    `INSERT INTO coupons (tenant_id, code, name, discount_kind, discount_amount_yen)
+     VALUES ($1, 'A-COUPON', 'Aのクーポン', 'amount', 500), ($2, 'B-COUPON', 'Bのクーポン', 'amount', 500)
+     RETURNING id, tenant_id;`,
+    [tenantA, tenantB],
+  );
+  const couponA = couponRows.find((row) => row.tenant_id === tenantA)?.id;
+  const couponB = couponRows.find((row) => row.tenant_id === tenantB)?.id;
+  if (!couponA || !couponB) throw new Error('クーポンの準備に失敗しました');
+
+  await client.query(
+    `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_amount_yen)
+     VALUES ($1, $2, $3, 'amount', 500), ($4, $5, $6, 'amount', 500);`,
+    [tenantA, dailyReportA, couponA, tenantB, dailyReportB, couponB],
+  );
+
+  return { client, tenantA, tenantB, couponA, couponB, dailyReportA, dailyReportB };
+}
+
+describe('coupons/coupon_redemptionsがクロステナントのアクセスを止める(doc/14 4.1章)', () => {
+  let fixture: CouponFixture;
+
+  beforeAll(async () => {
+    fixture = await createCouponFixture();
+  }, 60_000);
+
+  afterAll(async () => {
+    await fixture?.client.close();
+  });
+
+  it('前提: couponsもcoupon_redemptionsもRLSがENABLE+FORCEされている', async () => {
+    const { rows: tables } = await fixture.client.query<{
+      relname: string;
+      owner: string;
+      relrowsecurity: boolean;
+      relforcerowsecurity: boolean;
+    }>(
+      `SELECT c.relname, pg_get_userbyid(c.relowner) AS owner, c.relrowsecurity, c.relforcerowsecurity
+         FROM pg_class c
+        WHERE c.relnamespace = 'public'::regnamespace AND c.relname IN ('coupons', 'coupon_redemptions')
+        ORDER BY c.relname;`,
+    );
+    expect(tables).toEqual([
+      { relname: 'coupon_redemptions', owner: OWNER_ROLE, relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'coupons', owner: OWNER_ROLE, relrowsecurity: true, relforcerowsecurity: true },
+    ]);
+  });
+
+  it('テナントAのコンテキストからはテナントBのクーポンが見えない', async () => {
+    const codes = await runAs(fixture.client, APP_ROLE, fixture.tenantA, async () => {
+      const { rows } = await fixture.client.query<{ code: string }>(
+        'SELECT code FROM coupons ORDER BY code;',
+      );
+      return rows.map((row) => row.code);
+    });
+
+    expect(codes).toEqual(['A-COUPON']);
+  });
+
+  it('テナントAのコンテキストからはテナントBの適用記録(coupon_redemptions)が見えない', async () => {
+    const count = await runAs(fixture.client, APP_ROLE, fixture.tenantA, () =>
+      countRows(fixture.client, 'coupon_redemptions'),
+    );
+
+    expect(count).toBe(1);
+  });
+
+  it('テナントAのコンテキストで tenant_id=B のクーポンはINSERTできない(WITH CHECK)', async () => {
+    const attempt = runAs(fixture.client, APP_ROLE, fixture.tenantA, () =>
+      fixture.client.query(
+        `INSERT INTO coupons (tenant_id, code, name, discount_kind, discount_amount_yen)
+         VALUES ($1, '侵入クーポン', '侵入', 'amount', 100);`,
+        [fixture.tenantB],
+      ),
+    );
+
+    await expect(attempt).rejects.toThrow(/row-level security/i);
+    expect(await countRows(fixture.client, 'coupons')).toBe(2);
+  });
+
+  it('テナントAのコンテキストからテナントBのクーポンはUPDATEもDELETEもできない', async () => {
+    const affected = await runAs(fixture.client, APP_ROLE, fixture.tenantA, async () => {
+      const updated = await fixture.client.query(
+        "UPDATE coupons SET name = '書き換え' WHERE code = 'B-COUPON';",
+      );
+      const deleted = await fixture.client.query("DELETE FROM coupons WHERE code = 'B-COUPON';");
+      return { updated: updated.affectedRows, deleted: deleted.affectedRows };
+    });
+
+    expect(affected).toEqual({ updated: 0, deleted: 0 });
+    const { rows } = await fixture.client.query<{ name: string }>(
+      "SELECT name FROM coupons WHERE code = 'B-COUPON';",
+    );
+    expect(rows).toEqual([{ name: 'Bのクーポン' }]);
+  });
+
+  it('テナントAのコンテキストからテナントBの適用記録はUPDATEもDELETEもできない', async () => {
+    const affected = await runAs(fixture.client, APP_ROLE, fixture.tenantA, async () => {
+      const updated = await fixture.client.query(
+        'UPDATE coupon_redemptions SET note = $1 WHERE daily_report_id = $2;',
+        ['書き換え', fixture.dailyReportB],
+      );
+      const deleted = await fixture.client.query(
+        'DELETE FROM coupon_redemptions WHERE daily_report_id = $1;',
+        [fixture.dailyReportB],
+      );
+      return { updated: updated.affectedRows, deleted: deleted.affectedRows };
+    });
+
+    expect(affected).toEqual({ updated: 0, deleted: 0 });
+    expect(await countRows(fixture.client, 'coupon_redemptions')).toBe(2);
+  });
+});

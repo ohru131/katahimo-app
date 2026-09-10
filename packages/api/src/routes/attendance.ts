@@ -5,6 +5,7 @@ import {
   saveAttendanceDay,
 } from '@katahimo/core';
 import type { AttendanceRowData } from '@katahimo/core/domain';
+import { attendanceRowDataSchema, MAX_OFFICE_WORK, MAX_VISITS } from '@katahimo/shared';
 import { Hono } from 'hono';
 import type { Container } from '../container';
 import { getAuthenticatedSession, resolveAttendanceTargetStaffId } from '../session';
@@ -14,48 +15,51 @@ const YEAR_MONTH_PATTERN = /^\d{4}-\d{2}$/;
 /** 1リクエストで取得できる日数の上限。GAS版PastSchedule.jsのPAST_SCHEDULE_WEEK_MAX_DAYSと同じ考え方。 */
 const WEEK_RANGE_MAX_DAYS = 31;
 
-/**
- * AttendanceRowDataとして受け付けてよいキーの一覧(出勤簿テンプレートの入力列のみ)。
- * ここに無いキー(派生値・数式に相当する列)はリクエストボディに含まれていても無視する。
- * PastSchedule.js の PAST_SCHEDULE_INPUT_COLUMNS と同じ「書き込んでよい列」の考え方。
- */
-const ROW_DATA_KEYS = [
-  'C',
-  'D',
-  'E',
-  'H',
-  'I',
-  'L',
-  'M',
-  'N',
-  'Q',
-  'R',
-  'U',
-  'V',
-  'W',
-  'X',
-  'Y',
-  'Z',
-  'AA',
-  'AB',
-  'AC',
-  'AG',
-  'AH',
-  'AI',
-  'AJ',
-  'AN',
-  'AO',
-] as const;
+type RowDataValidation =
+  | { ok: true; rowData: AttendanceRowData }
+  | { ok: false; message: string; fields?: Record<string, string> };
 
-function sanitizeRowData(input: unknown): AttendanceRowData {
-  const result: AttendanceRowData = {};
-  if (!input || typeof input !== 'object') return result;
-  const record = input as Record<string, unknown>;
-  for (const key of ROW_DATA_KEYS) {
-    const value = record[key];
-    if (typeof value === 'string') result[key] = value;
+/**
+ * リクエストのrowDataを attendanceRowDataSchema(@katahimo/shared)で検証する。
+ * どのフィールドが悪いかクライアントに分かるように、zodのissueをfields(パス→メッセージ)に
+ * 詰めて返す(apiErrorSchema.fields、packages/shared/src/contracts/common.ts参照)。
+ *
+ * 件数の上限(MAX_VISITS/MAX_OFFICE_WORK)はattendanceRowDataSchema自体には無い
+ * (データの形としては訪問件数に上限を持たせない、というdoc/14 B項の判断)。上限チェックは
+ * アプリの入口であるここで行い、超えた場合は理由と解消時期が分かるメッセージで拒否する。
+ * 黙って4件目以降を捨てると、給与に直結する値が気付かれないまま失われるため。
+ */
+function validateRowData(input: unknown): RowDataValidation {
+  const parsed = attendanceRowDataSchema.safeParse(input);
+  if (!parsed.success) {
+    const fields: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      fields[issue.path.length > 0 ? issue.path.join('.') : '(root)'] = issue.message;
+    }
+    return { ok: false, message: 'rowDataの形式が正しくありません', fields };
   }
-  return result;
+
+  const { visits, officeWork } = parsed.data;
+  if (visits && visits.length > MAX_VISITS) {
+    return {
+      ok: false,
+      message:
+        `訪問は${MAX_VISITS}件までです(勤怠計算がGAS版と一致することを保証している範囲。` +
+        `${MAX_VISITS + 1}件以上は段階2の正規化で対応する)`,
+      fields: { visits: `${MAX_VISITS}件を超えています` },
+    };
+  }
+  if (officeWork && officeWork.length > MAX_OFFICE_WORK) {
+    return {
+      ok: false,
+      message:
+        `事務作業は${MAX_OFFICE_WORK}件までです(勤怠計算がGAS版と一致することを保証している範囲。` +
+        `${MAX_OFFICE_WORK + 1}件以上は段階2の正規化で対応する)`,
+      fields: { officeWork: `${MAX_OFFICE_WORK}件を超えています` },
+    };
+  }
+
+  return { ok: true, rowData: parsed.data };
 }
 
 export function createAttendanceRoutes(container: Container) {
@@ -93,9 +97,16 @@ export function createAttendanceRoutes(container: Container) {
       return c.json({ code: 'validation_failed', message: 'date(YYYY-MM-DD)が必要です' }, 400);
     }
 
+    const validation = validateRowData(body?.rowData);
+    if (!validation.ok) {
+      return c.json(
+        { code: 'validation_failed', message: validation.message, fields: validation.fields },
+        400,
+      );
+    }
+
     const staffId = resolveAttendanceTargetStaffId(session, body?.staffId);
-    const rowData = sanitizeRowData(body?.rowData);
-    const result = await saveAttendanceDay(container, session.tenantId, staffId, date, rowData);
+    const result = await saveAttendanceDay(container, session.tenantId, staffId, date, validation.rowData);
     return c.json({ attendance: result });
   });
 

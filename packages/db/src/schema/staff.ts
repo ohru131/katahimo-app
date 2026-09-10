@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   date,
   integer,
   pgPolicy,
@@ -74,5 +75,7 @@ export const staff = pgTable(
     // attendance_days/daily_reports等からの複合外部キー(tenant_id, staff_id)の参照先。
     // customers.ts の customers_tenant_id_uk と同じ理由(RLSはFK制約をバイパスするため)。
     unique('staff_tenant_id_uk').on(t.tenantId, t.id),
+    // 負の失敗回数はloginThrottleのロジックが想定していない(doc/14 D項)。
+    check('staff_failed_login_attempts_check', sql`${t.failedLoginAttempts} >= 0`),
   ],
 ).enableRLS();

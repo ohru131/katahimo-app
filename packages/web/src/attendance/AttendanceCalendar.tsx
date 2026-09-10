@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import type { AttendanceRowData, ScheduleEvent } from '../api';
+import type { AttendanceRowData, ScheduleEvent, ScheduleEventSlot } from '../api';
 import { fetchAttendanceDay, fetchAttendanceWeekEvents, saveAttendanceDay } from '../api';
+import { applySlotEdit, readSlotFields } from './arraySlot';
 import {
   CAL_DOW,
   CAL_TYPE_STYLE,
@@ -12,7 +13,7 @@ import {
 } from './calendarUtils';
 import { MoveDistancePanel } from './MoveDistancePanel';
 import { SlotEditModal } from './SlotEditModal';
-import { ALL_SLOT_KEYS, SLOT_FIELD_KEYS } from './slotFields';
+import { ATTENDANCE_SLOT_DEFS, slotKeyString } from './slotFields';
 
 const CAL_WEEK_HOUR_HEIGHT = 40;
 const CAL_DAY_HOUR_HEIGHT = 48;
@@ -33,7 +34,7 @@ export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
   const [weekAnchor, setWeekAnchor] = useState(() => calGetWeekStart(new Date()));
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [selectedDate, setSelectedDate] = useState(() => calYmd(new Date()));
-  const [openSlotKey, setOpenSlotKey] = useState<ScheduleEvent['slotKey'] | null>(null);
+  const [openSlot, setOpenSlot] = useState<ScheduleEventSlot | null>(null);
   const [dayRowData, setDayRowData] = useState<AttendanceRowData>({});
 
   const weekEnd = (() => {
@@ -77,11 +78,12 @@ export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
     setViewMode('day');
   };
 
-  const handleSlotSave = (patch: Partial<AttendanceRowData>) => {
-    const merged = { ...dayRowData, ...patch };
+  const handleSlotSave = (fields: { name: string; start: string; end: string } | null) => {
+    if (!openSlot) return;
+    const merged = applySlotEdit(dayRowData, openSlot, fields);
     setDayRowData(merged);
     saveMutation.mutate(merged);
-    setOpenSlotKey(null);
+    setOpenSlot(null);
   };
 
   return (
@@ -195,7 +197,7 @@ export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
           (viewMode === 'week' ? (
             <WeekGrid weekAnchor={weekAnchor} events={weekEvents} onDayClick={drillToDay} />
           ) : (
-            <DayGrid date={selectedDate} events={weekEvents} onSlotClick={setOpenSlotKey} />
+            <DayGrid date={selectedDate} events={weekEvents} onSlotClick={setOpenSlot} />
           ))}
       </div>
 
@@ -206,21 +208,18 @@ export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
       {viewMode === 'day' && dayQuery.data && (
         <div className="mt-3 space-y-1">
           <div className="text-xs font-bold text-gray-600 mb-1">✏️ 勤怠を編集</div>
-          {ALL_SLOT_KEYS.map((slotKey) => {
-            const fields = SLOT_FIELD_KEYS[slotKey];
-            const name = dayRowData[fields.name];
-            const start = dayRowData[fields.start];
-            const end = dayRowData[fields.end];
+          {ATTENDANCE_SLOT_DEFS.map((def) => {
+            const { name, start, end } = readSlotFields(dayRowData, def.slot);
             const registered = !!(start && end);
             return (
               <button
-                key={slotKey}
+                key={slotKeyString(def.slot)}
                 type="button"
-                onClick={() => setOpenSlotKey(slotKey)}
+                onClick={() => setOpenSlot(def.slot)}
                 className="w-full flex items-center justify-between p-2 rounded-lg border border-gray-100 hover:bg-gray-50 text-left text-sm"
               >
                 <span>
-                  {registered ? '✅' : '➕'} {fields.label}
+                  {registered ? '✅' : '➕'} {def.label}
                   {registered && name ? `: ${name}` : ''}
                 </span>
                 {registered && (
@@ -236,9 +235,13 @@ export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
 
       {viewMode === 'day' && dayQuery.data && (
         <div className="mt-4">
+          {/* 日が変わるたびに再マウントする(MoveDistancePanel.tsx冒頭のコメント参照。
+              入力中のローカル文字列状態を、日を切り替えたのにマウント時の値のまま
+              残さないため)。 */}
           <MoveDistancePanel
+            key={selectedDate}
             rowData={dayRowData}
-            onChange={(key, value) => setDayRowData((prev) => ({ ...prev, [key]: value }))}
+            onChange={setDayRowData}
             onSave={() => saveMutation.mutate(dayRowData)}
             saving={saveMutation.isPending}
           />
@@ -248,12 +251,12 @@ export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
         <p className="text-red-500 text-sm text-center mb-2">{saveMutation.error.message}</p>
       )}
 
-      {openSlotKey && (
+      {openSlot && (
         <SlotEditModal
-          slotKey={openSlotKey}
+          slot={openSlot}
           rowData={dayRowData}
           onSave={handleSlotSave}
-          onClose={() => setOpenSlotKey(null)}
+          onClose={() => setOpenSlot(null)}
         />
       )}
     </div>
@@ -314,7 +317,7 @@ function WeekGrid({
                 const cls = CAL_TYPE_STYLE[e.eventType] ?? 'bg-gray-100 border-gray-300';
                 return (
                   <div
-                    key={e.slotKey}
+                    key={slotKeyString(e.slot)}
                     className={`absolute left-0 right-0 z-10 rounded-sm border px-0.5 leading-tight ${cls}`}
                     style={{ top, minHeight: height }}
                     title={`${e.start}〜${e.end} ${e.title}`}
@@ -343,7 +346,7 @@ function DayGrid({
 }: {
   date: string;
   events: ScheduleEvent[];
-  onSlotClick: (slotKey: ScheduleEvent['slotKey']) => void;
+  onSlotClick: (slot: ScheduleEventSlot) => void;
 }) {
   const dayEvents = events.filter((e) => e.date === date);
   const { startHour, endHour } = calComputeHourRange(dayEvents);
@@ -368,9 +371,9 @@ function DayGrid({
         const cls = CAL_TYPE_STYLE[e.eventType] ?? 'bg-gray-100 text-gray-700 border-gray-300';
         return (
           <button
-            key={e.slotKey}
+            key={slotKeyString(e.slot)}
             type="button"
-            onClick={() => onSlotClick(e.slotKey)}
+            onClick={() => onSlotClick(e.slot)}
             className={`absolute left-12 right-1 rounded-lg border px-2 py-0.5 text-[11px] overflow-hidden text-left ${cls}`}
             style={{ top, height }}
             title={e.title}

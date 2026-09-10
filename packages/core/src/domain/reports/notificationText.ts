@@ -1,4 +1,4 @@
-import type { AccidentReportContent, DailyReportContent } from './types';
+import type { AccidentReportContent } from './types';
 
 /** ★☆表記。GAS版Main.js saveReportのstar()と同一。 */
 function star(n: number | null): string {
@@ -13,7 +13,13 @@ function star(n: number | null): string {
 export function buildDailyReportNotificationText(params: {
   staffName: string;
   customerName: string;
-  content: Pick<DailyReportContent, 'startTime' | 'endTime' | 'internalText'>;
+  /**
+   * startTime/endTimeはDBの型が変わってもここでは元の入力文字列('HH:mm')をそのまま使う
+   * (doc/14 F項。通知はDB保存前に作るため、startedAt/endedAtへ変換してから再度'HH:mm'に
+   * 戻すような回り道をしない。usecases/reports.tsのsaveDailyReportがinput.startTime/
+   * endTimeをそのまま渡す)。
+   */
+  content: { startTime: string; endTime: string; internalText: string };
   riskRating: number | null;
   esRating: number | null;
 }): string {
@@ -52,7 +58,7 @@ export function buildAccidentReportNotificationText(params: {
 担当: ${params.staffName}
 顧客名: ${params.customerName}
 対象: ${c.targetName}
-生年月日: ${c.targetDob}
+生年月日: ${c.targetDobRaw}
 発生日時: ${c.occurrenceTime}
 発生場所: ${c.location}
 事故内容: ${c.accidentContent}

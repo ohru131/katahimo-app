@@ -2,9 +2,20 @@ import type { AttendanceRowData } from './types';
 
 export type ScheduleEventType = 'CUSTOMER APPOINTMENT' | 'OFFICE WORK';
 
+/**
+ * どの枠のイベントかを、配列の種類と添字で表す。doc/14 B項の段階1で訪問・事務作業が
+ * 固定5枠(slot1〜3, office1〜2)から配列になったことに合わせ、'slot1'のような固定キーではなく
+ * { kind, index } にした(配列にすることで枠の上限が外れる、というAttendanceRowData側の変更と
+ * 整合させるため。indexは0始まり)。
+ */
+export interface ScheduleEventSlot {
+  kind: 'visit' | 'office';
+  index: number;
+}
+
 export interface ScheduleEvent {
   date: string;
-  slotKey: 'slot1' | 'slot2' | 'slot3' | 'office1' | 'office2';
+  slot: ScheduleEventSlot;
   title: string;
   eventType: ScheduleEventType;
   start: string;
@@ -22,46 +33,31 @@ export interface ScheduleEvent {
  * そのためGoogle Calendar連携(Phase 5)が無くても、この週間表示自体は動く。
  */
 export function buildScheduleEventsFromRowData(dateStr: string, rowData: AttendanceRowData): ScheduleEvent[] {
-  const slotDefs: Array<{
-    slotKey: ScheduleEvent['slotKey'];
-    name: string | undefined;
-    start: string | undefined;
-    end: string | undefined;
-    eventType: ScheduleEventType;
-  }> = [
-    {
-      slotKey: 'slot1',
-      name: rowData.C,
-      start: rowData.D,
-      end: rowData.E,
-      eventType: 'CUSTOMER APPOINTMENT',
-    },
-    {
-      slotKey: 'slot2',
-      name: rowData.L,
-      start: rowData.M,
-      end: rowData.N,
-      eventType: 'CUSTOMER APPOINTMENT',
-    },
-    {
-      slotKey: 'slot3',
-      name: rowData.U,
-      start: rowData.V,
-      end: rowData.W,
-      eventType: 'CUSTOMER APPOINTMENT',
-    },
-    { slotKey: 'office1', name: rowData.X, start: rowData.Y, end: rowData.Z, eventType: 'OFFICE WORK' },
-    { slotKey: 'office2', name: rowData.AA, start: rowData.AB, end: rowData.AC, eventType: 'OFFICE WORK' },
-  ];
+  const events: ScheduleEvent[] = [];
 
-  return slotDefs
-    .filter((slot) => slot.start && slot.end)
-    .map((slot) => ({
+  (rowData.visits ?? []).forEach((visit, index) => {
+    if (!visit.start || !visit.end) return;
+    events.push({
       date: dateStr,
-      slotKey: slot.slotKey,
-      title: slot.name || '',
-      eventType: slot.eventType,
-      start: slot.start as string,
-      end: slot.end as string,
-    }));
+      slot: { kind: 'visit', index },
+      title: visit.place || '',
+      eventType: 'CUSTOMER APPOINTMENT',
+      start: visit.start,
+      end: visit.end,
+    });
+  });
+
+  (rowData.officeWork ?? []).forEach((work, index) => {
+    if (!work.start || !work.end) return;
+    events.push({
+      date: dateStr,
+      slot: { kind: 'office', index },
+      title: work.name || '',
+      eventType: 'OFFICE WORK',
+      start: work.start,
+      end: work.end,
+    });
+  });
+
+  return events;
 }

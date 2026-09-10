@@ -75,9 +75,52 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     expect(detail?.externalSource).toBe('reserva');
     expect(detail?.externalId).toBe('cust-001');
     expect(detail?.familyMembers).toEqual([
-      { id: expect.any(String), name: '佐藤 太郎', dob: '2019/1/19', info: '保育園児 卵アレルギー' },
-      { id: expect.any(String), name: '佐藤 次子', dob: '2021/6/20', info: null },
+      {
+        id: expect.any(String),
+        name: '佐藤 太郎',
+        dobDate: '2019-01-19',
+        dobRaw: '2019/1/19',
+        info: '保育園児 卵アレルギー',
+      },
+      { id: expect.any(String), name: '佐藤 次子', dobDate: '2021-06-20', dobRaw: '2021/6/20', info: null },
     ]);
+  });
+
+  it('解析できない生年月日はdobDateがnullのままdobRawだけ保存される(doc/14 F項)', async () => {
+    const created = await createCustomer(deps, {
+      tenantId,
+      name: '佐藤 花子',
+      familyMembers: [{ name: '佐藤 太郎', dob: '1990/1' }],
+    });
+
+    const detail = await getCustomerDetail(deps, tenantId, created.id);
+    expect(detail?.familyMembers).toEqual([
+      { id: expect.any(String), name: '佐藤 太郎', dobDate: null, dobRaw: '1990/1', info: null },
+    ]);
+  });
+
+  it('緯度経度は分解されてlat/lng/latLngRawに保存される(doc/14 G項)', async () => {
+    const created = await createCustomer(deps, {
+      tenantId,
+      name: '佐藤 花子',
+      latLng: '38.26, 140.87',
+    });
+
+    expect(created.lat).toBe(38.26);
+    expect(created.lng).toBe(140.87);
+    expect(created.latLngRaw).toBe('38.26, 140.87');
+  });
+
+  it('解析できない緯度経度はlat/lngがnullのままlatLngRawだけ保存される(doc/14 G項)', async () => {
+    const created = await createCustomer(deps, {
+      tenantId,
+      name: '佐藤 花子',
+      latLng: '不明',
+    });
+
+    expect(created.lat).toBeNull();
+    expect(created.lng).toBeNull();
+    expect(created.latLngRaw).toBe('不明');
   });
 
   it('updateCustomerでfamilyMembersを渡すと全件入れ替わる', async () => {

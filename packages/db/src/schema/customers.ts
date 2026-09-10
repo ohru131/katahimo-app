@@ -1,7 +1,9 @@
 import { sql } from 'drizzle-orm';
 import {
+  check,
   date,
   index,
+  numeric,
   pgPolicy,
   pgTable,
   text,
@@ -91,8 +93,16 @@ export const customers = pgTable(
     address2StartDate: date(),
     address2EndDate: date(),
 
-    /** 緯度・経度(RESERVA CSVの文字列をそのまま保持)。 */
-    latLng: text(),
+    // doc/14 G項: "38.26, 140.87"のような1本の文字列のままでは計算(距離・ジオフェンス・
+    // 座標化しての仙台市報告)に使えないため、数値2列に分ける。浮動小数(double precision)を
+    // 避けてnumeric(9,6)にするのは、金額(doc/14 A項)と同じく丸め誤差を持ち込まないため。
+    // 小数第6位(約10cm)まで保持でき、日本国内の座標には十分。
+    /** 緯度。RESERVA CSVの「緯度・経度」列から解析できた場合のみ。 */
+    lat: numeric({ precision: 9, scale: 6 }),
+    /** 経度。 */
+    lng: numeric({ precision: 9, scale: 6 }),
+    /** 緯度・経度の元表記。latLngRawはlat/lngの解析成否によらず常に保持する。 */
+    latLngRaw: text(),
 
     // ── 以下は運用・分類情報 ──
     /** 会員種別(例: Family Sitter 会員)。 */
@@ -130,5 +140,10 @@ export const customers = pgTable(
     // 苗字だけの完全一致検索(searchCustomersByFamilyName)用。同姓の顧客が複数いる前提のため
     // UNIQUEにはしない。
     index('customers_tenant_family_name_idx').on(t.tenantId, t.familyName),
+    // 入口(API)・TypeScriptの型では値域を見ていなかった箇所(doc/14 D項と同じ考え方)。
+    // 解析に失敗した場合はlat/lngをnullにする方針(parseLatLng)のため、DB側はNULLのみ許容し、
+    // 数値が入っているときだけ実在する座標の範囲かを見る。
+    check('customers_lat_range', sql`${t.lat} IS NULL OR ${t.lat} BETWEEN -90 AND 90`),
+    check('customers_lng_range', sql`${t.lng} IS NULL OR ${t.lng} BETWEEN -180 AND 180`),
   ],
 ).enableRLS();

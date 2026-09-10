@@ -3,10 +3,17 @@
  * (このパッケージはDBクライアントに依存しないという境界を守るため、インターフェースだけ持つ)。
  */
 
+import type { CouponDiscountKind } from '@katahimo/shared';
 import type { AttendanceRowData } from '../domain/attendance/types';
 import type { LoginThrottlePolicy } from '../domain/auth/loginThrottle';
 import type { AccidentReportContent, DailyReportContent } from '../domain/reports/types';
 import type { TransactionScope } from './unitOfWork';
+
+// CouponDiscountKind(型)とCOUPON_DISCOUNT_KINDS(許可値の配列)は @katahimo/shared が正
+// (doc/14 4.1章。DB・core・APIルート・画面の全てが同じ配列を参照することで許可値のズレを
+// 防ぐ、attendance.tsのMAX_VISITS/MAX_OFFICE_WORKと同じ方針)。ここでは型だけ再exportし、
+// このファイル内の他の型定義から従来通り `CouponDiscountKind` として参照できるようにする。
+export type { CouponDiscountKind } from '@katahimo/shared';
 
 /**
  * アプリ層で暗号化して保存する値(CryptoPort.encryptの結果)。使うのは app_settings の
@@ -278,7 +285,18 @@ export interface CustomerProfileFields {
   address2: string | null;
   address2StartDate: string | null;
   address2EndDate: string | null;
-  latLng: string | null;
+  /**
+   * 緯度・経度(doc/14 G項)。DBの型はnumeric(9,6)(drizzle-orm上はstring)だが、
+   * ポート層ではnumberにしている。numeric(9,6)の値域(整数部最大3桁+小数第6位)は
+   * 倍精度浮動小数点が誤差なく表現できる有効桁数(約15〜17桁)に余裕で収まるため、
+   * 金額(整数)のような丸め誤差の心配が無く、呼び出し側(usecase・API・画面)での
+   * 扱いやすさを優先した。string<->numberの変換はリポジトリ実装(DrizzleCustomerRepository)
+   * が担う。
+   */
+  lat: number | null;
+  lng: number | null;
+  /** 緯度・経度の元表記(RESERVA CSVの「緯度・経度」列)。lat/lngの解析成否によらず常に保持する。 */
+  latLngRaw: string | null;
   memberType: string | null;
   memberStatus: string | null;
   paymentMethod: string | null;
@@ -337,8 +355,11 @@ export interface FamilyMemberRecord {
   tenantId: string;
   customerId: string;
   name: string;
-  /** 'YYYY/M/D'(normalizeDateStrで正規化済み)。未取得ならnull。 */
-  dob: string | null;
+  /** 生年月日(parseDateOnlyで解析できた場合のみ。'YYYY-MM-DD')。doc/14 F項。 */
+  dobDate: string | null;
+  /** 生年月日の元表記('YYYY/M/D'。normalizeDateStrで正規化済み)。dobDateの解析成否によらず
+   * 常に保持する(未取得ならnull)。 */
+  dobRaw: string | null;
   /** 職業・アレルギー等の自由記述。 */
   info: string | null;
 }
@@ -347,7 +368,8 @@ export interface NewFamilyMemberInput {
   tenantId: string;
   customerId: string;
   name: string;
-  dob: string | null;
+  dobDate: string | null;
+  dobRaw: string | null;
   info: string | null;
 }
 
@@ -363,9 +385,11 @@ export interface FamilyMemberRepositoryPort {
 }
 
 /**
- * 勤怠(出勤簿)1日分。rowDataは packages/core/src/domain/attendance/types.ts の
- * AttendanceRowData(入力列のみ)をそのままJSON(jsonb列)で持つ。労働時間・残業・距離集計等の
- * 派生値は保存しない(常にrowDataから都度計算する。packages/db/src/schema/attendanceDays.ts参照)。
+ * 勤怠(出勤簿)1日分。rowDataは @katahimo/shared の attendanceRowDataSchema が定める
+ * 永続形式(訪問・事務作業の配列 + 日次の距離/件数/備考。doc/14 B項)をそのままJSON(jsonb列)で
+ * 持つ。労働時間・残業・距離集計等の派生値は保存しない(常にrowDataから都度計算する。
+ * packages/db/src/schema/attendanceDays.ts参照。計算自体は列記号形式(AttendanceColumnRow)で
+ * 行うため、呼び出し側でtoColumnRow()を通す)。
  */
 export interface AttendanceDayRecord {
   id: string;
@@ -419,6 +443,12 @@ export interface DailyReportRecord {
   occurredAt: Date;
   riskRating: number | null;
   esRating: number | null;
+  /**
+   * 開始/終了時刻(doc/14 F項)。未入力はnull。occurredAtとの関係は
+   * packages/db/src/schema/dailyReports.tsのヘッダーコメント参照。
+   */
+  startedAt: Date | null;
+  endedAt: Date | null;
   content: DailyReportContent;
   /** ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。 */
   updatedAt: Date;
@@ -431,6 +461,8 @@ export interface NewDailyReportInput {
   occurredAt: Date;
   riskRating: number | null;
   esRating: number | null;
+  startedAt: Date | null;
+  endedAt: Date | null;
   content: DailyReportContent;
 }
 
@@ -454,6 +486,109 @@ export interface DailyReportRepositoryPort {
     before: Date | null,
     limit: number,
   ): Promise<DailyReportRecord[]>;
+}
+
+/**
+ * 割引クーポンの種別マスタ1件(doc/14 4.1章)。回数券(枚数を発行して減らしていくもの)は
+ * 運用に無いことを確認済みのため残枚数を持たない(packages/db/src/schema/coupons.ts参照)。
+ */
+export interface CouponRecord {
+  id: string;
+  tenantId: string;
+  /** 運用上の識別子(例 'INTRO500')。テナント内で一意。 */
+  code: string;
+  name: string;
+  discountKind: CouponDiscountKind;
+  /** discountKind='amount'のときのみ値を持つ。 */
+  discountAmountYen: number | null;
+  /** discountKind='percent'のときのみ値を持つ(1〜100)。 */
+  discountPercent: number | null;
+  /** 有効期間の下限('YYYY-MM-DD')。nullは下限なし。 */
+  validFrom: string | null;
+  /** 有効期間の上限('YYYY-MM-DD')。nullは無期限。 */
+  validTo: string | null;
+  /**
+   * false=廃止済み。廃止しても行は消さない(過去の適用記録coupon_redemptionsから
+   * 複合FKで参照されているため。消すと履歴が壊れる)。
+   */
+  active: boolean;
+  note: string | null;
+}
+
+export interface NewCouponInput {
+  tenantId: string;
+  code: string;
+  name: string;
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+  validFrom: string | null;
+  validTo: string | null;
+  active: boolean;
+  note: string | null;
+}
+
+/** 管理者によるクーポンの更新は「渡された項目だけ上書きする」部分更新(PATCH)方式。 */
+export type CouponPatchInput = Partial<Omit<NewCouponInput, 'tenantId'>>;
+
+export interface CouponRepositoryPort {
+  /** 管理者向けクーポン管理画面用。廃止済み(active=false)も含む全件。 */
+  listAll(tenantId: string): Promise<CouponRecord[]>;
+  findById(tenantId: string, couponId: string): Promise<CouponRecord | null>;
+  create(input: NewCouponInput): Promise<CouponRecord>;
+  /** 存在しない/他テナントのIDならnullを返す。 */
+  update(tenantId: string, couponId: string, patch: CouponPatchInput): Promise<CouponRecord | null>;
+}
+
+/**
+ * 日報1件への割引クーポン適用記録1件(doc/14 4.1章)。discountKind/discountAmountYen/
+ * discountPercentは、適用した瞬間のcouponsマスタの値を複製したスナップショット
+ * (あとでマスタの割引額を書き換えても、ここは動かない。packages/db/src/schema/coupons.ts
+ * のヘッダーコメント参照)。顧客IDは持たない(日報から引ける。二重に持つと日報側の顧客と
+ * 食い違う状態を作れてしまうため)。
+ */
+export interface CouponRedemptionRecord {
+  id: string;
+  tenantId: string;
+  dailyReportId: string;
+  couponId: string;
+  appliedAt: Date;
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+  note: string | null;
+}
+
+export interface NewCouponRedemptionInput {
+  tenantId: string;
+  dailyReportId: string;
+  couponId: string;
+  /** usecase側(saveDailyReport)がcouponsマスタから写して渡す。呼び出し側で改変しないこと。 */
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+  note?: string | null;
+}
+
+export interface CouponRedemptionRepositoryPort {
+  /**
+   * 指定日報の適用記録を「削除して入れ直す」。familyMembers.replaceForCustomerと同じ方針
+   * (usecases/reports.tsのsaveDailyReportのコメント参照)。差分更新(元々ある行を維持しつつ
+   * 増減だけ反映する)にしないのは、編集でクーポンを外した場合にその行が残ってしまう事故を
+   * 構造的に起こせなくするため。
+   *
+   * 日報の作成/更新と同じトランザクション(scope)で呼ぶこと。片方だけ確定する状態を
+   * 作らないため(unitOfWork.ts参照)。
+   */
+  replaceForDailyReport(
+    tenantId: string,
+    dailyReportId: string,
+    inputs: NewCouponRedemptionInput[],
+    scope?: TransactionScope,
+  ): Promise<CouponRedemptionRecord[]>;
+  listByDailyReportId(tenantId: string, dailyReportId: string): Promise<CouponRedemptionRecord[]>;
+  /** 日報履歴一覧のようにN件まとめて表示する画面向け(1件ずつ引くN+1を避ける)。 */
+  listByDailyReportIds(tenantId: string, dailyReportIds: string[]): Promise<CouponRedemptionRecord[]>;
 }
 
 /**
@@ -499,7 +634,15 @@ export interface AccidentReportRepositoryPort {
 }
 
 /**
- * 領収書登録1件。GAS版processReceiptImagesの1画像分に相当。amount/storeNameは未入力ならnull。
+ * 領収書の請求区分。'customer_billable'=顧客に請求する、'company_expense'=会社が立て替える
+ * (doc/14 第4章)。DB(receipts_billing_type_check)と画面の両方でこの配列を使い回すことで、
+ * 許可値がズレることを防ぐ。
+ */
+export const RECEIPT_BILLING_TYPES = ['customer_billable', 'company_expense'] as const;
+export type ReceiptBillingType = (typeof RECEIPT_BILLING_TYPES)[number];
+
+/**
+ * 領収書登録1件。GAS版processReceiptImagesの1画像分に相当。amountYen/storeNameは未入力ならnull。
  */
 export interface ReceiptRecord {
   id: string;
@@ -507,12 +650,16 @@ export interface ReceiptRecord {
   staffId: string;
   customerId: string | null;
   receiptTimestamp: Date;
-  /** 正規化済みの金額文字列(normalizeAmount)。未入力ならnull。 */
-  amount: string | null;
+  /** 金額(円)。集計・請求用の整数。OCRが読めなかった/数値化できなかった場合はnull。 */
+  amountYen: number | null;
+  /** OCRが返した金額の生文字列。amountYenがnullでも参照用に残す。 */
+  amountRaw: string | null;
   storeName: string | null;
   handoffText: string | null;
   fileKey: string;
   contentType: string;
+  /** 請求区分(doc/14 第4章)。 */
+  billingType: ReceiptBillingType;
   /**
    * ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。
    * 領収書は追記しかしないため作成時刻。
@@ -527,14 +674,20 @@ export interface NewReceiptInput {
   receiptTimestamp: Date;
   /**
    * 重複登録検出用のキー(buildReceiptDedupeKeyの戻り値そのまま)。金額または店舗名が空で
-   * 重複判定の対象外ならnull。
+   * 重複判定の対象外ならnull。dedupe_keyはamountYenではなく、従来どおりnormalizeAmount()の
+   * 出力から作る(GAS版buildKeyと1文字も違えてはいけないため)。
    */
   dedupeKey: string | null;
-  amount: string | null;
+  /** 金額(円)。集計・請求用の整数。数値化できなかった場合はnull(amountRawに生値を残す)。 */
+  amountYen: number | null;
+  /** OCRが返した金額の生文字列。未入力ならnull。 */
+  amountRaw: string | null;
   storeName: string | null;
   handoffText: string | null;
   fileKey: string;
   contentType: string;
+  /** 請求区分(doc/14 第4章)。customer_billableの場合customerIdがnullだとDB制約で拒否される。 */
+  billingType: ReceiptBillingType;
 }
 
 export interface ReceiptRepositoryPort {

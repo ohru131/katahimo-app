@@ -1,5 +1,8 @@
+import { attendanceRowDataSchema } from '@katahimo/shared';
+import type { AttendanceColumnRow } from '../domain/attendance';
+import { toColumnRow } from '../domain/attendance';
 import { nextOutboxRetryDelayMs } from '../domain/mirror/retry';
-import { formatJstDateTime } from '../domain/reports/jstTime';
+import { formatJstDateTime, formatJstTimeOnly } from '../domain/reports/jstTime';
 import type { OutboxJobRecord, OutboxRepositoryPort } from '../ports/mirror';
 import type { MirrorSenderPort } from '../ports/mirrorSender';
 import type {
@@ -67,8 +70,10 @@ export async function processOutboxJob(
       await deps.sender.sendDailyReport({
         reportId: record.id,
         timestampJst: formatJstDateTime(record.occurredAt),
-        startTime: content.startTime,
-        endTime: content.endTime,
+        // doc/14 F項。started_at/ended_atは"HH:mm"では保存していないため、ミラー送信時に
+        // その場で整形する(未入力=nullは空文字にフォールバックし、GAS側の見え方を崩さない)。
+        startTime: record.startedAt ? formatJstTimeOnly(record.startedAt) : '',
+        endTime: record.endedAt ? formatJstTimeOnly(record.endedAt) : '',
         staffName: staffRecord?.name ?? '',
         customerId: record.customerId,
         customerName: customerRecord?.name ?? '',
@@ -96,7 +101,9 @@ export async function processOutboxJob(
         customerId: record.customerId,
         customerName: customerRecord?.name ?? '',
         targetName: content.targetName,
-        targetDob: content.targetDob,
+        // GAS側は'yyyy/MM/dd'の自由記述をそのまま受け取る列のため、元表記(targetDobRaw)を送る
+        // (targetDobDateへ変換してから書式を戻すような回り道はしない)。
+        targetDob: content.targetDobRaw,
         occurrenceTime: content.occurrenceTime,
         location: content.location,
         accidentContent: content.accidentContent,
@@ -127,7 +134,9 @@ export async function processOutboxJob(
         customerId: record.customerId ?? '',
         customerName: customerRecord?.name ?? '',
         receiptTimestampJst: formatJstDateTime(record.receiptTimestamp),
-        amount: record.amount ?? '',
+        // doc/14 A項。amountYenが取れればそれを文字列化し、取れなければOCRの生値(amountRaw)、
+        // それも無ければ空文字にフォールバックする(GAS版の「金額」列の見え方を崩さないため)。
+        amount: record.amountYen !== null ? String(record.amountYen) : (record.amountRaw ?? ''),
         storeName: record.storeName ?? '',
         handoffText: record.handoffText ?? '',
         imageDataUrl: `data:${record.contentType};base64,${bytesToBase64(imageBytes)}`,
@@ -139,16 +148,28 @@ export async function processOutboxJob(
       const record = await deps.attendanceDays.findById(tenantId, job.targetId);
       if (!record) return;
       const staffRecord = await deps.staff.findById(tenantId, record.staffId);
-      // jsonb列から読んだ値なので、文字列以外が混ざっていないかを念のため確認する。
-      // undefinedはAttendanceRowDataの任意項目として許容するが、それ以外の非文字列値は
-      // データ破損の疑いがあるため再試行しても直らない -> デッドレターに落とす。
+      // jsonb列は保存前にAPI境界(attendanceRowDataSchema)を通っているはずだが、古いデータ・
+      // 手動でのDB操作等で壊れている可能性は残るため、送信直前にもう一度形を確認する。
+      // 再試行しても直らないのでデッドレターに落とす(PermanentMirrorError)。
+      const parsed = attendanceRowDataSchema.safeParse(record.rowData);
+      if (!parsed.success) {
+        throw new PermanentMirrorError(`勤怠rowDataの形式が不正です: ${parsed.error.message}`);
+      }
+      // toColumnRow()は必ず文字列(またはundefined)を返すので、以前あった「文字列以外が
+      // 混ざっていないかを確認するループ」は不要になった。ただしMAX_VISITS/MAX_OFFICE_WORKを
+      // 超えるデータ(API側のチェックをすり抜けた場合)は例外を投げるので、ここでも
+      // 拾ってデッドレターに倒す(こちらも再試行では直らない)。
+      let columnRow: AttendanceColumnRow;
+      try {
+        columnRow = toColumnRow(parsed.data);
+      } catch (e) {
+        throw new PermanentMirrorError(
+          `勤怠rowDataを列記号形式に変換できません: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
       const values: Record<string, string> = {};
-      for (const [key, value] of Object.entries(record.rowData)) {
-        if (value === undefined) continue;
-        if (typeof value !== 'string') {
-          throw new PermanentMirrorError(`勤怠rowDataの値が文字列ではありません: ${key}`);
-        }
-        values[key] = value;
+      for (const [key, value] of Object.entries(columnRow)) {
+        if (value !== undefined) values[key] = value;
       }
       await deps.sender.sendAttendanceDay({
         staffName: staffRecord?.name ?? '',

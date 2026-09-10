@@ -57,6 +57,62 @@
       "when": 1789008925097,
       "tag": "0007_receipts_dedupe_key_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789046975350,
+      "tag": "0008_add_missing_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789047064497,
+      "tag": "0009_add_check_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789047412002,
+      "tag": "0010_updated_at_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789047897998,
+      "tag": "0011_receipt_amount_integer",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789049329867,
+      "tag": "0012_attendance_row_data_shape",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789051569940,
+      "tag": "0013_typed_dates_and_coordinates",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789052087097,
+      "tag": "0014_coupons",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1789055746545,
+      "tag": "0015_coupon_redemption_value_checks",
+      "breakpoints": true
     }
   ]
 }

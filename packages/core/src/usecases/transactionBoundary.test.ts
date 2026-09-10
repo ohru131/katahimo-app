@@ -12,6 +12,8 @@ import { saveAccidentReport, saveDailyReport } from './reports';
 import {
   FakeAccidentReportRepository,
   FakeAttendanceDayRepository,
+  FakeCouponRedemptionRepository,
+  FakeCouponRepository,
   FakeCustomerRepository,
   FakeDailyReportRepository,
   FakeMailer,
@@ -49,14 +51,19 @@ class FailingMirrorPort implements MirrorPort {
 describe('ドメインの書き込みとoutboxへのenqueueは同じトランザクションで確定する', () => {
   let dailyReports: FakeDailyReportRepository;
   let accidentReports: FakeAccidentReportRepository;
+  let couponRedemptions: FakeCouponRedemptionRepository;
+  let coupons: FakeCouponRepository;
   let outbox: FakeOutboxRepository;
   let deps: ReportDeps;
   let staffId: string;
   let customerId: string;
+  let couponId: string;
 
   beforeEach(async () => {
     dailyReports = new FakeDailyReportRepository();
     accidentReports = new FakeAccidentReportRepository();
+    couponRedemptions = new FakeCouponRedemptionRepository();
+    coupons = new FakeCouponRepository();
     outbox = new FakeOutboxRepository();
     const staff = new FakeStaffRepository();
     const customers = new FakeCustomerRepository();
@@ -78,15 +85,30 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
       name: '田中 一郎',
     });
     customerId = createdCustomer.id;
+    const createdCoupon = await coupons.create({
+      tenantId,
+      code: 'INTRO500',
+      name: '紹介キャンペーン 500円引き',
+      discountKind: 'amount',
+      discountAmountYen: 500,
+      discountPercent: null,
+      validFrom: null,
+      validTo: null,
+      active: true,
+      note: null,
+    });
+    couponId = createdCoupon.id;
 
     deps = {
       dailyReports,
       accidentReports,
       customers,
       staff,
+      coupons,
+      couponRedemptions,
       notifier: new FakeNotifierPort(),
       mirror: new FailingMirrorPort(),
-      unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, outbox]),
+      unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, couponRedemptions, outbox]),
     };
   });
 
@@ -106,6 +128,26 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
     ).rejects.toThrow('outboxへの書き込みに失敗しました');
 
     expect(await dailyReports.listByCustomer(tenantId, customerId, null, 10)).toEqual([]);
+  });
+
+  it('日報: enqueueが失敗したらクーポンの適用記録も残らない(片方だけ確定する状態を作らない)', async () => {
+    await expect(
+      saveDailyReport(deps, tenantId, {
+        staffId,
+        customerId,
+        startTime: '09:00',
+        endTime: '10:00',
+        inputText: 'メモ',
+        internalText: '社内',
+        customerText: '保護者向け',
+        riskRating: 1,
+        esRating: 2,
+        couponIds: [couponId],
+      }),
+    ).rejects.toThrow('outboxへの書き込みに失敗しました');
+
+    expect(await dailyReports.listByCustomer(tenantId, customerId, null, 10)).toEqual([]);
+    expect(couponRedemptions.listAllForTest(tenantId)).toEqual([]);
   });
 
   it('事故報告: enqueueが失敗したら事故報告の行も残らない', async () => {
@@ -205,7 +247,9 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
     };
 
     await expect(
-      saveAttendanceDay(attendanceDeps, tenantId, 'staff-1', '2026-08-30', { C: '訪問先A' }),
+      saveAttendanceDay(attendanceDeps, tenantId, 'staff-1', '2026-08-30', {
+        visits: [{ place: '訪問先A' }],
+      }),
     ).rejects.toThrow('outboxへの書き込みに失敗しました');
 
     expect(await attendanceDays.findByStaffAndDate(tenantId, 'staff-1', '2026-08-30')).toBeNull();

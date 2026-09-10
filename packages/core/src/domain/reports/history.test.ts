@@ -4,7 +4,8 @@ import type { AccidentReportContent } from './types';
 
 const baseContent: AccidentReportContent = {
   targetName: '太郎',
-  targetDob: '2020/01/01',
+  targetDobDate: '2020-01-01',
+  targetDobRaw: '2020/01/01',
   occurrenceTime: '10時頃',
   location: 'リビング',
   accidentContent: '転倒による打撲',
@@ -34,7 +35,8 @@ describe('buildAccidentHistoryInternalText', () => {
   it('空文字の項目は見出しごと省略する', () => {
     const empty: AccidentReportContent = {
       targetName: '',
-      targetDob: '',
+      targetDobDate: null,
+      targetDobRaw: '',
       occurrenceTime: '',
       location: '',
       accidentContent: '',

@@ -3,6 +3,7 @@ import type { Container } from './container';
 import { createCrossSiteWriteGuard } from './csrf';
 import { createAttendanceRoutes } from './routes/attendance';
 import { createAuthRoutes } from './routes/auth';
+import { createCouponRoutes } from './routes/coupons';
 import { createCustomerRoutes } from './routes/customers';
 import { createReceiptRoutes } from './routes/receipts';
 import { createReportRoutes } from './routes/reports';
@@ -65,6 +66,7 @@ export function createApp(container: Container, options: CreateAppOptions) {
   app.use('/api/*', requirePasswordChangeGuard(container));
 
   app.route('/api/auth', createAuthRoutes(container, options.secureCookies));
+  app.route('/api/coupons', createCouponRoutes(container));
   app.route('/api/customers', createCustomerRoutes(container));
   app.route('/api/attendance', createAttendanceRoutes(container));
   app.route('/api/reports', createReportRoutes(container));

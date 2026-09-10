@@ -7,7 +7,7 @@ import { installFetchShim } from './fetchShim';
 import { destroyBrowserStorage } from './ports/browserStoragePort';
 import type { DemoMail } from './ports/demoMailerPort';
 import type { DemoNotification } from './ports/demoNotifierPort';
-import { DEMO_FIGURES, DEMO_OFFICE, DEMO_STAFF, DEMO_TENANT } from './seed/figures';
+import { DEMO_FIGURES, DEMO_OFFICE, DEMO_TENANT } from './seed/figures';
 import { type SeedProgress, seedDemoData } from './seed/seedDemoData';
 
 export type { DemoMail } from './ports/demoMailerPort';

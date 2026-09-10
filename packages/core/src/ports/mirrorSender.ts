@@ -10,6 +10,13 @@
  * Bridge.jsへPOSTする)。GAS_BRIDGE_URL/SECRET未設定時はNoopMirrorSenderPort(何もしない)。
  */
 
+/**
+ * 【doc/14 4.1章】適用済みクーポン(coupon_redemptions)は含めない。ReceiptMirrorPayloadの
+ * billingTypeと同じ扱い: gas-childcare-visit-appは稼働中の別システムで、GAS側「日報」シートに
+ * 列を増やすとデプロイが必要になるため、今回は既存列の範囲に収める方針にした(含めるだけ足して
+ * GAS側が無視する形にはしない。「送ったのに反映されない列がある」状態を作らないため)。
+ * クーポンの適用記録はkatahimo-app側のDB(coupons/coupon_redemptions)にのみ持つ。
+ */
 export interface DailyReportMirrorPayload {
   /** GAS側「日報」シートに追加する非表示の追跡列(KatahimoReportId)。既存行があれば上書き、無ければ追記する。 */
   reportId: string;
@@ -47,12 +54,19 @@ export interface AccidentReportMirrorPayload {
   reportType: string;
 }
 
+/**
+ * 【doc/14 4章】billingType(請求区分)は含めない。gas-childcare-visit-appは稼働中の別システムで、
+ * GAS側シートに列を増やすとデプロイが必要になるため、今回は既存列の範囲に収める方針にした
+ * (含めるだけ足してGAS側が無視する形にはしない。「送ったのに反映されない列がある」状態を
+ * 作らないため)。請求区分はkatahimo-app側のDB(receipts.billing_type)にのみ持つ。
+ */
 export interface ReceiptMirrorPayload {
   staffName: string;
   customerId: string;
   customerName: string;
   /** 'yyyy/MM/dd HH:mm:ss'(JST)。OCR取得日時 or 登録時刻(GAS版processReceiptImagesと同じ)。 */
   receiptTimestampJst: string;
+  /** amountYenを整形した文字列。数値化できなければamountRaw、それも無ければ空文字(doc/14 A項)。 */
   amount: string;
   storeName: string;
   handoffText: string;

@@ -23,6 +23,11 @@ import type {
   AttendanceDayRecord,
   AttendanceDayRepositoryPort,
   ConsumeResetCodeResult,
+  CouponPatchInput,
+  CouponRecord,
+  CouponRedemptionRecord,
+  CouponRedemptionRepositoryPort,
+  CouponRepositoryPort,
   CustomerPatchInput,
   CustomerProfileFields,
   CustomerRecord,
@@ -33,6 +38,8 @@ import type {
   FamilyMemberRepositoryPort,
   IssuePasswordResetCodeInput,
   NewAccidentReportInput,
+  NewCouponInput,
+  NewCouponRedemptionInput,
   NewCustomerInput,
   NewDailyReportInput,
   NewFamilyMemberInput,
@@ -332,7 +339,9 @@ const EMPTY_PROFILE_FIELDS: CustomerProfileFields = {
   address2: null,
   address2StartDate: null,
   address2EndDate: null,
-  latLng: null,
+  lat: null,
+  lng: null,
+  latLngRaw: null,
   memberType: null,
   memberStatus: null,
   paymentMethod: null,
@@ -434,7 +443,8 @@ export class FakeFamilyMemberRepository implements FamilyMemberRepositoryPort {
       tenantId: input.tenantId,
       customerId: input.customerId,
       name: input.name,
-      dob: input.dob,
+      dobDate: input.dobDate,
+      dobRaw: input.dobRaw,
       info: input.info,
     };
   }
@@ -718,11 +728,13 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
       staffId: input.staffId,
       customerId: input.customerId,
       receiptTimestamp: input.receiptTimestamp,
-      amount: input.amount,
+      amountYen: input.amountYen,
+      amountRaw: input.amountRaw,
       storeName: input.storeName,
       handoffText: input.handoffText,
       fileKey: input.fileKey,
       contentType: input.contentType,
+      billingType: input.billingType,
       createdAt: new Date(),
     };
     this.rows.push({ record, dedupeKey: input.dedupeKey });
@@ -741,6 +753,11 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
         .filter((r) => r.record.tenantId === tenantId && r.dedupeKey && keys.has(r.dedupeKey))
         .map((r) => r.dedupeKey as string),
     );
+  }
+
+  /** 登録順の全件を返す(billingType/amountYen等、createに渡した値の検証に使う)。 */
+  listAllForTest(): ReceiptRecord[] {
+    return this.rows.map((r) => r.record);
   }
 
   snapshotForTest(): unknown {
@@ -952,6 +969,97 @@ export class FakePasswordResetCodeRepository
   /** テスト専用: 有効なコードの期限を過去にずらす。 */
   expireAllForTest(): void {
     for (const row of this.rows) row.expiresAt = new Date(Date.now() - 1000);
+  }
+
+  snapshotForTest(): unknown {
+    return snapshotRows(this.rows);
+  }
+
+  restoreForTest(snapshot: unknown): void {
+    restoreRows(this.rows, snapshot);
+  }
+}
+
+export class FakeCouponRepository implements CouponRepositoryPort {
+  private readonly rows: CouponRecord[] = [];
+  private seq = 0;
+
+  async listAll(tenantId: string): Promise<CouponRecord[]> {
+    return this.rows.filter((r) => r.tenantId === tenantId).map((r) => ({ ...r }));
+  }
+
+  async findById(tenantId: string, couponId: string): Promise<CouponRecord | null> {
+    const row = this.rows.find((r) => r.tenantId === tenantId && r.id === couponId);
+    return row ? { ...row } : null;
+  }
+
+  async create(input: NewCouponInput): Promise<CouponRecord> {
+    const record: CouponRecord = { id: `coupon-${++this.seq}`, ...input };
+    this.rows.push(record);
+    return { ...record };
+  }
+
+  async update(tenantId: string, couponId: string, patch: CouponPatchInput): Promise<CouponRecord | null> {
+    const row = this.rows.find((r) => r.tenantId === tenantId && r.id === couponId);
+    if (!row) return null;
+    // 部分更新(PATCH)なので、キーが存在してもundefinedの項目は「変更しない」を意味する
+    // (DrizzleCouponRepository.update()のtoPatchValuesと同じ扱い。単純なObject.assignだと
+    // undefinedで現在値を上書きしてしまう)。
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== undefined) (row as unknown as Record<string, unknown>)[key] = value;
+    }
+    return { ...row };
+  }
+}
+
+export class FakeCouponRedemptionRepository
+  implements CouponRedemptionRepositoryPort, FakeTransactionParticipant
+{
+  private readonly rows: CouponRedemptionRecord[] = [];
+  private seq = 0;
+
+  async replaceForDailyReport(
+    tenantId: string,
+    dailyReportId: string,
+    inputs: NewCouponRedemptionInput[],
+  ): Promise<CouponRedemptionRecord[]> {
+    for (let i = this.rows.length - 1; i >= 0; i -= 1) {
+      const row = this.rows[i];
+      if (row && row.tenantId === tenantId && row.dailyReportId === dailyReportId) this.rows.splice(i, 1);
+    }
+    const created = inputs.map(
+      (input): CouponRedemptionRecord => ({
+        id: `coupon-redemption-${++this.seq}`,
+        tenantId: input.tenantId,
+        dailyReportId: input.dailyReportId,
+        couponId: input.couponId,
+        appliedAt: new Date(),
+        discountKind: input.discountKind,
+        discountAmountYen: input.discountAmountYen,
+        discountPercent: input.discountPercent,
+        note: input.note ?? null,
+      }),
+    );
+    this.rows.push(...created);
+    return created.map((r) => ({ ...r }));
+  }
+
+  async listByDailyReportId(tenantId: string, dailyReportId: string): Promise<CouponRedemptionRecord[]> {
+    return this.rows
+      .filter((r) => r.tenantId === tenantId && r.dailyReportId === dailyReportId)
+      .map((r) => ({ ...r }));
+  }
+
+  async listByDailyReportIds(tenantId: string, dailyReportIds: string[]): Promise<CouponRedemptionRecord[]> {
+    const idSet = new Set(dailyReportIds);
+    return this.rows
+      .filter((r) => r.tenantId === tenantId && idSet.has(r.dailyReportId))
+      .map((r) => ({ ...r }));
+  }
+
+  /** テスト専用: dailyReportIdを介さず、テナント内の全適用記録を見る(トランザクション境界の検証用)。 */
+  listAllForTest(tenantId: string): CouponRedemptionRecord[] {
+    return this.rows.filter((r) => r.tenantId === tenantId).map((r) => ({ ...r }));
   }
 
   snapshotForTest(): unknown {

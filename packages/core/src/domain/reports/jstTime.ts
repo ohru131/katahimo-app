@@ -39,6 +39,36 @@ export function formatJstDateOnly(date: Date): string {
 }
 
 /**
+ * 'YYYY-MM-DD'(JST)。parseJstDateTimeが受け付ける区切り("-")に合わせた日付キー。
+ * Web側のformatDateKey(toLocaleDateString('sv-SE'))と同じ基準日をバックエンドでも
+ * 作れるようにする(doc/14 F項。reportDate省略時のフォールバック等に使う)。
+ */
+export function formatJstDateKey(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+/**
+ * 'HH:mm'(JST)。daily_reports.started_at/ended_at(timestamptz)を、GAS側スプレッドシートの
+ * "HH:mm"表記へ戻すためのミラー送信専用フォーマッタ(doc/14 F項。保存時は"HH:mm"へ整形し直さない)。
+ * 未入力(null)の場合は呼び出し側で空文字にフォールバックすること。
+ */
+export function formatJstTimeOnly(date: Date): string {
+  const parts = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('hour')}:${get('minute')}`;
+}
+
+/**
  * 'yyyy/MM/dd HH:mm[:ss]' 形式(JST壁時計時刻)の文字列をDateに変換する。
  * 領収書日時(OCR抽出値・保存時刻フォールバック)のパース専用。形式が想定外の場合は
  * 現在時刻にフォールバックする(領収書登録そのものを失敗させないため)。

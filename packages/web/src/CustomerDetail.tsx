@@ -104,14 +104,18 @@ function ContactField({
 function AddressField({
   label,
   value,
-  latLng,
+  lat,
+  lng,
 }: {
   label: string;
   value: string | null | undefined;
-  latLng: string | null | undefined;
+  lat: number | null | undefined;
+  lng: number | null | undefined;
 }) {
   if (!value) return null;
-  const mapQuery = latLng?.trim() ? latLng.trim() : value;
+  // doc/14 G項でlat/lngが数値になった。数値として分かっていれば住所文字列より優先して
+  // クエリに使う(GAS版と同じ、住所文字列よりも正確なため)。
+  const mapQuery = lat != null && lng != null ? `${lat},${lng}` : value;
   const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
   return (
     <div className="min-w-0">
@@ -196,11 +200,23 @@ export function CustomerDetail({ customerId, onClose }: { customerId: string; on
               <section>
                 <h3 className="font-bold text-gray-700 text-sm mb-2">住所・駐車場</h3>
                 <dl className="grid grid-cols-2 gap-3">
-                  <AddressField label="住所" value={query.data.addressDetail} latLng={query.data.latLng} />
+                  <AddressField
+                    label="住所"
+                    value={query.data.addressDetail}
+                    lat={query.data.lat}
+                    lng={query.data.lng}
+                  />
                   <Field label="住所2" value={query.data.address2} />
                   <Field label="駐車場" value={query.data.parkingArea} />
                   <Field label="駐車場詳細" value={query.data.parkingDetail} />
-                  <Field label="緯度経度" value={query.data.latLng} />
+                  <Field
+                    label="緯度経度"
+                    value={
+                      query.data.lat != null && query.data.lng != null
+                        ? `${query.data.lat}, ${query.data.lng}`
+                        : query.data.latLngRaw
+                    }
+                  />
                 </dl>
               </section>
 
@@ -245,7 +261,7 @@ export function CustomerDetail({ customerId, onClose }: { customerId: string; on
                   {query.data.familyMembers.map((m) => (
                     <li key={m.id} className="text-sm text-gray-800 bg-gray-50 rounded-lg p-2">
                       {m.name}
-                      {m.dob && `(${m.dob})`}
+                      {(m.dobRaw ?? m.dobDate) && `(${m.dobRaw ?? m.dobDate})`}
                       {m.info && ` - ${m.info}`}
                     </li>
                   ))}

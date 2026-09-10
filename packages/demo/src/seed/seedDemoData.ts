@@ -1,19 +1,16 @@
 import type { Container } from '@katahimo/api';
 import {
+  createCoupon,
   createCustomer,
   registerStaff,
   saveAccidentReport,
   saveAttendanceDay,
   saveDailyReport,
 } from '@katahimo/core';
+import type { AttendanceRowData } from '@katahimo/shared';
+import { MAX_MOVE_LEGS } from '@katahimo/shared';
 import { DEMO_FIGURES, DEMO_OFFICE, DEMO_STAFF, DEMO_TENANT } from './figures';
-import {
-  planVisitsForDate,
-  recentBusinessDates,
-  toJstDateIso,
-  upcomingWeekDates,
-  VISIT_SLOTS,
-} from './visitPlan';
+import { planVisitsForDate, recentBusinessDates, toJstDateIso, upcomingWeekDates } from './visitPlan';
 
 /**
  * 訪問履歴を作る期間(日)。
@@ -42,6 +39,7 @@ export interface SeededDemo {
   addressLatLng: Map<string, { lat: number; lng: number }>;
 }
 
+/** 市区町村と番地以下を、顧客一覧の表示と同じ並びで1本の住所文字列にする。 */
 function fullAddress(index: number): string {
   const figure = DEMO_FIGURES[index];
   if (!figure) throw new Error(`存在しないデモ世帯です: index=${index}`);
@@ -103,6 +101,31 @@ export async function seedDemoData(
   const adminStaffId = staffIds[0];
   if (!adminStaffId) throw new Error('デモ用スタッフの作成に失敗しました');
   const adminStaffName = DEMO_STAFF[0].name;
+
+  // 割引クーポン(doc/14 4.1章)。デモを開いた人が「クーポン管理」画面と、日報タブの
+  // クーポン選択の両方をすぐ触れるよう、金額引き/率引き・無期限/有効期間ありを1つずつ混ぜる。
+  onProgress({ message: 'クーポンを登録しています…', ratio: 0.1 });
+  const welcomeCoupon = await createCoupon(container, tenant.id, {
+    code: 'WELCOME500',
+    name: '紹介キャンペーン 500円引き',
+    discountKind: 'amount',
+    discountAmountYen: 500,
+    note: 'ご友人・ご家族からのご紹介で初回のご利用に適用',
+  });
+  if (!welcomeCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${welcomeCoupon.reason})`);
+
+  // 有効期間ありのクーポンも1件混ぜる。訪問履歴はHISTORY_DAYS(42日)ぶん遡って作るため、
+  // それより広い前後60日を有効期間にして、期間外エラーでシードそのものが失敗しないようにする。
+  const springCoupon = await createCoupon(container, tenant.id, {
+    code: 'SPRING10',
+    name: '春のキャンペーン 10%引き',
+    discountKind: 'percent',
+    discountPercent: 10,
+    validFrom: toJstDateIso(new Date(today.getTime() - 60 * 24 * 60 * 60 * 1000)),
+    validTo: toJstDateIso(new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000)),
+    note: '期間限定キャンペーン',
+  });
+  if (!springCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${springCoupon.reason})`);
 
   const customerIdByName = new Map<string, string>();
   const addressLatLng = new Map<string, { lat: number; lng: number }>();
@@ -179,6 +202,10 @@ export async function seedDemoData(
         customerText: `本日は${visit.start}〜${visit.end}でご訪問しました。${note}`,
         riskRating: (visitCounter % 5) + 1,
         esRating: (visitCounter % 4) + 2,
+        // 最初の1件にだけ適用しておく(doc/14 4.1章の適用記録表示が、デモでは常に空という
+        // 状態にならないように)。2件とも渡すことで「1回の訪問に複数のクーポンを適用できる」
+        // ことも合わせて示す。
+        couponIds: visitCounter === 1 ? [welcomeCoupon.couponId, springCoupon.couponId] : undefined,
       });
 
       if (visitCounter % ACCIDENT_EVERY_N_VISITS === 0) {
@@ -235,42 +262,54 @@ export async function seedDemoData(
   return { tenantId: tenant.id, customerIdByName, addressLatLng };
 }
 
-/** 出勤簿1日分の入力列。列記号の意味は AttendanceRowData のコメント参照。 */
+/** #1・#2訪問の「あとの移動」項目(MAX_MOVE_LEGS件目まで)。indexごとに値を変えて、月次の集計に多少の幅を持たせている。 */
+const MOVE_AFTER_VISIT: ReadonlyArray<{ plannedMoveMin: number; distanceKm: number }> = [
+  { plannedMoveMin: 35, distanceKm: 12.4 },
+  { plannedMoveMin: 30, distanceKm: 9.8 },
+];
+
+/**
+ * 出勤簿1日分。doc/14 B項の段階1で永続形式(row_data)が意味のあるキーの配列(visits/officeWork)
+ * になったのに合わせている(以前は列記号C/D/E…をキーにしたオブジェクトだった)。
+ *
+ * visitsは「計画された件数ぶんだけ」作る。visitPlan.tsのvisitCountForDateは土曜2件・日曜1件を
+ * 返すため、ここで常に3件分の枠を作ってしまうと、予定の無い枠にVISIT_SLOTS[0]の時刻だけが
+ * 入った「幻の訪問」ができる(placeが空なのにstart/endだけ埋まり、
+ * buildScheduleEventsFromRowDataが先頭訪問の時刻でイベントを出してしまう)。
+ *
+ * MAX_MOVE_LEGS件目より後の訪問(3件目)にはweatherAfter/plannedMoveMin/distanceKmを付けない
+ * (attendanceRowDataSchema/columnRow.tsのコメント参照。元のスプレッドシートにも#3訪問の
+ * 「あとの移動」を書く列は無く、付けるとtoColumnRowが例外を投げる)。
+ */
 function buildAttendanceRow(
   visits: ReturnType<typeof planVisitsForDate>,
   dateIndex: number,
-): Record<string, string> {
+): AttendanceRowData {
   const nameOf = (i: number): string => {
     const visit = visits[i];
     if (!visit) return '';
     const figure = DEMO_FIGURES[visit.figureIndex];
     return figure ? `${figure.familyName} ${figure.givenName}` : '';
   };
-  const slot = (i: number): { start: string; end: string } => visits[i] ?? VISIT_SLOTS[0];
   const weather = (i: number): string => WEATHER[(dateIndex + i) % WEATHER.length] ?? '晴れ';
+  const note = dateIndex % 9 === 0 ? '道路工事による渋滞あり' : undefined;
 
   return {
-    C: nameOf(0),
-    D: slot(0).start,
-    E: slot(0).end,
-    H: '35',
-    I: weather(0),
-    L: nameOf(1),
-    M: slot(1).start,
-    N: slot(1).end,
-    Q: '30',
-    R: weather(1),
-    U: nameOf(2),
-    V: slot(2).start,
-    W: slot(2).end,
-    X: '記録作成',
-    Y: '17:15',
-    Z: '17:45',
-    AG: '12.4',
-    AH: '9.8',
-    AI: '7.2',
-    AJ: '15.1',
-    AO: dateIndex % 9 === 0 ? '道路工事による渋滞あり' : '',
+    visits: visits.map((visit, i) => {
+      const move = i < MAX_MOVE_LEGS ? MOVE_AFTER_VISIT[i] : undefined;
+      return {
+        place: nameOf(i),
+        start: visit.start,
+        end: visit.end,
+        ...(move
+          ? { weatherAfter: weather(i), plannedMoveMin: move.plannedMoveMin, distanceKm: move.distanceKm }
+          : {}),
+      };
+    }),
+    officeWork: [{ name: '記録作成', start: '17:15', end: '17:45' }],
+    commuteDistanceKm: 7.2,
+    returnDistanceKm: 15.1,
+    ...(note ? { note } : {}),
   };
 }
 

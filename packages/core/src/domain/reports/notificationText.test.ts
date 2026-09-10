@@ -39,7 +39,8 @@ describe('buildAccidentReportNotificationText', () => {
       reportType: '事故報告',
       content: {
         targetName: '太郎',
-        targetDob: '2020/01/01',
+        targetDobDate: '2020-01-01',
+        targetDobRaw: '2020/01/01',
         occurrenceTime: '10時頃',
         location: 'リビング',
         accidentContent: '転倒',

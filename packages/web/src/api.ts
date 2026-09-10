@@ -1,3 +1,12 @@
+import type {
+  AttendanceRowData,
+  CouponCreateRequest,
+  CouponDiscountKind,
+  CouponUpdateRequest,
+} from '@katahimo/shared';
+
+export type { AttendanceRowData, CouponCreateRequest, CouponDiscountKind, CouponUpdateRequest };
+
 export interface StaffView {
   staffId?: string;
   id?: string;
@@ -19,7 +28,10 @@ export interface CustomerView {
 export interface FamilyMemberView {
   id: string;
   name: string;
-  dob: string | null;
+  /** 'YYYY-MM-DD'。解析できた場合のみ(doc/14 F項)。 */
+  dobDate: string | null;
+  /** 生年月日の元表記。dobDateの解析成否によらず常に入る。 */
+  dobRaw: string | null;
   info: string | null;
 }
 
@@ -44,7 +56,10 @@ export interface CustomerDetailView {
   address2: string | null;
   address2StartDate: string | null;
   address2EndDate: string | null;
-  latLng: string | null;
+  /** 緯度・経度(doc/14 G項)。解析できた場合のみ数値、解析できない場合はlatLngRawだけが入る。 */
+  lat: number | null;
+  lng: number | null;
+  latLngRaw: string | null;
   memberType: string | null;
   memberStatus: string | null;
   paymentMethod: string | null;
@@ -319,35 +334,6 @@ export async function fetchCustomerDetail(customerId: string): Promise<CustomerD
   return body.customer;
 }
 
-/** 出勤簿テンプレートの入力列(PastSchedule.jsのPAST_SCHEDULE_INPUT_COLUMNSと同じ列記号)。 */
-export interface AttendanceRowData {
-  C?: string;
-  D?: string;
-  E?: string;
-  H?: string;
-  I?: string;
-  L?: string;
-  M?: string;
-  N?: string;
-  Q?: string;
-  R?: string;
-  U?: string;
-  V?: string;
-  W?: string;
-  X?: string;
-  Y?: string;
-  Z?: string;
-  AA?: string;
-  AB?: string;
-  AC?: string;
-  AG?: string;
-  AH?: string;
-  AI?: string;
-  AJ?: string;
-  AN?: string;
-  AO?: string;
-}
-
 export interface AttendanceDayDerived {
   leg1MoveStart: string;
   leg1MoveEnd: string;
@@ -430,9 +416,20 @@ export async function fetchAttendanceMonth(
 
 export type ScheduleEventType = 'CUSTOMER APPOINTMENT' | 'OFFICE WORK';
 
+/**
+ * どの枠のイベントかを、配列の種類と添字で表す。doc/14 B項の段階1で訪問・事務作業が固定5枠
+ * (slot1〜3, office1〜2)から配列になったのに合わせ、'slot1'のような固定キーではなく
+ * { kind, index } にした(packages/core/src/domain/attendance/scheduleEvents.tsのScheduleEventと
+ * 同じ形。@katahimo/coreはwebの依存に入っていないため、ここに複製している)。
+ */
+export interface ScheduleEventSlot {
+  kind: 'visit' | 'office';
+  index: number;
+}
+
 export interface ScheduleEvent {
   date: string;
-  slotKey: 'slot1' | 'slot2' | 'slot3' | 'office1' | 'office2';
+  slot: ScheduleEventSlot;
   title: string;
   eventType: ScheduleEventType;
   start: string;
@@ -449,6 +446,89 @@ export async function fetchAttendanceWeekEvents(
   const res = await fetch(`/api/attendance/week?${params.toString()}`, { credentials: 'include' });
   const body = await parseJsonOrThrow<{ events: ScheduleEvent[] }>(res);
   return body.events;
+}
+
+// ── 割引クーポン(doc/14 4.1章。日報画面の選択UIと、管理者向けクーポン管理画面の両方で使う) ──
+// リクエストの形は@katahimo/sharedのzodスキーマ(CouponCreateRequest/CouponUpdateRequest、
+// ファイル冒頭でimport済み)をそのまま使う。web側で同じ形を再定義すると、DBのCHECK制約に
+// 合わせた値域(割引率1〜100等)の二重管理になってしまうため。
+
+/** 日報画面の「クーポンを選ぶ」セレクタ用の1件(GET /api/coupons)。core CouponSelectionViewと同じ形。 */
+export interface CouponSelectionView {
+  id: string;
+  code: string;
+  name: string;
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+}
+
+/** 管理者のクーポン管理画面用の1件(GET /api/coupons/admin)。廃止済み(active=false)も含む。 */
+export interface CouponView {
+  id: string;
+  code: string;
+  name: string;
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+  /** 有効期間の下限('YYYY-MM-DD')。nullは下限なし。 */
+  validFrom: string | null;
+  /** 有効期間の上限('YYYY-MM-DD')。nullは無期限。 */
+  validTo: string | null;
+  /** false=廃止済み。廃止しても行は消さない(doc/14 4.1章)ので一覧には引き続き出る。 */
+  active: boolean;
+  note: string | null;
+}
+
+/** 日報1件に適用済みのクーポン1件(保存結果・履歴表示で使う)。core DailyReportCouponViewと同じ形。 */
+export interface DailyReportCouponView {
+  couponId: string;
+  code: string;
+  name: string;
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+}
+
+/**
+ * 日報画面のクーポン選択用一覧。active かつ`date`('YYYY-MM-DD')の時点で有効なものだけが返る
+ * (doc/14 4.1章)。dateは日報の対象日を渡すこと(有効期間の判定が日付依存のため)。
+ */
+export async function fetchCouponsForSelection(date: string): Promise<CouponSelectionView[]> {
+  const res = await fetch(`/api/coupons?date=${encodeURIComponent(date)}`, { credentials: 'include' });
+  const body = await parseJsonOrThrow<{ coupons: CouponSelectionView[] }>(res);
+  return body.coupons;
+}
+
+/** 管理者のクーポン管理画面用。廃止済みも含む全件。 */
+export async function fetchCouponsForAdmin(): Promise<CouponView[]> {
+  const res = await fetch('/api/coupons/admin', { credentials: 'include' });
+  const body = await parseJsonOrThrow<{ coupons: CouponView[] }>(res);
+  return body.coupons;
+}
+
+/** クーポンを登録する。 */
+export async function createCoupon(input: CouponCreateRequest): Promise<void> {
+  const res = await fetch('/api/coupons/admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'クーポンの登録に失敗しました');
+}
+
+/** クーポンを部分更新する。有効/廃止の切り替え(active)もここから行う。 */
+export async function updateCoupon(couponId: string, patch: CouponUpdateRequest): Promise<void> {
+  const res = await fetch(`/api/coupons/admin/${encodeURIComponent(couponId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(patch),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'クーポンの更新に失敗しました');
 }
 
 // ── 日報/事故報告/活動記録/領収書登録(gas-childcare-visit-appの訪問先カード内モーダルに対応) ──
@@ -515,6 +595,8 @@ export interface SaveDailyReportInput {
   customerText: string;
   riskRating: number | null;
   esRating: number | null;
+  /** 適用する割引クーポンのID配列(doc/14 4.1章)。省略/空配列は「クーポン無し」。 */
+  couponIds?: string[];
 }
 
 export interface DailyReportView {
@@ -524,6 +606,8 @@ export interface DailyReportView {
   customerId: string;
   riskRating: number | null;
   esRating: number | null;
+  /** この日報に適用された割引クーポン(doc/14 4.1章)。 */
+  coupons: DailyReportCouponView[];
 }
 
 /** 「訪問完了」通知のみを送信する(DB書き込みなし)。GAS版sendVisitComplete相当。 */
@@ -617,11 +701,16 @@ export async function fetchCustomerHistory(customerId: string, before?: string):
   return body.items;
 }
 
+/** 領収書の請求区分。'customer_billable'=顧客に請求する、'company_expense'=会社が立て替える(doc/14 第4章)。 */
+export type ReceiptBillingType = 'customer_billable' | 'company_expense';
+
 export interface ReceiptImageUpload {
   data: string;
   amount?: string | number | null;
   storeName?: string | null;
   receiptDate?: string | null;
+  /** 未指定ならAPI側でcompany_expense扱いになる(取りこぼしが顧客請求に転ばないための既定)。 */
+  billingType?: ReceiptBillingType;
 }
 
 export interface UploadReceiptsInput {

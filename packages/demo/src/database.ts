@@ -31,6 +31,10 @@ const DATA_DIR = 'katahimo-demo';
  */
 const LEDGER_TABLE = 'demo_applied_migrations';
 
+/**
+ * テーブルが存在するかを見る。`to_regclass` は無ければ例外ではなくNULLを返すので、
+ * 「まだ作っていない」状態を分岐に使える。
+ */
 async function relationExists(client: PGlite, qualifiedName: string): Promise<boolean> {
   const { rows } = await client.query<{ exists: boolean }>('SELECT to_regclass($1) IS NOT NULL AS exists;', [
     qualifiedName,
@@ -61,10 +65,30 @@ export interface DemoMigration {
  * isFresh=falseになりシードが走らない(0005が既に台帳にあるため作り直し対象と
  * 判定されない)。0006も列挙しておけば、その次回起動で0006が未適用と分かり
  * 作り直し+シードのやり直しに入れる。
+ *
+ * 0011〜0013(doc/14 の改修)は0005/0006と理由が違う点に注意: マイグレーションSQL自体
+ * (packages/db/drizzle/0011〜0013_*.sql)は既存行をDROP COLUMNの前にamount_raw/amount_yen・
+ * visits/officeWork・dob_date/dob_raw等へ移し替えるDML(UPDATE)を含んでおり、本番の
+ * PostgreSQLに増分で当てても値は失われない(CodeRabbit指摘対応)。
+ *
+ * それでもここに残しているのは、デモ側の事情のため: packages/demo/src/seed/seedDemoData.ts
+ * が作るシードデータ自体、0011〜0013より前は列記号形式(row_data)や結合済みのlatLng文字列など
+ * 「移行前の表し方」で書かれていたが、doc/14の改修に合わせてシード側も新しい表し方
+ * (visits/officeWorkの配列、dob文字列を渡すとparseDateOnly経由でdob_date/dob_rawに分かれる、
+ * 等)で書き直した。つまり「移行前の形で入っている架空のシードデータ」は元々デモにしか
+ * 存在せず、増分適用で救うべき実データがそもそも無い。中途半端に新旧が混ざった見せ方に
+ * なるくらいなら、既にデモを開いたことがある訪問者のIndexedDBも丸ごと作り直して
+ * 新しいシードを入れ直す方がシンプルで良い、という判断。
+ * - 0011: receipts.amount(text) → amount_yen(integer)/amount_raw(text)
+ * - 0012: attendance_days.row_data のキーが列記号(C/D/E…)から visits/officeWork の配列に変わる
+ * - 0013: dob / target_dob / start_time / end_time / lat_lng を落として型のある列に置き換える
  */
 export const REBUILD_REQUIRED_MIGRATIONS: readonly string[] = [
   '0005_drop_field_encryption',
   '0006_plaintext_columns',
+  '0011_receipt_amount_integer',
+  '0012_attendance_row_data_shape',
+  '0013_typed_dates_and_coordinates',
 ];
 
 /** 適用済みマイグレーションの台帳(LEDGER_TABLE)から、タグの集合を読み出す。 */

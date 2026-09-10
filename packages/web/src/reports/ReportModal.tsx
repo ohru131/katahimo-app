@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
-import type { ReceiptImageUpload } from '../api';
+import { useEffect, useRef, useState } from 'react';
+import type { ReceiptBillingType, ReceiptImageUpload } from '../api';
 import {
   extractReceiptOcr,
+  fetchCouponsForSelection,
   fetchCustomerDetail,
   generateAccidentReportDraft,
   generateDailyReportDraft,
@@ -214,6 +215,12 @@ interface ReceiptImageState {
   ocrLoading: boolean;
   /** OCR失敗時のエラーメッセージ(表示用)。成功時・未実行時はnull。 */
   ocrError: string | null;
+  /**
+   * 請求区分(doc/14 第4章)。領収書1枚ごとに選べる。既定は'company_expense'
+   * (取りこぼしが「うっかり顧客に請求してしまう」向きに転ばないようにするため。
+   * DB側のデフォルトと同じ理由)。
+   */
+  billingType: ReceiptBillingType;
 }
 
 /**
@@ -381,6 +388,30 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [dailySavedId, setDailySavedId] = useState<string | null>(null);
   const [dailySavedSnapshot, setDailySavedSnapshot] = useState<string | null>(null);
 
+  // ── 適用クーポン(doc/14 4.1章。日報タブのみ) ──
+  // 有効期間の判定が対象日('YYYY-MM-DD')に依存するため、queryKeyに訪問日を含める。
+  // 日付を変えるとreact-queryが自動的に取り直すので、「前の日の一覧が出たまま」を防げる。
+  const dateKey = formatDateKey(visitDate);
+  const couponsQuery = useQuery({
+    queryKey: ['coupons', dateKey],
+    queryFn: () => fetchCouponsForSelection(dateKey),
+  });
+  const [selectedCouponIds, setSelectedCouponIds] = useState<string[]>([]);
+  // 訪問日を変えて一覧が入れ替わったとき、選択済みだったが新しい一覧には無くなった
+  // クーポン(=対象日には有効でなくなったもの)は選択から外す。外さないと、前日には
+  // 有効だったクーポンが選ばれたまま保存されようとしてしまう(保存自体はサーバー側の検証で
+  // 弾かれるが、画面上は選択されたままに見えて分かりにくい)。
+  useEffect(() => {
+    if (!couponsQuery.data) return;
+    const validIds = new Set(couponsQuery.data.map((c) => c.id));
+    setSelectedCouponIds((prev) => prev.filter((id) => validIds.has(id)));
+  }, [couponsQuery.data]);
+  const toggleCoupon = (couponId: string) => {
+    setSelectedCouponIds((prev) =>
+      prev.includes(couponId) ? prev.filter((id) => id !== couponId) : [...prev, couponId],
+    );
+  };
+
   /** GAS版copyToClipboard('customerResult')と同じ役割。 */
   const handleCopyCustomerText = async () => {
     try {
@@ -430,7 +461,9 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     setSelectedFamilyId(id);
     const fam = customerQuery.data?.familyMembers.find((f) => f.id === id);
     setAccTargetName(fam?.name ?? '');
-    setAccTargetDob(fam?.dob ?? '');
+    // doc/14 F項でdobはdobDate/dobRawに分かれた。ここは自由記述テキストとして事故報告の
+    // 対象者生年月日欄に流し込む用途のため、元表記(dobRaw)を優先する。
+    setAccTargetDob(fam?.dobRaw ?? fam?.dobDate ?? '');
   };
 
   const handleGenerateDaily = async () => {
@@ -474,6 +507,9 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
       customerText,
       riskRating,
       esRating,
+      // 選んだ順ではなくソートしてから含める。トグルの順序が違うだけの同じ組み合わせを
+      // 「内容が変わった」と誤判定して、下の重複保存防止(snapshot比較)をすり抜けさせないため。
+      couponIds: [...selectedCouponIds].sort(),
     };
     const snapshot = JSON.stringify(payload);
     // GAS版savedReportsState/rowIndexと同じ考え方: 既に保存済みで内容が変わっていなければ
@@ -493,6 +529,12 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
       const report = await saveDailyReport({ ...payload, reportId: dailySavedId ?? undefined });
       setDailySavedId(report.id);
       setDailySavedSnapshot(snapshot);
+      // サーバーが実際に確定させた適用記録で選択状態を揃える(同じクーポンIDが重複して
+      // 渡された場合の畳み込み等、保存側の正規化結果を画面にも反映するため)。これが
+      // 「編集時に既存の適用済みクーポンを初期選択として表示する」の実体になる
+      // (このモーダルは新規作成の1セッション内でしか編集できず、保存するたびにここで
+      // サーバー側の状態と選択状態を合わせ直している)。
+      setSelectedCouponIds(report.coupons.map((c) => c.couponId));
       setDailyMessage('日報を保存しました');
       markCustomerRecentlyUsed(customerId);
     } catch (e) {
@@ -588,7 +630,16 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     }
     setImages((prev) => [
       ...prev,
-      { id, dataUrl, amount: '', storeName: '', receiptDate: '', ocrLoading: true, ocrError: null },
+      {
+        id,
+        dataUrl,
+        amount: '',
+        storeName: '',
+        receiptDate: '',
+        ocrLoading: true,
+        ocrError: null,
+        billingType: 'company_expense',
+      },
     ]);
 
     try {
@@ -650,6 +701,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
         amount: img.amount || null,
         storeName: img.storeName || null,
         receiptDate: img.receiptDate || null,
+        billingType: img.billingType,
       }));
       const result = await uploadReceipts({ customerId, images: payloadImages, handoffText });
       markCustomerRecentlyUsed(customerId);
@@ -736,7 +788,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                 <option value="">(選択してください)</option>
                 {customerQuery.data.familyMembers.map((f) => (
                   <option key={f.id} value={f.id}>
-                    {f.name} {calculateAgeLabel(f.dob)}
+                    {f.name} {calculateAgeLabel(f.dobDate ?? f.dobRaw)}
                   </option>
                 ))}
               </select>
@@ -918,6 +970,26 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                       placeholder="店舗名"
                       className="w-full p-1 text-sm border border-gray-300 rounded text-center"
                     />
+                    {/* 請求区分(doc/14 第4章)。顧客が選択されていない場合はDB制約
+                        (receipts_billable_requires_customer)と同じ制限を画面でも表現するため
+                        「顧客に請求」を選べないようにする。 */}
+                    <select
+                      value={img.billingType}
+                      disabled={!customerId}
+                      onChange={(e) =>
+                        setImages((prev) =>
+                          prev.map((i) =>
+                            i.id === img.id ? { ...i, billingType: e.target.value as ReceiptBillingType } : i,
+                          ),
+                        )
+                      }
+                      className="w-full p-1 text-[11px] border border-gray-300 rounded text-center bg-white disabled:opacity-60"
+                    >
+                      <option value="company_expense">会社立替</option>
+                      <option value="customer_billable" disabled={!customerId}>
+                        顧客に請求
+                      </option>
+                    </select>
                     {img.ocrError && (
                       <p className="text-[10px] text-red-500 text-center leading-tight">
                         自動読取に失敗しました。金額等を手入力してください。
@@ -1010,6 +1082,52 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                 />
               </div>
               {uploadMessage && <p className="text-sm text-gray-700 mt-1">{uploadMessage}</p>}
+            </div>
+          )}
+
+          {/* 適用クーポン(doc/14 4.1章。日報タブのみ)。1回の訪問に複数適用しうるので
+              チェックボックスの複数選択にしている。クーポンを1件も登録していないテナントでは、
+              一覧が確実に空だと分かった時点でセクションごと隠す。空の一覧をそのまま見せると
+              「クーポン機能が壊れている」ように見えてしまい、登録の予定が無いテナントには
+              単なる邪魔になるため(登録は設定→クーポン管理から行う)。 */}
+          {mode === 'daily' && !(couponsQuery.data && couponsQuery.data.length === 0) && (
+            <div className="border-t pt-3">
+              <span className="text-xs font-medium text-gray-500 block mb-2">適用クーポン</span>
+              {couponsQuery.isPending && (
+                <div className="flex justify-center py-2">
+                  <div className="w-5 h-5 rounded-full border-4 border-gray-200 loading-spinner" />
+                </div>
+              )}
+              {couponsQuery.isError && (
+                <p className="text-red-500 text-xs">{(couponsQuery.error as Error).message}</p>
+              )}
+              <div className="space-y-1">
+                {(couponsQuery.data ?? []).map((coupon) => (
+                  <label
+                    key={coupon.id}
+                    className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer ${
+                      selectedCouponIds.includes(coupon.id)
+                        ? 'bg-blue-50 border-blue-300'
+                        : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedCouponIds.includes(coupon.id)}
+                      onChange={() => toggleCoupon(coupon.id)}
+                      className="w-4 h-4"
+                    />
+                    <span className="font-bold text-gray-700">{coupon.name}</span>
+                    <span className="text-gray-400">
+                      (
+                      {coupon.discountKind === 'amount'
+                        ? `${coupon.discountAmountYen}円引き`
+                        : `${coupon.discountPercent}%引き`}
+                      )
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
 

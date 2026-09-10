@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { parseLatLng } from '@katahimo/core/domain';
 import { describe, expect, it } from 'vitest';
+import { mapReservaRowToCustomerInput } from './mapToCustomerInput';
 import { parseReservaCsv } from './parse';
+import type { ReservaCsvRow } from './types';
 
 /**
  * fixtures/Kokyaku_202601191958_1_dummy.csv は実際のRESERVA(外部予約システム)エクスポート形式の
@@ -55,5 +58,24 @@ describe('parseReservaCsv (実サンプルCSVでの検証)', () => {
   it('パスワード列に相当するフィールドを一切保持しない(ReservaCsvRowの型に存在しない)', () => {
     const first = rows[0] as unknown as Record<string, unknown>;
     expect(first).not.toHaveProperty('password');
+  });
+
+  describe('緯度・経度(doc/14 G項)', () => {
+    it('実サンプルCSVの「緯度・経度」列は全行空欄であり、取込入力(latLng)はundefinedになる', () => {
+      // このダミーCSVには緯度・経度が入力された行が1件も無い。今後実データが入るように
+      // なったときにこの前提が崩れたら気付けるよう、まず現状を固定しておく。
+      expect(rows.every((r) => r.latLng === '')).toBe(true);
+      const mapped = mapReservaRowToCustomerInput('tenant-1', rows[0] as ReservaCsvRow);
+      expect(mapped.latLng).toBeUndefined();
+    });
+
+    it('緯度・経度が入力されていれば、CSV行と同じ形式("lat, lng")の文字列としてそのまま取込入力に渡り、分解関数(parseLatLng)で数値に分けられる', () => {
+      // 実サンプルには値が無いため、実際の行を複製して緯度・経度だけ差し替える
+      // (行の他の項目・エンコーディング上の癖は実サンプルのまま)。
+      const withLatLng: ReservaCsvRow = { ...(rows[0] as ReservaCsvRow), latLng: '38.2682, 140.8694' };
+      const mapped = mapReservaRowToCustomerInput('tenant-1', withLatLng);
+      expect(mapped.latLng).toBe('38.2682, 140.8694');
+      expect(parseLatLng(mapped.latLng ?? '')).toEqual({ lat: 38.2682, lng: 140.8694 });
+    });
   });
 });
