@@ -18,7 +18,7 @@ README・ドキュメント中の `../gas-childcare-visit-app` という相対�
 
 **Why**: `gas-childcare-visit-app` は実際の保育スタッフが毎日使う本番稼働中のApps Script Webアプリ。壊せば現場の業務が止まる。
 
-**How to apply**: `gas-childcare-visit-app`(または他の `01_GAS/gas-*` プロジェクト)に対して `clasp push`・新規デプロイ作成・Script Property設定を行う前には、必ず改めてユーザーに確認する。過去の「まだ」が期限切れになったと仮定しない。「このコミット・git pushして」という指示を、GASデプロイの承認と混同しない(GitHubへの `git push` と本番Apps Scriptへの `clasp push`/デプロイはリスクレベルが異なる別の操作)。
+**How to apply**: `gas-childcare-visit-app`(または他の `01_GAS/gas-*` プロジェクト)に対して `clasp push`・新規デプロイ作成・Script Property設定を行う前には、**その都度リポジトリ所有者の承認を取る**。以前に見送られた経緯があっても、それが解除されたと推測しない。「このコミットをgit pushして」という指示は、GASデプロイの承認ではない(GitHubへの `git push` と本番Apps Scriptへの `clasp push`/デプロイはリスクレベルが異なる別の操作)。
 
 ## Bridge.js に `sendEmail` アクションの追加が必要
 
@@ -34,15 +34,15 @@ README・ドキュメント中の `../gas-childcare-visit-app` という相対�
 
 ## 新規GCP APIより既存GASブリッジを優先
 
-katahimo-appの機能で、`gas-childcare-visit-app` が既に無料枠内で使っているGoogleサービス(Maps geocoding/directions, Calendar)が必要になった場合、ユーザーは新規にGCP課金・認証情報(Google Maps Platform、Calendarサービスアカウント等)を用意するのではなく、既にデプロイ・認証済みのGAS Webアプリに小さな共有シークレット認証つきJSON APIエンドポイントを足して、katahimo-appからそれを呼ぶ方式を好む。これが `Bridge.js` として実装された(上記参照)。
+katahimo-appの機能で、`gas-childcare-visit-app` が既に無料枠内で使っているGoogleサービス(Maps geocoding/directions, Calendar)が必要になった場合、新規にGCP課金・認証情報(Google Maps Platform、Calendarサービスアカウント等)を用意するのではなく、**既にデプロイ・認証済みのGAS Webアプリに小さな共有シークレット認証つきJSON APIエンドポイントを足して、katahimo-appからそれを呼ぶ**。これが `Bridge.js` として実装されている(上記参照)。
 
-**Why**: ユーザーがまだ行っていない新規GCP課金・認証情報セットアップ作業を避けるため。またCalendar由来データについては、GAS側の本番実証済みのビジネスロジック(イベント分類、RESERVAタイトルタグ解析、スタッフ名マッチング)をそのまま使えるため、TypeScript側で再実装して挙動が微妙にズレるリスクを減らせる。
+**Why**: 新規のGCP課金・認証情報セットアップを増やさないため。またCalendar由来データについては、GAS側の本番実証済みのビジネスロジック(イベント分類、RESERVAタイトルタグ解析、スタッフ名マッチング)をそのまま使えるため、TypeScript側で再実装して挙動が微妙にズレるリスクを減らせる。
 
 **How to apply**: katahimo-appで新しい外部Google連携ポートを設計する前に、稼働中の `gas-childcare-visit-app` が既に同等の機能を無料で提供していないか確認し、具体的な理由(GAS自体の実行時間/クォータ制限、GAS側に相当機能が存在しない等)がない限りGASブリッジ方式をデフォルトにする。
 
 ## エラーメッセージはGASとの完全一致より分かりやすさを優先
 
-katahimo-appの基本方針は移行時の混乱を減らすためGASのUI/挙動に忠実に合わせることだが、エラーハンドリングに関しては例外で、GASの粗さをそのまま再現するのではなく実際に改善することをユーザーは求めている。具体例: GASの日報AI生成失敗時は生の `"API Error"` 文字列がほぼそのままUIに表示される(`generateReportWithWarnings` が `{warnings:['API Error'], internal: <raw detail>}` を返す)。GASの領収書OCR失敗(`extractAmountFromImage`)は完全に無言で、空の値を返すだけでエラー通知が一切ない。ユーザーはどちらも分かりにくいバグとして修正を求めた。
+katahimo-appの基本方針は移行時の混乱を減らすためGASのUI/挙動に忠実に合わせることだが、**エラーハンドリングはその例外**で、GASの粗さをそのまま再現せず改善する。GAS側の例: 日報AI生成の失敗時は生の `"API Error"` 文字列がほぼそのままUIに表示される(`generateReportWithWarnings` が `{warnings:['API Error'], internal: <raw detail>}` を返す)。領収書OCRの失敗(`extractAmountFromImage`)は完全に無言で、空の値を返すだけでエラー通知が一切ない。どちらも移植先では再現しない。
 
 **Why**: パリティは移行時の混乱を減らすための手段であって目的ではない。GASのソースを読んで、元の挙動自体がUXバグ(無言の失敗、生の技術的エラー文字列、ユーザーへのフィードバックなし)だと分かった場合、それを忠実に再現することはそのバグを引き継ぐだけ。
 
