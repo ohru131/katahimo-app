@@ -1,5 +1,5 @@
 {
-  "id": "a16ddc35-045a-4fed-b815-7776c95ffa5a",
+  "id": "c0c1dfcb-d004-416a-a1f9-fdb895d16fee",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -1655,6 +1655,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "customer_id": {
+          "name": "customer_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "coupon_id": {
           "name": "coupon_id",
           "type": "uuid",
@@ -1686,6 +1692,31 @@
           "primaryKey": false,
           "notNull": false
         },
+        "usage_limit_kind": {
+          "name": "usage_limit_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'unlimited'"
+        },
+        "usage_scope_key": {
+          "name": "usage_scope_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "birthday_subject_name": {
+          "name": "birthday_subject_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "birthday_subject_dob": {
+          "name": "birthday_subject_dob",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
         "note": {
           "name": "note",
           "type": "text",
@@ -1708,6 +1739,40 @@
         }
       },
       "indexes": {
+        "coupon_redemptions_usage_scope_uidx": {
+          "name": "coupon_redemptions_usage_scope_uidx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "coupon_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "usage_scope_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"coupon_redemptions\".\"usage_scope_key\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "coupon_redemptions_tenant_coupon_idx": {
           "name": "coupon_redemptions_tenant_coupon_idx",
           "columns": [
@@ -1719,6 +1784,27 @@
             },
             {
               "expression": "coupon_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "coupon_redemptions_tenant_customer_idx": {
+          "name": "coupon_redemptions_tenant_customer_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "customer_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1744,17 +1830,19 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "coupon_redemptions_tenant_daily_report_fk": {
-          "name": "coupon_redemptions_tenant_daily_report_fk",
+        "coupon_redemptions_tenant_report_customer_fk": {
+          "name": "coupon_redemptions_tenant_report_customer_fk",
           "tableFrom": "coupon_redemptions",
           "tableTo": "daily_reports",
           "columnsFrom": [
             "tenant_id",
-            "daily_report_id"
+            "daily_report_id",
+            "customer_id"
           ],
           "columnsTo": [
             "tenant_id",
-            "id"
+            "id",
+            "customer_id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -1823,6 +1911,14 @@
         "coupon_redemptions_discount_percent_check": {
           "name": "coupon_redemptions_discount_percent_check",
           "value": "\"coupon_redemptions\".\"discount_percent\" IS NULL OR \"coupon_redemptions\".\"discount_percent\" BETWEEN 1 AND 100"
+        },
+        "coupon_redemptions_usage_limit_kind_check": {
+          "name": "coupon_redemptions_usage_limit_kind_check",
+          "value": "\"coupon_redemptions\".\"usage_limit_kind\" IN ('unlimited', 'once_per_customer', 'once_per_customer_per_year')"
+        },
+        "coupon_redemptions_usage_scope_key_check": {
+          "name": "coupon_redemptions_usage_scope_key_check",
+          "value": "(\"coupon_redemptions\".\"usage_limit_kind\" = 'unlimited' AND \"coupon_redemptions\".\"usage_scope_key\" IS NULL)\n        OR (\"coupon_redemptions\".\"usage_limit_kind\" <> 'unlimited' AND \"coupon_redemptions\".\"usage_scope_key\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": true
@@ -1885,6 +1981,33 @@
           "type": "date",
           "primaryKey": false,
           "notNull": false
+        },
+        "audience": {
+          "name": "audience",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'all'"
+        },
+        "eligibility_kind": {
+          "name": "eligibility_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'manual'"
+        },
+        "birthday_subject": {
+          "name": "birthday_subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usage_limit_kind": {
+          "name": "usage_limit_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'unlimited'"
         },
         "active": {
           "name": "active",
@@ -1981,6 +2104,162 @@
         "coupons_valid_period_check": {
           "name": "coupons_valid_period_check",
           "value": "\"coupons\".\"valid_to\" IS NULL OR \"coupons\".\"valid_from\" IS NULL OR \"coupons\".\"valid_to\" >= \"coupons\".\"valid_from\""
+        },
+        "coupons_audience_check": {
+          "name": "coupons_audience_check",
+          "value": "\"coupons\".\"audience\" IN ('all', 'assigned')"
+        },
+        "coupons_eligibility_kind_check": {
+          "name": "coupons_eligibility_kind_check",
+          "value": "\"coupons\".\"eligibility_kind\" IN ('manual', 'birthday_month')"
+        },
+        "coupons_usage_limit_kind_check": {
+          "name": "coupons_usage_limit_kind_check",
+          "value": "\"coupons\".\"usage_limit_kind\" IN ('unlimited', 'once_per_customer', 'once_per_customer_per_year')"
+        },
+        "coupons_birthday_subject_check": {
+          "name": "coupons_birthday_subject_check",
+          "value": "(\"coupons\".\"eligibility_kind\" = 'birthday_month' AND \"coupons\".\"birthday_subject\" IS NOT NULL\n           AND \"coupons\".\"birthday_subject\" IN ('customer', 'family_member', 'any'))\n        OR (\"coupons\".\"eligibility_kind\" <> 'birthday_month' AND \"coupons\".\"birthday_subject\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.customer_coupons": {
+      "name": "customer_coupons",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "coupon_id": {
+          "name": "coupon_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valid_to": {
+          "name": "valid_to",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "customer_coupons_tenant_id_tenants_id_fk": {
+          "name": "customer_coupons_tenant_id_tenants_id_fk",
+          "tableFrom": "customer_coupons",
+          "tableTo": "tenants",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "customer_coupons_tenant_customer_fk": {
+          "name": "customer_coupons_tenant_customer_fk",
+          "tableFrom": "customer_coupons",
+          "tableTo": "customers",
+          "columnsFrom": [
+            "tenant_id",
+            "customer_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "customer_coupons_tenant_coupon_fk": {
+          "name": "customer_coupons_tenant_coupon_fk",
+          "tableFrom": "customer_coupons",
+          "tableTo": "coupons",
+          "columnsFrom": [
+            "tenant_id",
+            "coupon_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "customer_coupons_tenant_customer_coupon_uk": {
+          "name": "customer_coupons_tenant_customer_coupon_uk",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "customer_id",
+            "coupon_id"
+          ]
+        }
+      },
+      "policies": {
+        "tenant_isolation": {
+          "name": "tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "tenant_id = current_setting('app.tenant_id', true)::uuid",
+          "withCheck": "tenant_id = current_setting('app.tenant_id', true)::uuid"
+        }
+      },
+      "checkConstraints": {
+        "customer_coupons_valid_period_check": {
+          "name": "customer_coupons_valid_period_check",
+          "value": "\"customer_coupons\".\"valid_to\" IS NULL OR \"customer_coupons\".\"valid_from\" IS NULL OR \"customer_coupons\".\"valid_to\" >= \"customer_coupons\".\"valid_from\""
         }
       },
       "isRLSEnabled": true
@@ -2641,6 +2920,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "dob_date": {
+          "name": "dob_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dob_raw": {
+          "name": "dob_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "registered_at": {
           "name": "registered_at",
           "type": "timestamp with time zone",
@@ -2994,6 +3285,15 @@
           "columns": [
             "tenant_id",
             "id"
+          ]
+        },
+        "daily_reports_tenant_id_customer_uk": {
+          "name": "daily_reports_tenant_id_customer_uk",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "id",
+            "customer_id"
           ]
         }
       },

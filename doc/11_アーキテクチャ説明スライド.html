@@ -129,9 +129,9 @@
         <h3>規模</h3>
         <dl class="kv">
           <dt>パッケージ</dt><dd>9(pnpm workspace)</dd>
-          <dt>TypeScript</dt><dd>228ファイル / 約25,900行(テスト除く)</dd>
-          <dt>テスト</dt><dd>55ファイル / 692件、CIで毎回実行</dd>
-          <dt>DB</dt><dd>33テーブル、マイグレーション1本</dd>
+          <dt>TypeScript</dt><dd>229ファイル / 約27,500行(テスト除く)</dd>
+          <dt>テスト</dt><dd>56ファイル / 728件、CIで毎回実行</dd>
+          <dt>DB</dt><dd>34テーブル、マイグレーション1本</dd>
         </dl>
       </div>
     </div>
@@ -175,7 +175,7 @@
     <!-- postgres -->
     <rect class="box" x="600" y="240" width="160" height="140" style="stroke:var(--c-db)"/>
     <text class="h" x="680" y="268" text-anchor="middle">PostgreSQL</text>
-    <text class="sm" x="680" y="290" text-anchor="middle">33テーブル</text>
+    <text class="sm" x="680" y="290" text-anchor="middle">34テーブル</text>
     <text class="sm" x="680" y="307" text-anchor="middle">RLS + FORCE</text>
     <text class="sm" x="680" y="324" text-anchor="middle">資格情報のみ暗号化 / outbox_jobs</text>
     <text class="sm" x="680" y="362" text-anchor="middle" style="fill:var(--c-db)">唯一の正データ</text>
@@ -297,7 +297,7 @@
       <text class="sm" x="300" y="104" text-anchor="middle">XxxDeps = 必要なポートの部分集合</text>
       <rect class="box" x="200" y="140" width="200" height="60"/>
       <text class="lbl" x="300" y="164" text-anchor="middle">ports</text>
-      <text class="sm" x="300" y="182" text-anchor="middle">Repository×14 / UnitOfWork / Crypto …</text>
+      <text class="sm" x="300" y="182" text-anchor="middle">Repository×15 / UnitOfWork / Crypto …</text>
       <rect class="box" x="200" y="218" width="200" height="140" style="stroke:var(--c-core)"/>
       <text class="lbl" x="300" y="244" text-anchor="middle">domain(純関数・I/Oなし)</text>
       <text class="sm" x="300" y="266" text-anchor="middle">勤怠計算 / 日報履歴 / 重複判定</text>
@@ -351,7 +351,7 @@
 </section>
 <!-- 6 data model -->
 <section class="slide">
-  <h2>データモデル全体像 <small>33テーブル / マイグレーション1本</small></h2>
+  <h2>データモデル全体像 <small>34テーブル / マイグレーション1本</small></h2>
   <div class="fig">
   <svg viewBox="0 0 960 420" role="img" aria-label="テーブル関連図">
     <defs>
@@ -443,8 +443,8 @@
   </div>
   <div class="card" style="flex:0 0 auto">
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.15em 1.4em;font-size:.86em">
-      <div><b class="muted">内訳</b><br>稼働中15 / スキーマのみ18</div>
-      <div><b class="muted">共通の形</b><br>tenants 以外の全32テーブルが <code>tenant_id</code> を持ち、RLS の対象</div>
+      <div><b class="muted">内訳</b><br>稼働中16 / スキーマのみ18</div>
+      <div><b class="muted">共通の形</b><br>tenants 以外の全33テーブルが <code>tenant_id</code> を持ち、RLS の対象</div>
       <div><b class="muted">例外は3つだけ</b><br><code>tenants</code>=RLS対象外 / <code>receipts.customer_id</code>=nullable / <code>sessions.token_hash</code>=グローバル一意</div>
     </div>
   </div>
@@ -472,7 +472,7 @@
       <text class="lbl" x="24" y="209">③ withTenant(db, tenantId, tx ⇒ …)</text>
       <text class="mono sm" x="24" y="230">BEGIN;  SELECT set_config('app.tenant_id', $1, true);  …  COMMIT;</text>
       <text class="sm" x="24" y="250">第3引数 true = トランザクションローカル。プール接続を使い回しても設定が残らない</text>
-      <text class="sm" x="24" y="268">全14リポジトリの全メソッドがこれで包まれる(tenants テーブルだけ例外)</text>
+      <text class="sm" x="24" y="268">全15リポジトリの全メソッドがこれで包まれる(tenants テーブルだけ例外)</text>
       <path class="arrow" d="M300 280 V300"/>
       <rect class="box" x="10" y="302" width="580" height="66" style="stroke:var(--c-db)"/>
       <text class="lbl" x="24" y="326">④ POLICY tenant_isolation FOR ALL</text>
@@ -560,7 +560,7 @@
 </section>
 <!-- 9 schema conventions -->
 <section class="slide mid">
-  <h2>スキーマ設計の共通ルール <small>33テーブルすべてで同じ形を守る</small></h2>
+  <h2>スキーマ設計の共通ルール <small>34テーブルすべてで同じ形を守る</small></h2>
   <div class="cols">
     <div>
       <div class="card">
@@ -913,7 +913,7 @@
   <h2>品質の担保 <small>何をテストし、何をしていないか</small></h2>
   <div class="cols">
     <div>
-      <div class="card"><h3>やっていること <span class="tag">55ファイル / 692件</span></h3>
+      <div class="card"><h3>やっていること <span class="tag">56ファイル / 728件</span></h3>
         <ul style="margin:0">
           <li><b>ドメイン純関数の回帰</b>: 勤怠計算は GAS版をNodeで実行した結果を正解に、合成データ19ケース+月次集計で<b>完全一致</b>。CSV解析は実サンプル398行で一致</li>
           <li><b>usecase 単体</b>: インメモリfakeで、失敗すべきときに失敗することを中心に(列挙防止・試行上限・割り込み・部分更新なし)</li>
@@ -941,7 +941,7 @@
   </div>
   <div class="foot"><span>vitest.config.ts / .github/workflows/ci.yml / packages/core/src/usecases/testDoubles.ts</span><span>katahimo-app</span></div>
   <div class="notes">
-    テストは692件。分布は依然として偏っていて、ドメインとusecaseは厚く、画面と実DBは薄いままです。ただしRLSについては、静的検査と実挙動の両方をCIに入れました。右下は自分たちの規約で、判別力を確認しないテストは足さない、としています。
+    テストは728件。分布は依然として偏っていて、ドメインとusecaseは厚く、画面と実DBは薄いままです。ただしRLSについては、静的検査と実挙動の両方をCIに入れました。右下は自分たちの規約で、判別力を確認しないテストは足さない、としています。
   </div>
 </section>
 
@@ -951,7 +951,7 @@
   <table>
     <thead><tr><th style="width:34%">ドキュメントが語っていること</th><th style="width:14%">実装</th><th>実際の状態</th></tr></thead>
     <tbody>
-      <tr><td>PostgreSQL + RLS のマルチテナント</td><td class="ok">実装済み</td><td>33テーブル、複合FK、FORCE。静的検査と実DB検証をCIで実行</td></tr>
+      <tr><td>PostgreSQL + RLS のマルチテナント</td><td class="ok">実装済み</td><td>34テーブル、複合FK、FORCE。静的検査と実DB検証をCIで実行</td></tr>
       <tr><td>Outbox によるスプレッドシートへの書き戻し</td><td class="ok">実装済み</td><td>ドメインの書き込みと同一トランザクション。バックオフ再試行とデッドレターあり</td></tr>
       <tr><td>Cloud Run 本番デプロイ</td><td class="bad">未着手</td><td>Dockerfile / IaC が存在しない。自動化されているのは GitHub Pages のデモだけ</td></tr>
       <tr><td>予約・請求・カルテ</td><td class="warn">スキーマのみ</td><td>表・制約・ドキュメントはある。<b>リポジトリ実装・API・画面はこれから</b></td></tr>
@@ -1011,7 +1011,7 @@
         <li>揃って成立すべき書き込みが1つのトランザクションで確定する</li>
         <li>業務データは RLS + IAM で保護し、保存時暗号化は本番配備先(Cloud SQL)に委ねる想定(NDA 第6条の水準。<b>本番は未配備</b>のため配備時の前提条件)。資格情報だけ列暗号化と鍵の世代管理を実装済み</li>
         <li>認証の失敗経路(列挙・総当たり・割り込み・部分更新・クロスサイト)を塞いだ</li>
-        <li>33テーブルすべてで同じスキーマ規約(複合FK・tenant_id先頭のインデックス・平文と暗号化の線引き)</li>
+        <li>34テーブルすべてで同じスキーマ規約(複合FK・tenant_id先頭のインデックス・平文と暗号化の線引き)</li>
       </ul>
     </div>
     <div>

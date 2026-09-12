@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
+import { useAdminTargetStaff } from './AdminTargetStaffContext';
 import { fetchCustomerDetail } from './api';
+import { CustomerCouponSection } from './CustomerCouponSection';
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
@@ -151,6 +153,9 @@ export function CustomerDetail({ customerId, onClose }: { customerId: string; on
     queryKey: ['customer', customerId],
     queryFn: () => fetchCustomerDetail(customerId),
   });
+  // クーポンの配布と生年月日の登録は請求額に影響するため、管理者にだけ出す
+  // (APIも管理者限定。routes/coupons.ts / routes/customers.ts のPATCH参照)。
+  const { isAdmin } = useAdminTargetStaff();
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center justify-center">
@@ -192,6 +197,7 @@ export function CustomerDetail({ customerId, onClose }: { customerId: string; on
                   <Field label="名カナ" value={query.data.givenNameKana} />
                   <Field label="性別" value={query.data.gender} />
                   <Field label="年代" value={query.data.ageBracket} />
+                  <Field label="生年月日" value={query.data.dobRaw ?? query.data.dobDate} />
                   <ContactField label="メールアドレス" value={query.data.email} type="email" />
                   <ContactField label="電話番号" value={query.data.phone} type="phone" />
                 </dl>
@@ -267,6 +273,8 @@ export function CustomerDetail({ customerId, onClose }: { customerId: string; on
                   ))}
                 </ul>
               </section>
+
+              {isAdmin && <CustomerCouponSection customerId={customerId} dobRaw={query.data.dobRaw} />}
             </>
           )}
         </div>

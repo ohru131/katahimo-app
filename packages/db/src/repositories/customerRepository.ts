@@ -64,6 +64,8 @@ function toRecord(row: CustomerRow): CustomerRecord {
     paymentStatus: row.paymentStatus,
     gender: row.gender,
     ageBracket: row.ageBracket,
+    dobDate: row.dobDate,
+    dobRaw: row.dobRaw,
     registeredAt: row.registeredAt,
     externalLastUpdatedAt: row.externalLastUpdatedAt,
     deactivatedAt: row.deactivatedAt,
@@ -100,6 +102,8 @@ function toColumnValues(input: NewCustomerInput) {
     paymentStatus: input.paymentStatus ?? null,
     gender: input.gender ?? null,
     ageBracket: input.ageBracket ?? null,
+    dobDate: input.dobDate ?? null,
+    dobRaw: input.dobRaw ?? null,
     registeredAt: input.registeredAt ?? null,
     externalLastUpdatedAt: input.externalLastUpdatedAt ?? null,
   };
@@ -145,6 +149,8 @@ function toPatchColumnValues(patch: CustomerPatchInput) {
     ...(patch.paymentStatus !== undefined && { paymentStatus: patch.paymentStatus }),
     ...(patch.gender !== undefined && { gender: patch.gender }),
     ...(patch.ageBracket !== undefined && { ageBracket: patch.ageBracket }),
+    ...(patch.dobDate !== undefined && { dobDate: patch.dobDate }),
+    ...(patch.dobRaw !== undefined && { dobRaw: patch.dobRaw }),
     ...(patch.registeredAt !== undefined && { registeredAt: patch.registeredAt }),
     ...(patch.externalLastUpdatedAt !== undefined && {
       externalLastUpdatedAt: patch.externalLastUpdatedAt,

@@ -209,11 +209,16 @@ CREATE TABLE "coupon_redemptions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
 	"daily_report_id" uuid NOT NULL,
+	"customer_id" uuid NOT NULL,
 	"coupon_id" uuid NOT NULL,
 	"applied_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"discount_kind" text NOT NULL,
 	"discount_amount_yen" integer,
 	"discount_percent" integer,
+	"usage_limit_kind" text DEFAULT 'unlimited' NOT NULL,
+	"usage_scope_key" text,
+	"birthday_subject_name" text,
+	"birthday_subject_dob" date,
 	"note" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -223,7 +228,10 @@ CREATE TABLE "coupon_redemptions" (
 	CONSTRAINT "coupon_redemptions_discount_value_check" CHECK (("coupon_redemptions"."discount_kind" = 'amount'  AND "coupon_redemptions"."discount_amount_yen" IS NOT NULL AND "coupon_redemptions"."discount_percent" IS NULL)
         OR ("coupon_redemptions"."discount_kind" = 'percent' AND "coupon_redemptions"."discount_percent" IS NOT NULL AND "coupon_redemptions"."discount_amount_yen" IS NULL)),
 	CONSTRAINT "coupon_redemptions_discount_amount_yen_check" CHECK ("coupon_redemptions"."discount_amount_yen" IS NULL OR "coupon_redemptions"."discount_amount_yen" >= 0),
-	CONSTRAINT "coupon_redemptions_discount_percent_check" CHECK ("coupon_redemptions"."discount_percent" IS NULL OR "coupon_redemptions"."discount_percent" BETWEEN 1 AND 100)
+	CONSTRAINT "coupon_redemptions_discount_percent_check" CHECK ("coupon_redemptions"."discount_percent" IS NULL OR "coupon_redemptions"."discount_percent" BETWEEN 1 AND 100),
+	CONSTRAINT "coupon_redemptions_usage_limit_kind_check" CHECK ("coupon_redemptions"."usage_limit_kind" IN ('unlimited', 'once_per_customer', 'once_per_customer_per_year')),
+	CONSTRAINT "coupon_redemptions_usage_scope_key_check" CHECK (("coupon_redemptions"."usage_limit_kind" = 'unlimited' AND "coupon_redemptions"."usage_scope_key" IS NULL)
+        OR ("coupon_redemptions"."usage_limit_kind" <> 'unlimited' AND "coupon_redemptions"."usage_scope_key" IS NOT NULL))
 );
 --> statement-breakpoint
 ALTER TABLE "coupon_redemptions" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
@@ -237,6 +245,10 @@ CREATE TABLE "coupons" (
 	"discount_percent" integer,
 	"valid_from" date,
 	"valid_to" date,
+	"audience" text DEFAULT 'all' NOT NULL,
+	"eligibility_kind" text DEFAULT 'manual' NOT NULL,
+	"birthday_subject" text,
+	"usage_limit_kind" text DEFAULT 'unlimited' NOT NULL,
 	"active" boolean DEFAULT true NOT NULL,
 	"note" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -248,10 +260,31 @@ CREATE TABLE "coupons" (
         OR ("coupons"."discount_kind" = 'percent' AND "coupons"."discount_percent" IS NOT NULL AND "coupons"."discount_amount_yen" IS NULL)),
 	CONSTRAINT "coupons_discount_amount_yen_check" CHECK ("coupons"."discount_amount_yen" IS NULL OR "coupons"."discount_amount_yen" >= 0),
 	CONSTRAINT "coupons_discount_percent_check" CHECK ("coupons"."discount_percent" IS NULL OR "coupons"."discount_percent" BETWEEN 1 AND 100),
-	CONSTRAINT "coupons_valid_period_check" CHECK ("coupons"."valid_to" IS NULL OR "coupons"."valid_from" IS NULL OR "coupons"."valid_to" >= "coupons"."valid_from")
+	CONSTRAINT "coupons_valid_period_check" CHECK ("coupons"."valid_to" IS NULL OR "coupons"."valid_from" IS NULL OR "coupons"."valid_to" >= "coupons"."valid_from"),
+	CONSTRAINT "coupons_audience_check" CHECK ("coupons"."audience" IN ('all', 'assigned')),
+	CONSTRAINT "coupons_eligibility_kind_check" CHECK ("coupons"."eligibility_kind" IN ('manual', 'birthday_month')),
+	CONSTRAINT "coupons_usage_limit_kind_check" CHECK ("coupons"."usage_limit_kind" IN ('unlimited', 'once_per_customer', 'once_per_customer_per_year')),
+	CONSTRAINT "coupons_birthday_subject_check" CHECK (("coupons"."eligibility_kind" = 'birthday_month' AND "coupons"."birthday_subject" IS NOT NULL
+           AND "coupons"."birthday_subject" IN ('customer', 'family_member', 'any'))
+        OR ("coupons"."eligibility_kind" <> 'birthday_month' AND "coupons"."birthday_subject" IS NULL))
 );
 --> statement-breakpoint
 ALTER TABLE "coupons" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "customer_coupons" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"tenant_id" uuid NOT NULL,
+	"customer_id" uuid NOT NULL,
+	"coupon_id" uuid NOT NULL,
+	"valid_from" date,
+	"valid_to" date,
+	"note" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "customer_coupons_tenant_customer_coupon_uk" UNIQUE("tenant_id","customer_id","coupon_id"),
+	CONSTRAINT "customer_coupons_valid_period_check" CHECK ("customer_coupons"."valid_to" IS NULL OR "customer_coupons"."valid_from" IS NULL OR "customer_coupons"."valid_to" >= "customer_coupons"."valid_from")
+);
+--> statement-breakpoint
+ALTER TABLE "customer_coupons" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "customer_note_photos" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -323,6 +356,8 @@ CREATE TABLE "customers" (
 	"payment_status" text,
 	"gender" text,
 	"age_bracket" text,
+	"dob_date" date,
+	"dob_raw" text,
 	"registered_at" timestamp with time zone,
 	"external_last_updated_at" timestamp with time zone,
 	"deactivated_at" timestamp with time zone,
@@ -351,6 +386,7 @@ CREATE TABLE "daily_reports" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "daily_reports_tenant_id_uk" UNIQUE("tenant_id","id"),
+	CONSTRAINT "daily_reports_tenant_id_customer_uk" UNIQUE("tenant_id","id","customer_id"),
 	CONSTRAINT "daily_reports_risk_rating_check" CHECK ("daily_reports"."risk_rating" IS NULL OR "daily_reports"."risk_rating" BETWEEN 1 AND 5),
 	CONSTRAINT "daily_reports_es_rating_check" CHECK ("daily_reports"."es_rating" IS NULL OR "daily_reports"."es_rating" BETWEEN 1 AND 5),
 	CONSTRAINT "daily_reports_time_order" CHECK ("daily_reports"."ended_at" IS NULL OR "daily_reports"."started_at" IS NULL OR "daily_reports"."ended_at" >= "daily_reports"."started_at")
@@ -766,9 +802,12 @@ ALTER TABLE "payments" ADD CONSTRAINT "payments_tenant_customer_fk" FOREIGN KEY 
 ALTER TABLE "payments" ADD CONSTRAINT "payments_tenant_invoice_fk" FOREIGN KEY ("tenant_id","invoice_id") REFERENCES "public"."invoices"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stripe_webhook_events" ADD CONSTRAINT "stripe_webhook_events_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_tenant_daily_report_fk" FOREIGN KEY ("tenant_id","daily_report_id") REFERENCES "public"."daily_reports"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_tenant_report_customer_fk" FOREIGN KEY ("tenant_id","daily_report_id","customer_id") REFERENCES "public"."daily_reports"("tenant_id","id","customer_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_tenant_coupon_fk" FOREIGN KEY ("tenant_id","coupon_id") REFERENCES "public"."coupons"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "coupons" ADD CONSTRAINT "coupons_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "customer_coupons" ADD CONSTRAINT "customer_coupons_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "customer_coupons" ADD CONSTRAINT "customer_coupons_tenant_customer_fk" FOREIGN KEY ("tenant_id","customer_id") REFERENCES "public"."customers"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "customer_coupons" ADD CONSTRAINT "customer_coupons_tenant_coupon_fk" FOREIGN KEY ("tenant_id","coupon_id") REFERENCES "public"."coupons"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_note_photos" ADD CONSTRAINT "customer_note_photos_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_note_photos" ADD CONSTRAINT "customer_note_photos_tenant_note_fk" FOREIGN KEY ("tenant_id","note_id") REFERENCES "public"."customer_notes"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_note_photos" ADD CONSTRAINT "customer_note_photos_tenant_uploaded_by_fk" FOREIGN KEY ("tenant_id","uploaded_by_staff_id") REFERENCES "public"."staff"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -838,7 +877,9 @@ CREATE UNIQUE INDEX "payments_tenant_stripe_payment_intent_uidx" ON "payments" U
 CREATE INDEX "payments_tenant_customer_created_idx" ON "payments" USING btree ("tenant_id","customer_id","created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "payments_tenant_invoice_idx" ON "payments" USING btree ("tenant_id","invoice_id") WHERE "payments"."invoice_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "stripe_webhook_events_tenant_unprocessed_idx" ON "stripe_webhook_events" USING btree ("tenant_id","received_at") WHERE "stripe_webhook_events"."processed_at" IS NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "coupon_redemptions_usage_scope_uidx" ON "coupon_redemptions" USING btree ("tenant_id","coupon_id","customer_id","usage_scope_key") WHERE "coupon_redemptions"."usage_scope_key" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "coupon_redemptions_tenant_coupon_idx" ON "coupon_redemptions" USING btree ("tenant_id","coupon_id");--> statement-breakpoint
+CREATE INDEX "coupon_redemptions_tenant_customer_idx" ON "coupon_redemptions" USING btree ("tenant_id","customer_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "customer_note_photos_tenant_file_key_uidx" ON "customer_note_photos" USING btree ("tenant_id","file_key");--> statement-breakpoint
 CREATE INDEX "customer_note_photos_tenant_note_idx" ON "customer_note_photos" USING btree ("tenant_id","note_id","sort_order");--> statement-breakpoint
 CREATE INDEX "customer_notes_tenant_customer_created_idx" ON "customer_notes" USING btree ("tenant_id","customer_id","created_at" DESC NULLS LAST);--> statement-breakpoint
@@ -885,6 +926,7 @@ CREATE POLICY "tenant_isolation" ON "payments" AS PERMISSIVE FOR ALL TO public U
 CREATE POLICY "tenant_isolation" ON "stripe_webhook_events" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "coupon_redemptions" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "coupons" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
+CREATE POLICY "tenant_isolation" ON "customer_coupons" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "customer_note_photos" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "customer_notes" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "customers" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
@@ -920,6 +962,7 @@ ALTER TABLE "payments" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "stripe_webhook_events" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "coupon_redemptions" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "coupons" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "customer_coupons" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "customer_note_photos" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "customer_notes" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "customers" FORCE ROW LEVEL SECURITY;
@@ -982,6 +1025,9 @@ CREATE TRIGGER "coupon_redemptions_set_updated_at" BEFORE UPDATE ON "coupon_rede
   FOR EACH ROW EXECUTE FUNCTION "set_updated_at"();
 --> statement-breakpoint
 CREATE TRIGGER "coupons_set_updated_at" BEFORE UPDATE ON "coupons"
+  FOR EACH ROW EXECUTE FUNCTION "set_updated_at"();
+--> statement-breakpoint
+CREATE TRIGGER "customer_coupons_set_updated_at" BEFORE UPDATE ON "customer_coupons"
   FOR EACH ROW EXECUTE FUNCTION "set_updated_at"();
 --> statement-breakpoint
 CREATE TRIGGER "customer_note_photos_set_updated_at" BEFORE UPDATE ON "customer_note_photos"

@@ -389,12 +389,16 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [dailySavedSnapshot, setDailySavedSnapshot] = useState<string | null>(null);
 
   // ── 適用クーポン(doc/14 §9。日報タブのみ) ──
-  // 有効期間の判定が対象日('YYYY-MM-DD')に依存するため、queryKeyに訪問日を含める。
+  // 「使えるかどうか」の判定は全てサーバー側(listCouponsForSelection)で済ませ、ここには
+  // 使える条件を満たすものだけが返ってくる。スタッフが「今月はこの子の誕生月か」「この世帯に
+  // 配ってあるクーポンか」を自分で確かめる必要は無い。
+  //
+  // 判定は顧客と対象日('YYYY-MM-DD')と編集中の日報に依存するため、queryKeyに3つとも含める。
   // 日付を変えるとreact-queryが自動的に取り直すので、「前の日の一覧が出たまま」を防げる。
   const dateKey = formatDateKey(visitDate);
   const couponsQuery = useQuery({
-    queryKey: ['coupons', dateKey],
-    queryFn: () => fetchCouponsForSelection(dateKey),
+    queryKey: ['coupons', customerId, dateKey, dailySavedId],
+    queryFn: () => fetchCouponsForSelection(customerId, dateKey, dailySavedId),
   });
   const [selectedCouponIds, setSelectedCouponIds] = useState<string[]>([]);
   // 訪問日を変えて一覧が入れ替わったとき、選択済みだったが新しい一覧には無くなった
@@ -403,8 +407,9 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   // 弾かれるが、画面上は選択されたままに見えて分かりにくい)。
   useEffect(() => {
     if (!couponsQuery.data) return;
-    const validIds = new Set(couponsQuery.data.map((c) => c.id));
-    setSelectedCouponIds((prev) => prev.filter((id) => validIds.has(id)));
+    // 使用済み(alreadyUsed)のものは一覧には残るが選べないので、選択からも外す。
+    const selectableIds = new Set(couponsQuery.data.filter((c) => !c.alreadyUsed).map((c) => c.id));
+    setSelectedCouponIds((prev) => prev.filter((id) => selectableIds.has(id)));
   }, [couponsQuery.data]);
   const toggleCoupon = (couponId: string) => {
     setSelectedCouponIds((prev) =>
@@ -1105,19 +1110,22 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                 {(couponsQuery.data ?? []).map((coupon) => (
                   <label
                     key={coupon.id}
-                    className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer ${
-                      selectedCouponIds.includes(coupon.id)
-                        ? 'bg-blue-50 border-blue-300'
-                        : 'border-gray-200 hover:bg-gray-50'
+                    className={`flex items-center gap-2 p-2 rounded-lg border text-xs ${
+                      coupon.alreadyUsed
+                        ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
+                        : selectedCouponIds.includes(coupon.id)
+                          ? 'bg-blue-50 border-blue-300 cursor-pointer'
+                          : 'border-gray-200 hover:bg-gray-50 cursor-pointer'
                     }`}
                   >
                     <input
                       type="checkbox"
                       checked={selectedCouponIds.includes(coupon.id)}
                       onChange={() => toggleCoupon(coupon.id)}
+                      disabled={coupon.alreadyUsed}
                       className="w-4 h-4"
                     />
-                    <span className="font-bold text-gray-700">{coupon.name}</span>
+                    <span className={coupon.alreadyUsed ? '' : 'font-bold text-gray-700'}>{coupon.name}</span>
                     <span className="text-gray-400">
                       (
                       {coupon.discountKind === 'amount'
@@ -1125,6 +1133,12 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                         : `${coupon.discountPercent}%引き`}
                       )
                     </span>
+                    {/* なぜ今このクーポンが出ているのかを一目で分かるようにする
+                        (スタッフが誕生月を自分で確かめなくて済むのがこの機能の目的のため)。 */}
+                    {coupon.birthdaySubjectName && (
+                      <span className="text-pink-500">🎂 {coupon.birthdaySubjectName}さんの誕生月</span>
+                    )}
+                    {coupon.alreadyUsed && <span className="ml-auto text-gray-400">使用済み</span>}
                   </label>
                 ))}
               </div>

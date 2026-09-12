@@ -392,6 +392,16 @@ GAS版(`reference/gas-childcare-visit-app`)からの移植。**本番環境は�
   Node 実行結果と突き合わせて移植した。`GEMINI_API_KEY` 未設定時は GAS版と同じフォールバック応答を返す
   (`NoopReportAiPort`)。領収書画像は `StoragePort`(ローカルは `LocalFileStoragePort`、本番はGCS想定)に保存し、
   Google Chat 通知は `WebhookNotifierPort`(URL 未設定時はスキップ)で送る。
+- **割引クーポン**: 種別マスタ(`coupons`)・顧客への配布(`customer_coupons`)・適用記録
+  (`coupon_redemptions`)の3テーブル。管理画面で「使える日(いつでも/対象者の誕生月のみ)」
+  「使える人(全顧客/配布した顧客のみ)」「使用回数の上限(制限なし/顧客ごと1回/顧客ごと年1回)」を
+  組み合わせて登録する。日報画面のクーポン選択には**その顧客がその日に使えるものだけ**が出る
+  (誕生月でない月の誕生月クーポンや、配っていない顧客のクーポンは出ない)ので、スタッフが
+  条件を1件ずつ確かめる必要がない。使用上限に達したものは「使用済み」として残す(消すと
+  付け忘れと区別できないため)。誕生日は世帯代表(`customers.dob_date`)と世帯構成員
+  (`family_members.dob_date`)の両方に対応し、適用時には根拠にした人の氏名と生年月日を
+  記録に残す。判定は `evaluateCouponEligibility` 1箇所に寄せ、画面の選択肢づくりと保存時の
+  検証が同じ関数を通る。上限は DB の部分一意索引でも守る。設計理由は `doc/14` §9。
 - **勤怠計算エンジンと週間予定UI**: `AttendanceCalc.js`(GAS版)を Node 上でそのまま実行した結果を正解として、
   TypeScript 移植版(`packages/core/src/domain/attendance/`)を合成データ19ケース+月次集計で突き合わせ、
   完全一致を確認済み。`attendance_days`(入力値のみを `row_data jsonb` で保存し、派生値は保存せず都度計算)・

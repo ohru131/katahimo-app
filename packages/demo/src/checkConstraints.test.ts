@@ -34,7 +34,7 @@ interface Fixture {
   tenantId: string;
   staffId: string;
   customerId: string;
-  /** coupon_redemptionsのcoupon_redemptions_tenant_daily_report_fk用の親行。 */
+  /** coupon_redemptionsのcoupon_redemptions_tenant_report_customer_fk用の親行。 */
   dailyReportId: string;
 }
 
@@ -694,18 +694,18 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
       const amountCouponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-AMOUNT');
       await expect(
         fixture.client.query(
-          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_amount_yen)
-           VALUES ($1, $2, $3, 'amount', 500);`,
-          [fixture.tenantId, fixture.dailyReportId, amountCouponId],
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_amount_yen)
+           VALUES ($1, $2, $3, $4, 'amount', 500);`,
+          [fixture.tenantId, fixture.dailyReportId, fixture.customerId, amountCouponId],
         ),
       ).resolves.toBeDefined();
 
       const percentCouponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-PERCENT');
       await expect(
         fixture.client.query(
-          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_percent)
-           VALUES ($1, $2, $3, 'percent', 10);`,
-          [fixture.tenantId, fixture.dailyReportId, percentCouponId],
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_percent)
+           VALUES ($1, $2, $3, $4, 'percent', 10);`,
+          [fixture.tenantId, fixture.dailyReportId, fixture.customerId, percentCouponId],
         ),
       ).resolves.toBeDefined();
     });
@@ -714,9 +714,9 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
       const couponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-BADKIND');
       await expectRejectedByConstraint(
         fixture.client.query(
-          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_amount_yen)
-           VALUES ($1, $2, $3, 'でたらめ', 500);`,
-          [fixture.tenantId, fixture.dailyReportId, couponId],
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_amount_yen)
+           VALUES ($1, $2, $3, $4, 'でたらめ', 500);`,
+          [fixture.tenantId, fixture.dailyReportId, fixture.customerId, couponId],
         ),
         'coupon_redemptions_discount_kind_check',
       );
@@ -727,9 +727,9 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
       await expectRejectedByConstraint(
         fixture.client.query(
           `INSERT INTO coupon_redemptions
-             (tenant_id, daily_report_id, coupon_id, discount_kind, discount_percent, discount_amount_yen)
-           VALUES ($1, $2, $3, 'percent', 10, 500);`,
-          [fixture.tenantId, fixture.dailyReportId, couponId],
+             (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_percent, discount_amount_yen)
+           VALUES ($1, $2, $3, $4, 'percent', 10, 500);`,
+          [fixture.tenantId, fixture.dailyReportId, fixture.customerId, couponId],
         ),
         'coupon_redemptions_discount_value_check',
       );
@@ -754,18 +754,18 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
       const amountCouponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-RANGE-AMOUNT');
       await expect(
         fixture.client.query(
-          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_amount_yen)
-           VALUES ($1, $2, $3, 'amount', 500);`,
-          [fixture.tenantId, fixture.dailyReportId, amountCouponId],
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_amount_yen)
+           VALUES ($1, $2, $3, $4, 'amount', 500);`,
+          [fixture.tenantId, fixture.dailyReportId, fixture.customerId, amountCouponId],
         ),
       ).resolves.toBeDefined();
 
       const percentCouponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-RANGE-PERCENT');
       await expect(
         fixture.client.query(
-          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_percent)
-           VALUES ($1, $2, $3, 'percent', 100);`,
-          [fixture.tenantId, fixture.dailyReportId, percentCouponId],
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_percent)
+           VALUES ($1, $2, $3, $4, 'percent', 100);`,
+          [fixture.tenantId, fixture.dailyReportId, fixture.customerId, percentCouponId],
         ),
       ).resolves.toBeDefined();
     });
@@ -774,9 +774,9 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
       const couponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-AMOUNT-NEG');
       await expectRejectedByConstraint(
         fixture.client.query(
-          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_amount_yen)
-           VALUES ($1, $2, $3, 'amount', -1);`,
-          [fixture.tenantId, fixture.dailyReportId, couponId],
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_amount_yen)
+           VALUES ($1, $2, $3, $4, 'amount', -1);`,
+          [fixture.tenantId, fixture.dailyReportId, fixture.customerId, couponId],
         ),
         'coupon_redemptions_discount_amount_yen_check',
       );
@@ -786,9 +786,9 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
       const couponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-PERCENT-ZERO');
       await expectRejectedByConstraint(
         fixture.client.query(
-          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_percent)
-           VALUES ($1, $2, $3, 'percent', 0);`,
-          [fixture.tenantId, fixture.dailyReportId, couponId],
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_percent)
+           VALUES ($1, $2, $3, $4, 'percent', 0);`,
+          [fixture.tenantId, fixture.dailyReportId, fixture.customerId, couponId],
         ),
         'coupon_redemptions_discount_percent_check',
       );
@@ -798,9 +798,9 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
       const couponId = await createCoupon(fixture.client, fixture.tenantId, 'REDEEM-PERCENT-OVER');
       await expectRejectedByConstraint(
         fixture.client.query(
-          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_percent)
-           VALUES ($1, $2, $3, 'percent', 101);`,
-          [fixture.tenantId, fixture.dailyReportId, couponId],
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_percent)
+           VALUES ($1, $2, $3, $4, 'percent', 101);`,
+          [fixture.tenantId, fixture.dailyReportId, fixture.customerId, couponId],
         ),
         'coupon_redemptions_discount_percent_check',
       );
@@ -819,16 +819,16 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
       if (!coupon) throw new Error('クーポンの準備に失敗しました');
 
       await fixture.client.query(
-        `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_amount_yen)
-         VALUES ($1, $2, $3, 'amount', 500);`,
-        [fixture.tenantId, fixture.dailyReportId, coupon.id],
+        `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_amount_yen)
+         VALUES ($1, $2, $3, $4, 'amount', 500);`,
+        [fixture.tenantId, fixture.dailyReportId, fixture.customerId, coupon.id],
       );
 
       await expectRejectedByConstraint(
         fixture.client.query(
-          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_amount_yen)
-           VALUES ($1, $2, $3, 'amount', 500);`,
-          [fixture.tenantId, fixture.dailyReportId, coupon.id],
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_amount_yen)
+           VALUES ($1, $2, $3, $4, 'amount', 500);`,
+          [fixture.tenantId, fixture.dailyReportId, fixture.customerId, coupon.id],
         ),
         'coupon_redemptions_report_coupon_uidx',
       );

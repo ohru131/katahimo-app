@@ -6,6 +6,7 @@ import type {
   CouponRedemptionRepositoryPort,
   CouponRepositoryPort,
   CryptoPort,
+  CustomerCouponRepositoryPort,
   CustomerRepositoryPort,
   DailyReportRepositoryPort,
   FamilyMemberRepositoryPort,
@@ -57,6 +58,7 @@ export interface Container {
   /** 割引クーポンの種別マスタ・適用記録(doc/14 §9)。 */
   coupons: CouponRepositoryPort;
   couponRedemptions: CouponRedemptionRepositoryPort;
+  customerCoupons: CustomerCouponRepositoryPort;
   appSettings: AppSettingsRepositoryPort;
   /**
    * app_settingsの資格情報(Gemini APIキー・Google Chat Webhook URL)の暗号化/復号にだけ使う。

@@ -34,7 +34,7 @@ interface Fixture {
   tenantId: string;
   staffId: string;
   customerId: string;
-  /** coupon_redemptionsのcoupon_redemptions_tenant_daily_report_fk用の親行。 */
+  /** coupon_redemptionsのcoupon_redemptions_tenant_report_customer_fk用の親行。 */
   dailyReportId: string;
 }
 
@@ -191,14 +191,15 @@ async function createCouponRedemption(
   client: PGlite,
   tenantId: string,
   dailyReportId: string,
+  customerId: string,
   couponId: string,
 ): Promise<string> {
   const {
     rows: [row],
   } = await client.query<{ id: string }>(
-    `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_amount_yen)
-     VALUES ($1, $2, $3, 'amount', 500) RETURNING id;`,
-    [tenantId, dailyReportId, couponId],
+    `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_amount_yen)
+     VALUES ($1, $2, $3, $4, 'amount', 500) RETURNING id;`,
+    [tenantId, dailyReportId, customerId, couponId],
   );
   if (!row) throw new Error('クーポン適用記録の準備に失敗しました');
   return row.id;
@@ -776,6 +777,7 @@ describe('新規テーブルのCHECK制約が不正値のINSERTを拒否する(P
         fixture.client,
         fixture.tenantId,
         fixture.dailyReportId,
+        fixture.customerId,
         couponId,
       );
 
@@ -825,6 +827,7 @@ describe('新規テーブルのCHECK制約が不正値のINSERTを拒否する(P
         fixture.client,
         fixture.tenantId,
         fixture.dailyReportId,
+        fixture.customerId,
         couponId,
       );
 
@@ -1689,6 +1692,193 @@ describe('新規テーブルのCHECK制約が不正値のINSERTを拒否する(P
           [fixture.tenantId, fixture.customerId, `pi_failed_${randomUUID()}`],
         ),
         'payments_status_check',
+      );
+    });
+  });
+  // ── 誕生月クーポン・顧客ごとの配布・使用上限(doc/14 §9) ──
+
+  describe('coupons_birthday_subject_check', () => {
+    it('誕生月クーポンは対象者(birthday_subject)が入っていれば通る', async () => {
+      await expect(
+        fixture.client.query(
+          `INSERT INTO coupons (tenant_id, code, name, discount_kind, discount_percent,
+                                eligibility_kind, birthday_subject, usage_limit_kind)
+           VALUES ($1, 'BD-OK', '誕生月割引', 'percent', 10,
+                   'birthday_month', 'any', 'once_per_customer_per_year');`,
+          [fixture.tenantId],
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('誕生月クーポンなのに対象者が無いと拒否される(条件を判定できない行を作らせない)', async () => {
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO coupons (tenant_id, code, name, discount_kind, discount_percent, eligibility_kind)
+           VALUES ($1, 'BD-NG', '誕生月割引', 'percent', 10, 'birthday_month');`,
+          [fixture.tenantId],
+        ),
+        'coupons_birthday_subject_check',
+      );
+    });
+
+    it('誕生月クーポン以外に対象者を入れると拒否される(使われない設定が残らないようにする)', async () => {
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO coupons (tenant_id, code, name, discount_kind, discount_percent,
+                                eligibility_kind, birthday_subject)
+           VALUES ($1, 'BD-STRAY', 'ふつうの割引', 'percent', 10, 'manual', 'customer');`,
+          [fixture.tenantId],
+        ),
+        'coupons_birthday_subject_check',
+      );
+    });
+  });
+
+  describe('coupon_redemptions_tenant_report_customer_fk(日報の顧客と食い違う適用記録を作れない)', () => {
+    it('日報の顧客と違うcustomer_idは外部キー違反になる', async () => {
+      const couponId = await createCoupon(fixture.client, fixture.tenantId, 'FK-MISMATCH');
+      const {
+        rows: [otherCustomer],
+      } = await fixture.client.query<{ id: string }>(
+        `INSERT INTO customers (tenant_id, name, family_name, given_name)
+         VALUES ($1, '別 顧客', '別', '顧客') RETURNING id;`,
+        [fixture.tenantId],
+      );
+      if (!otherCustomer) throw new Error('顧客の準備に失敗しました');
+
+      // 適用記録に顧客IDを持たせても二重管理の不整合にならないのは、この複合FKが
+      // 「日報の顧客であること」までDB側で強制しているため(doc/14 §9)。
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id,
+                                           discount_kind, discount_amount_yen)
+           VALUES ($1, $2, $3, $4, 'amount', 500);`,
+          [fixture.tenantId, fixture.dailyReportId, otherCustomer.id, couponId],
+        ),
+        'coupon_redemptions_tenant_report_customer_fk',
+      );
+    });
+  });
+
+  describe('coupon_redemptions_usage_scope_uidx / coupon_redemptions_usage_scope_key_check', () => {
+    /** 別の日報をもう1件作る(同じ顧客の2回目の訪問)。 */
+    async function createSecondDailyReport(): Promise<string> {
+      const {
+        rows: [row],
+      } = await fixture.client.query<{ id: string }>(
+        `INSERT INTO daily_reports (tenant_id, staff_id, customer_id, occurred_at)
+         VALUES ($1, $2, $3, now()) RETURNING id;`,
+        [fixture.tenantId, fixture.staffId, fixture.customerId],
+      );
+      if (!row) throw new Error('日報の準備に失敗しました');
+      return row.id;
+    }
+
+    it('同じ顧客・同じクーポン・同じ対象年の2件目は拒否される(年1回の上限)', async () => {
+      const couponId = await createCoupon(fixture.client, fixture.tenantId, 'YEARLY-LIMIT');
+      const secondReportId = await createSecondDailyReport();
+
+      await fixture.client.query(
+        `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id,
+                                         discount_kind, discount_amount_yen,
+                                         usage_limit_kind, usage_scope_key)
+         VALUES ($1, $2, $3, $4, 'amount', 500, 'once_per_customer_per_year', '2026');`,
+        [fixture.tenantId, fixture.dailyReportId, fixture.customerId, couponId],
+      );
+
+      // 日報が違っても、同じ顧客・同じ年なら2回目は使えない。usecase側の判定をすり抜けた
+      // 同時リクエストを、ここで最後に止める(doc/14 §8.4)。
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id,
+                                           discount_kind, discount_amount_yen,
+                                           usage_limit_kind, usage_scope_key)
+           VALUES ($1, $2, $3, $4, 'amount', 500, 'once_per_customer_per_year', '2026');`,
+          [fixture.tenantId, secondReportId, fixture.customerId, couponId],
+        ),
+        'coupon_redemptions_usage_scope_uidx',
+      );
+    });
+
+    it('対象年が違えば通る(翌年はまた使える)', async () => {
+      const couponId = await createCoupon(fixture.client, fixture.tenantId, 'YEARLY-NEXT');
+      const secondReportId = await createSecondDailyReport();
+
+      await fixture.client.query(
+        `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id,
+                                         discount_kind, discount_amount_yen,
+                                         usage_limit_kind, usage_scope_key)
+         VALUES ($1, $2, $3, $4, 'amount', 500, 'once_per_customer_per_year', '2026');`,
+        [fixture.tenantId, fixture.dailyReportId, fixture.customerId, couponId],
+      );
+
+      await expect(
+        fixture.client.query(
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id,
+                                           discount_kind, discount_amount_yen,
+                                           usage_limit_kind, usage_scope_key)
+           VALUES ($1, $2, $3, $4, 'amount', 500, 'once_per_customer_per_year', '2027');`,
+          [fixture.tenantId, secondReportId, fixture.customerId, couponId],
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('上限なし(usage_scope_keyがnull)の行は何件でも通る(部分一意索引の対象外)', async () => {
+      const couponId = await createCoupon(fixture.client, fixture.tenantId, 'NO-LIMIT');
+      const secondReportId = await createSecondDailyReport();
+
+      for (const reportId of [fixture.dailyReportId, secondReportId]) {
+        await expect(
+          fixture.client.query(
+            `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id,
+                                             discount_kind, discount_amount_yen)
+             VALUES ($1, $2, $3, $4, 'amount', 500);`,
+            [fixture.tenantId, reportId, fixture.customerId, couponId],
+          ),
+        ).resolves.toBeDefined();
+      }
+    });
+
+    it('上限のあるクーポンなのにusage_scope_keyが無いと拒否される(上限が無言で効かなくなるのを防ぐ)', async () => {
+      const couponId = await createCoupon(fixture.client, fixture.tenantId, 'LIMIT-NOKEY');
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id,
+                                           discount_kind, discount_amount_yen, usage_limit_kind)
+           VALUES ($1, $2, $3, $4, 'amount', 500, 'once_per_customer');`,
+          [fixture.tenantId, fixture.dailyReportId, fixture.customerId, couponId],
+        ),
+        'coupon_redemptions_usage_scope_key_check',
+      );
+    });
+  });
+
+  describe('customer_coupons_tenant_customer_coupon_uk(同じ顧客に同じクーポンを2行作らない)', () => {
+    it('2回目のINSERTは拒否される(どちらの有効期間が正か決まらなくなるため)', async () => {
+      const couponId = await createCoupon(fixture.client, fixture.tenantId, 'ASSIGN-DUP');
+      await fixture.client.query(
+        'INSERT INTO customer_coupons (tenant_id, customer_id, coupon_id) VALUES ($1, $2, $3);',
+        [fixture.tenantId, fixture.customerId, couponId],
+      );
+
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          'INSERT INTO customer_coupons (tenant_id, customer_id, coupon_id) VALUES ($1, $2, $3);',
+          [fixture.tenantId, fixture.customerId, couponId],
+        ),
+        'customer_coupons_tenant_customer_coupon_uk',
+      );
+    });
+
+    it('有効期間の終了日が開始日より前だと拒否される', async () => {
+      const couponId = await createCoupon(fixture.client, fixture.tenantId, 'ASSIGN-PERIOD');
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          `INSERT INTO customer_coupons (tenant_id, customer_id, coupon_id, valid_from, valid_to)
+           VALUES ($1, $2, $3, '2026-06-30', '2026-06-01');`,
+          [fixture.tenantId, fixture.customerId, couponId],
+        ),
+        'customer_coupons_valid_period_check',
       );
     });
   });

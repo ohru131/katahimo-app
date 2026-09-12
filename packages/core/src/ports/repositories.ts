@@ -3,7 +3,13 @@
  * (このパッケージはDBクライアントに依存しないという境界を守るため、インターフェースだけ持つ)。
  */
 
-import type { CouponDiscountKind } from '@katahimo/shared';
+import type {
+  CouponAudience,
+  CouponBirthdaySubject,
+  CouponDiscountKind,
+  CouponEligibilityKind,
+  CouponUsageLimitKind,
+} from '@katahimo/shared';
 import type { AttendanceRowData } from '../domain/attendance/types';
 import type { LoginThrottlePolicy } from '../domain/auth/loginThrottle';
 import type { AccidentReportContent, DailyReportContent } from '../domain/reports/types';
@@ -13,7 +19,13 @@ import type { TransactionScope } from './unitOfWork';
 // (doc/14 §9。DB・core・APIルート・画面の全てが同じ配列を参照することで許可値のズレを
 // 防ぐ、attendance.tsのMAX_VISITS/MAX_OFFICE_WORKと同じ方針)。ここでは型だけ再exportし、
 // このファイル内の他の型定義から従来通り `CouponDiscountKind` として参照できるようにする。
-export type { CouponDiscountKind } from '@katahimo/shared';
+export type {
+  CouponAudience,
+  CouponBirthdaySubject,
+  CouponDiscountKind,
+  CouponEligibilityKind,
+  CouponUsageLimitKind,
+} from '@katahimo/shared';
 
 /**
  * アプリ層で暗号化して保存する値(CryptoPort.encryptの結果)。使うのは app_settings の
@@ -303,6 +315,13 @@ export interface CustomerProfileFields {
   paymentStatus: string | null;
   gender: string | null;
   ageBracket: string | null;
+  /**
+   * 世帯代表者の生年月日('YYYY-MM-DD')。doc/14 §6。誕生月クーポンの判定に使う。
+   * 解析できない表記はnullのままにする(dobRawにだけ残す)。
+   */
+  dobDate: string | null;
+  /** 生年月日の元表記。dobDateの解析成否によらず常に保持する。 */
+  dobRaw: string | null;
   registeredAt: Date | null;
   externalLastUpdatedAt: Date | null;
 }
@@ -507,6 +526,14 @@ export interface CouponRecord {
   validFrom: string | null;
   /** 有効期間の上限('YYYY-MM-DD')。nullは無期限。 */
   validTo: string | null;
+  /** 'all'=全顧客、'assigned'=customer_couponsで割り当てた顧客だけ。 */
+  audience: CouponAudience;
+  /** 'manual'=条件なし、'birthday_month'=対象者の誕生月のみ。 */
+  eligibilityKind: CouponEligibilityKind;
+  /** eligibilityKind='birthday_month'のときだけ値を持つ(誰の誕生日を見るか)。 */
+  birthdaySubject: CouponBirthdaySubject | null;
+  /** 同じ顧客が何回使えるか。 */
+  usageLimitKind: CouponUsageLimitKind;
   /**
    * false=廃止済み。廃止しても行は消さない(過去の適用記録coupon_redemptionsから
    * 複合FKで参照されているため。消すと履歴が壊れる)。
@@ -524,6 +551,10 @@ export interface NewCouponInput {
   discountPercent: number | null;
   validFrom: string | null;
   validTo: string | null;
+  audience: CouponAudience;
+  eligibilityKind: CouponEligibilityKind;
+  birthdaySubject: CouponBirthdaySubject | null;
+  usageLimitKind: CouponUsageLimitKind;
   active: boolean;
   note: string | null;
 }
@@ -542,31 +573,47 @@ export interface CouponRepositoryPort {
 
 /**
  * 日報1件への割引クーポン適用記録1件(doc/14 §9)。discountKind/discountAmountYen/
- * discountPercentは、適用した瞬間のcouponsマスタの値を複製したスナップショット
+ * discountPercent/usageLimitKindは、適用した瞬間のcouponsマスタの値を複製したスナップショット
  * (あとでマスタの割引額を書き換えても、ここは動かない。packages/db/src/schema/coupons.ts
- * のヘッダーコメント参照)。顧客IDは持たない(日報から引ける。二重に持つと日報側の顧客と
- * 食い違う状態を作れてしまうため)。
+ * のヘッダーコメント参照)。
+ *
+ * customerIdは日報の顧客と必ず同じ値になる((tenant_id, daily_report_id, customer_id)の
+ * 複合FKでDBが強制する)。使用上限をDBの一意索引で縛るために持つ。
  */
 export interface CouponRedemptionRecord {
   id: string;
   tenantId: string;
   dailyReportId: string;
+  /** 日報の顧客と同じ値。 */
+  customerId: string;
   couponId: string;
   appliedAt: Date;
   discountKind: CouponDiscountKind;
   discountAmountYen: number | null;
   discountPercent: number | null;
+  usageLimitKind: CouponUsageLimitKind;
+  /** 使用上限を数える単位('lifetime' / '2026')。上限なしのクーポンはnull。 */
+  usageScopeKey: string | null;
+  /** 誕生月クーポンのとき、根拠にした人の氏名(適用時点の値)。 */
+  birthdaySubjectName: string | null;
+  /** 誕生月クーポンのとき、根拠にした人の生年月日('YYYY-MM-DD')。 */
+  birthdaySubjectDob: string | null;
   note: string | null;
 }
 
 export interface NewCouponRedemptionInput {
   tenantId: string;
   dailyReportId: string;
+  customerId: string;
   couponId: string;
   /** usecase側(saveDailyReport)がcouponsマスタから写して渡す。呼び出し側で改変しないこと。 */
   discountKind: CouponDiscountKind;
   discountAmountYen: number | null;
   discountPercent: number | null;
+  usageLimitKind: CouponUsageLimitKind;
+  usageScopeKey: string | null;
+  birthdaySubjectName: string | null;
+  birthdaySubjectDob: string | null;
   note?: string | null;
 }
 
@@ -589,6 +636,47 @@ export interface CouponRedemptionRepositoryPort {
   listByDailyReportId(tenantId: string, dailyReportId: string): Promise<CouponRedemptionRecord[]>;
   /** 日報履歴一覧のようにN件まとめて表示する画面向け(1件ずつ引くN+1を避ける)。 */
   listByDailyReportIds(tenantId: string, dailyReportIds: string[]): Promise<CouponRedemptionRecord[]>;
+  /**
+   * 指定顧客の適用記録を全件返す。日報画面のクーポン選択で「この顧客がもう使ったか」を
+   * 判定するために使う(1世帯あたりの件数は高々数十件のため、期間で絞らず全件引く)。
+   */
+  listByCustomerId(tenantId: string, customerId: string): Promise<CouponRedemptionRecord[]>;
+}
+
+/**
+ * 顧客へのクーポン割当1件(doc/14 §9)。coupons.audience='assigned' のクーポンは、
+ * ここに行がある顧客だけが使える。
+ */
+export interface CustomerCouponRecord {
+  id: string;
+  tenantId: string;
+  customerId: string;
+  couponId: string;
+  /** この顧客に限った有効期間の下限('YYYY-MM-DD')。nullはマスタの期間に従う。 */
+  validFrom: string | null;
+  /** この顧客に限った有効期間の上限('YYYY-MM-DD')。nullはマスタの期間に従う。 */
+  validTo: string | null;
+  note: string | null;
+}
+
+export interface NewCustomerCouponInput {
+  tenantId: string;
+  customerId: string;
+  couponId: string;
+  validFrom: string | null;
+  validTo: string | null;
+  note: string | null;
+}
+
+export interface CustomerCouponRepositoryPort {
+  listByCustomerId(tenantId: string, customerId: string): Promise<CustomerCouponRecord[]>;
+  /**
+   * 割り当てる(既にあれば有効期間・メモを上書きする)。同じ顧客に同じクーポンを2行作らない
+   * (customer_coupons_tenant_customer_coupon_uk)。
+   */
+  upsert(input: NewCustomerCouponInput): Promise<CustomerCouponRecord>;
+  /** 割当を取り消す。存在しなければfalseを返す。 */
+  remove(tenantId: string, customerId: string, couponId: string): Promise<boolean>;
 }
 
 /**

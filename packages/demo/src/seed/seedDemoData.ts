@@ -1,5 +1,6 @@
 import type { Container } from '@katahimo/api';
 import {
+  assignCouponToCustomer,
   createCoupon,
   createCustomer,
   registerStaff,
@@ -44,6 +45,14 @@ function fullAddress(index: number): string {
   const figure = DEMO_FIGURES[index];
   if (!figure) throw new Error(`存在しないデモ世帯です: index=${index}`);
   return `${figure.prefecture}${figure.city}${figure.addressDetail}`;
+}
+
+/**
+ * 世帯代表者の生年月日を「今月」で作る('YYYY/M/D' の手入力と同じ表記)。年は固定で構わない
+ * (誕生月クーポンは年を見ず月だけで判定するため。usecases/coupons.tsのfindBirthdayPerson)。
+ */
+function representativeBirthdayThisMonth(today: Date): string {
+  return `1990/${today.getUTCMonth() + 1}/15`;
 }
 
 /** 月齢から生年月日('YYYY-MM-DD')を作る。「今日」基準なので、いつ見ても年齢が古びない。 */
@@ -127,6 +136,34 @@ export async function seedDemoData(
   });
   if (!springCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${springCoupon.reason})`);
 
+  // 誕生月クーポン(doc/14 §9)。日報タブのクーポン選択に「🎂 ○○さんの誕生月」として
+  // 出るのは、世帯代表またはお子さまの誕生月に当たる世帯だけになる。下で1世帯目の代表者に
+  // 「今月」の生年月日を入れてあるので、デモをいつ開いてもこの動きを1件は見られる。
+  const birthdayCoupon = await createCoupon(container, tenant.id, {
+    code: 'BIRTHDAY10',
+    name: 'お誕生月 10%引き',
+    discountKind: 'percent',
+    discountPercent: 10,
+    eligibilityKind: 'birthday_month',
+    birthdaySubject: 'any',
+    usageLimitKind: 'once_per_customer_per_year',
+    note: '世帯代表またはお子さまの誕生月に、年1回ご利用いただけます',
+  });
+  if (!birthdayCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${birthdayCoupon.reason})`);
+
+  // 顧客ごとに配るクーポン。配っていない世帯では日報タブの選択肢に出ない
+  // (顧客カルテの「クーポン」から配ると出てくる)。
+  const thankYouCoupon = await createCoupon(container, tenant.id, {
+    code: 'THANKS1000',
+    name: '長期ご利用のお礼 1000円引き',
+    discountKind: 'amount',
+    discountAmountYen: 1000,
+    audience: 'assigned',
+    usageLimitKind: 'once_per_customer',
+    note: '対象の世帯にのみ配布。1回限り',
+  });
+  if (!thankYouCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${thankYouCoupon.reason})`);
+
   const customerIdByName = new Map<string, string>();
   const addressLatLng = new Map<string, { lat: number; lng: number }>();
   addressLatLng.set(DEMO_OFFICE.address, { lat: DEMO_OFFICE.lat, lng: DEMO_OFFICE.lng });
@@ -157,6 +194,10 @@ export async function seedDemoData(
       latLng: `${figure.lat},${figure.lng}`,
       memberType: '定期利用',
       memberStatus: '有効',
+      // 1世帯目の代表者だけ「今月」生まれにして、誕生月クーポン(BIRTHDAY10)がデモを
+      // いつ開いても1件は選択肢に出るようにする。他の世帯は未登録のまま残し、
+      // 「生年月日が入っていない世帯では誕生月クーポンが出ない」ことも同時に見せる。
+      dob: index === 0 ? representativeBirthdayThisMonth(today) : undefined,
       registeredAt: new Date(today.getTime() - 200 * 24 * 60 * 60 * 1000),
       familyMembers: figure.children.map((child) => ({
         name: `${figure.familyName} ${child.givenName}`,
@@ -166,6 +207,14 @@ export async function seedDemoData(
     });
     customerIdByName.set(name, created.id);
     addressLatLng.set(address, { lat: figure.lat, lng: figure.lng });
+
+    // 配布型クーポンは1世帯目にだけ配る(顧客カルテの「クーポン」で配布状況を見られる)。
+    if (index === 0) {
+      const assigned = await assignCouponToCustomer(container, tenant.id, created.id, {
+        couponId: thankYouCoupon.couponId,
+      });
+      if (!assigned.ok) throw new Error(`デモ用クーポンの配布に失敗しました(${assigned.reason})`);
+    }
   }
 
   // 今日ぶんも入れる。「今日の訪問がまだ1件も無い」状態でデモが始まると、

@@ -15,8 +15,10 @@ import type {
   AccidentReportRepositoryPort,
   CouponRedemptionRepositoryPort,
   CouponRepositoryPort,
+  CustomerCouponRepositoryPort,
   CustomerRepositoryPort,
   DailyReportRepositoryPort,
+  FamilyMemberRepositoryPort,
   StaffRepositoryPort,
 } from '../ports/repositories';
 import type { UnitOfWorkPort } from '../ports/unitOfWork';
@@ -30,6 +32,10 @@ export interface ReportDeps {
   staff: StaffRepositoryPort;
   coupons: CouponRepositoryPort;
   couponRedemptions: CouponRedemptionRepositoryPort;
+  // クーポンの適用条件(誕生月・顧客ごとの配布)の判定に使う。CouponDepsと同じ顔ぶれを
+  // 満たすことで、日報保存時の検証と日報画面の選択肢づくりが同じ関数を通れるようにする。
+  customerCoupons: CustomerCouponRepositoryPort;
+  familyMembers: FamilyMemberRepositoryPort;
   notifier: NotifierPort;
   /** GAS版「日報」「事故報告」シートへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
   mirror: MirrorPort;
@@ -159,12 +165,13 @@ export async function saveDailyReport(
   // DB書き込みを一切伴わない読み取りなので、トランザクションの外で先に済ませておく
   // (unitOfWork.tsの「run()に入る前に済ませておく」というルールに合わせる)。
   // ここで弾いた入力は、DBのCHECK制約(23514)ではなく分かりやすいエラーとして失敗する。
-  const couponSnapshots = await resolveCouponRedemptionSnapshots(
-    deps,
-    tenantId,
-    input.couponIds ?? [],
-    reportDateStr,
-  );
+  const couponSnapshots = await resolveCouponRedemptionSnapshots(deps, tenantId, input.couponIds ?? [], {
+    customerId: input.customerId,
+    onDate: reportDateStr,
+    // 編集中の日報が既に使っている分は「使用済み」に数えない(自分が付けたクーポンのせいで
+    // 自分の日報を編集できなくなるのを防ぐ)。
+    excludeDailyReportId: input.reportId ?? null,
+  });
 
   // 保存とミラー要求のenqueue・クーポン適用記録の書き換えは1つのトランザクションで確定させる。
   // 分けると、日報は保存できたのにスプレッドシートへ永久に反映されない行や、日報とクーポンの

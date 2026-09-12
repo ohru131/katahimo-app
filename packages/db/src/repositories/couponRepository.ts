@@ -1,8 +1,12 @@
 import type {
+  CouponAudience,
+  CouponBirthdaySubject,
   CouponDiscountKind,
+  CouponEligibilityKind,
   CouponPatchInput,
   CouponRecord,
   CouponRepositoryPort,
+  CouponUsageLimitKind,
   NewCouponInput,
 } from '@katahimo/core/ports';
 import { eq } from 'drizzle-orm';
@@ -25,6 +29,12 @@ function toRecord(row: CouponRow): CouponRecord {
     discountPercent: row.discountPercent,
     validFrom: row.validFrom,
     validTo: row.validTo,
+    // いずれもCHECK制約(coupons_audience_check等)によりDB上は許可値しか入らないので、
+    // discountKindと同じくasで型を絞る。
+    audience: row.audience as CouponAudience,
+    eligibilityKind: row.eligibilityKind as CouponEligibilityKind,
+    birthdaySubject: row.birthdaySubject as CouponBirthdaySubject | null,
+    usageLimitKind: row.usageLimitKind as CouponUsageLimitKind,
     active: row.active,
     note: row.note,
   };
@@ -41,6 +51,10 @@ function toInsertValues(input: NewCouponInput) {
     discountPercent: input.discountPercent,
     validFrom: input.validFrom,
     validTo: input.validTo,
+    audience: input.audience,
+    eligibilityKind: input.eligibilityKind,
+    birthdaySubject: input.birthdaySubject,
+    usageLimitKind: input.usageLimitKind,
     active: input.active,
     note: input.note,
   };
@@ -56,6 +70,10 @@ function toPatchValues(patch: CouponPatchInput): Partial<typeof coupons.$inferIn
   if (patch.discountPercent !== undefined) values.discountPercent = patch.discountPercent;
   if (patch.validFrom !== undefined) values.validFrom = patch.validFrom;
   if (patch.validTo !== undefined) values.validTo = patch.validTo;
+  if (patch.audience !== undefined) values.audience = patch.audience;
+  if (patch.eligibilityKind !== undefined) values.eligibilityKind = patch.eligibilityKind;
+  if (patch.birthdaySubject !== undefined) values.birthdaySubject = patch.birthdaySubject;
+  if (patch.usageLimitKind !== undefined) values.usageLimitKind = patch.usageLimitKind;
   if (patch.active !== undefined) values.active = patch.active;
   if (patch.note !== undefined) values.note = patch.note;
   return values;

@@ -2,6 +2,7 @@ import type {
   CouponDiscountKind,
   CouponRedemptionRecord,
   CouponRedemptionRepositoryPort,
+  CouponUsageLimitKind,
   NewCouponRedemptionInput,
   TransactionScope,
 } from '@katahimo/core/ports';
@@ -18,12 +19,17 @@ function toRecord(row: CouponRedemptionRow): CouponRedemptionRecord {
     id: row.id,
     tenantId: row.tenantId,
     dailyReportId: row.dailyReportId,
+    customerId: row.customerId,
     couponId: row.couponId,
     appliedAt: row.appliedAt,
     // discount_kind_checkによりDB上は'amount'|'percent'しか入らないので、asで型を絞る。
     discountKind: row.discountKind as CouponDiscountKind,
     discountAmountYen: row.discountAmountYen,
     discountPercent: row.discountPercent,
+    usageLimitKind: row.usageLimitKind as CouponUsageLimitKind,
+    usageScopeKey: row.usageScopeKey,
+    birthdaySubjectName: row.birthdaySubjectName,
+    birthdaySubjectDob: row.birthdaySubjectDob,
     note: row.note,
   };
 }
@@ -33,10 +39,15 @@ function toInsertValues(input: NewCouponRedemptionInput) {
   return {
     tenantId: input.tenantId,
     dailyReportId: input.dailyReportId,
+    customerId: input.customerId,
     couponId: input.couponId,
     discountKind: input.discountKind,
     discountAmountYen: input.discountAmountYen,
     discountPercent: input.discountPercent,
+    usageLimitKind: input.usageLimitKind,
+    usageScopeKey: input.usageScopeKey,
+    birthdaySubjectName: input.birthdaySubjectName,
+    birthdaySubjectDob: input.birthdaySubjectDob,
     note: input.note ?? null,
   };
 }
@@ -99,6 +110,16 @@ export class DrizzleCouponRedemptionRepository implements CouponRedemptionReposi
             inArray(couponRedemptions.dailyReportId, dailyReportIds),
           ),
         );
+      return rows.map(toRecord);
+    });
+  }
+
+  async listByCustomerId(tenantId: string, customerId: string): Promise<CouponRedemptionRecord[]> {
+    return withTenant(this.db, tenantId, async (tx) => {
+      const rows = await tx
+        .select()
+        .from(couponRedemptions)
+        .where(and(eq(couponRedemptions.tenantId, tenantId), eq(couponRedemptions.customerId, customerId)));
       return rows.map(toRecord);
     });
   }

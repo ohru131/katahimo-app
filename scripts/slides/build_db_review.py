@@ -41,7 +41,7 @@ title_slide(
     prs,
     "DATABASE DESIGN REVIEW",
     "katahimo-app\nデータベース構造レビュー資料",
-    "訪問保育(ベビーシッター法人)向け業務SaaS — PostgreSQL / 33テーブル",
+    "訪問保育(ベビーシッター法人)向け業務SaaS — PostgreSQL / 34テーブル",
     "現状の構成 ・ 設計上の問題点 ・ ご相談したいこと\n"
     "実装は packages/db/src/schema/*.ts が正 / 本番未配備・運用開始前",
 )
@@ -69,7 +69,7 @@ card(s, ML + 8.3, 1.25, 4.03, 2.35, "この資料の作り", accent=GREEN, items
 text(s, ML, 3.9, CW, 0.3, "資料の構成(全29ページ)", size=13, color=INK, bold=True)
 chs = [
     ("第1章", "まず用語から", "表・主キー・外部キー・\nトランザクション・RLS", ACCENT, ACCENT_L, "P4–5"),
-    ("第2章", "現状の構成", "33テーブルの全体像と、\nテナント分離・データ保護", GREEN, GREEN_L, "P6–17"),
+    ("第2章", "現状の構成", "34テーブルの全体像と、\nテナント分離・データ保護", GREEN, GREEN_L, "P6–17"),
     ("第3章", "設計上の問題点", "customers 37列の肥大化ほか\n6件を自己申告", RED, RED_L, "P18–24"),
     ("第4章", "相談事項", "先行して用意したスキーマと、\n判断いただきたい論点", VIOLET, VIOLET_L, "P25–29"),
 ]
@@ -200,7 +200,7 @@ note(s, DX, 4.95, 4.3, 1.15, "なぜ重要か",
 # 6. 第2章 divider
 # ══════════════════════════════════════════════════════════════
 sec_("第 2 章", "現状の構成",
-     "33テーブルの全体像と、テナント分離・データ保護・トランザクションの考え方")
+     "34テーブルの全体像と、テナント分離・データ保護・トランザクションの考え方")
 
 # ══════════════════════════════════════════════════════════════
 # 7. 何を記録しているのか(業務の流れ)
@@ -247,9 +247,9 @@ note(s, ML, 5.72, CW, 1.1, "設計の出発点",
      accent=ACCENT, fill=ACCENT_L)
 
 # ══════════════════════════════════════════════════════════════
-# 8. 全体像 33テーブル
+# 8. 全体像 34テーブル
 # ══════════════════════════════════════════════════════════════
-s = sl_("全体像 — 33テーブル", "業務ドメインごとに10のまとまり。tenants以外の32枚はすべて同じ形を守る",
+s = sl_("全体像 — 34テーブル", "業務ドメインごとに10のまとまり。tenants以外の33枚はすべて同じ形を守る",
         source="packages/db/src/schema/*.ts / 詳細なER図は doc/09 第2章")
 
 chip_row(s, ML, 1.12, [("全テーブルが tenant_id を持つ", ACCENT, ACCENT_L),
@@ -269,14 +269,14 @@ def group_box(x, y, title, n, names, col, fl):
          font=MONO, line=1.5)
 
 
-text(s, ML, 1.5, 6.0, 0.26, "稼働中 — アプリが読み書きしている15枚", size=11.5, color=VIOLET,
+text(s, ML, 1.5, 6.0, 0.26, "稼働中 — アプリが読み書きしている16枚", size=11.5, color=VIOLET,
      bold=True)
 live = [
     ("テナント基盤", 4, ["tenants", "tenant_keys", "app_settings", "outbox_jobs"]),
     ("認証・スタッフ", 3, ["staff", "sessions", "password_reset_codes"]),
     ("顧客", 2, ["customers", "family_members"]),
     ("訪問の記録", 4, ["daily_reports", "accident_reports", "receipts", "attendance_days"]),
-    ("割引クーポン", 2, ["coupons", "coupon_redemptions"]),
+    ("割引クーポン", 3, ["coupons", "customer_coupons", "coupon_redemptions"]),
 ]
 cx = ML
 for ttl, n, names in live:
@@ -474,7 +474,7 @@ text(s, ML, y2 + 1.88, 6.0, 0.5,
      size=10.5, color=MUTED, line=1.3)
 
 card(s, ML + 6.33, 2.95, 6.0, 1.45, "効いていることをCIで毎回確かめている", accent=GREEN, items=[
-    {"t": "静的検査:全33テーブル分のSQLに ENABLE と FORCE、ポリシーの条件が揃っているかを機械的に検査。"
+    {"t": "静的検査:全34テーブル分のSQLに ENABLE と FORCE、ポリシーの条件が揃っているかを機械的に検査。"
           "新しい表を足して書き忘れると落ちる"},
     {"t": "実DB検証:権限を落としたロールを作り、実際に他社の行が見えないことを確認"},
 ], body_size=10.5)
@@ -717,7 +717,7 @@ note(s, ML, 5.9, CW, 1.0, "なぜ「Outbox」という形にするのか",
 # ══════════════════════════════════════════════════════════════
 # 16. スキーマ共通ルール
 # ══════════════════════════════════════════════════════════════
-s = sl_("33テーブルで守っている共通ルール", "表ごとに判断がぶれないよう、形を決めてある",
+s = sl_("34テーブルで守っている共通ルール", "表ごとに判断がぶれないよう、形を決めてある",
         source="doc/09 / packages/db/src/schema/*.ts のコメントに理由を記載")
 left = [
     ("主キーは必ず uuid のランダム値", "連番にしない。件数が外から推測できず、採番の集中点も作らない"),
@@ -1186,13 +1186,13 @@ note(s, ML, 6.05, CW, 0.85, "いちばん困っていること",
 s = sl_("付録 — 一次情報の在り処と、用語の対応", "この資料は要約なので、判断に必要な詳細はこちらを")
 card(s, ML, 1.28, 6.0, 2.6, "コード(こちらが正)", accent=ACCENT, items=[
     {"t": [("packages/db/src/schema/*.ts", {"font": MONO, "bold": True}),
-           ("  33テーブルの定義。列ごとに「なぜこの形か」をコメントで書いてある", {})]},
+           ("  34テーブルの定義。列ごとに「なぜこの形か」をコメントで書いてある", {})]},
     {"t": [("packages/db/drizzle/0000_baseline_schema.sql", {"font": MONO, "bold": True}),
            ("  適用されるDDL。RLSの FORCE と updated_at トリガーはここに手で追記", {})]},
     {"t": [("packages/shared/src/contracts/", {"font": MONO, "bold": True}),
            ("  区分値(CHECK制約の許可値)の定義。DDLはここから組み立てる", {})]},
     {"t": [("packages/core/src/ports/", {"font": MONO, "bold": True}),
-           ("  業務ロジックが外部に求める窓口の定義(28本)", {})]},
+           ("  業務ロジックが外部に求める窓口の定義(29本)", {})]},
 ], body_size=10.5)
 card(s, ML + 6.33, 1.28, 6.0, 2.6, "ドキュメント", accent=GREEN, items=[
     {"t": [("doc/09_データベース構造解説.md", {"bold": True}),

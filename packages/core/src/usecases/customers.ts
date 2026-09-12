@@ -68,6 +68,12 @@ export interface CreateCustomerInput {
   paymentStatus?: string;
   gender?: string;
   ageBracket?: string;
+  /**
+   * 世帯代表者の生年月日(自由記述の"YYYY/M/D"等)。日付型への分解(doc/14 §6)は
+   * buildCustomerRecordFieldsがparseDateOnlyで行うため、呼び出し側は生の表記を渡せばよい。
+   * RESERVA CSVには生年月日の列が無いため、取り込みでは渡されない。
+   */
+  dob?: string;
   registeredAt?: Date;
   externalLastUpdatedAt?: Date;
   familyMembers?: FamilyMemberInput[];
@@ -82,6 +88,10 @@ function buildCustomerRecordFields(tenantId: string, input: CreateCustomerInput)
   // parseLatLngで分解できた場合だけlat/lngに数値を入れる(解析できない表記はnull)。
   const latLngRaw = nullIfEmpty(input.latLng);
   const { lat, lng } = latLngRaw ? parseLatLng(latLngRaw) : { lat: null, lng: null };
+
+  // doc/14 §6: 世帯構成員(buildFamilyMemberInputs)と同じ扱い。元表記は必ず残し、
+  // parseDateOnlyで解析できた場合だけ日付型のdobDateに入れる。
+  const dobRaw = nullIfEmpty(input.dob);
 
   return {
     tenantId,
@@ -116,6 +126,13 @@ function buildCustomerRecordFields(tenantId: string, input: CreateCustomerInput)
     paymentStatus: input.paymentStatus ?? null,
     gender: input.gender ?? null,
     ageBracket: input.ageBracket ?? null,
+    // 【dobだけキーごと省略する理由】
+    // RESERVA CSVには生年月日の列が無いため、取込(reservaCsv/plan.ts)はinput.dobを渡さない。
+    // ここで常に dobDate/dobRaw のキーを作ると、CustomerPatchInput は「キーがある=その値で
+    // 上書きする」という意味なので、再取込のたびに手入力した生年月日がnullで消える
+    // (誕生月クーポンが翌月から無言で効かなくなる)。渡されなかったときはキー自体を作らず、
+    // リポジトリの toPatchValues に「触らない」と伝える。
+    ...(input.dob !== undefined ? { dobDate: dobRaw ? parseDateOnly(dobRaw) : null, dobRaw } : {}),
     registeredAt: input.registeredAt ?? null,
     externalLastUpdatedAt: input.externalLastUpdatedAt ?? null,
   };
@@ -160,6 +177,31 @@ export async function createCustomer(
   }
 
   return created;
+}
+
+/**
+ * 顧客の生年月日だけを更新する(誕生月クーポンの判定に使う。doc/14 §9)。
+ *
+ * updateCustomer を使わないのは、あちらが buildCustomerRecordFields で「全項目を持つ record」を
+ * 作ってパッチにするため。氏名と生年月日だけを渡すと、他の項目(メール・電話・住所・メモ等)が
+ * 一斉にnullで上書きされてしまう。取込(全項目が揃っている)専用の入り口と、画面からの
+ * 1項目更新は別の関数に分ける。
+ *
+ * 空文字/undefinedは「消す」を意味し、dobDate・dobRawの両方をnullに戻す。
+ * 存在しない/他テナントのIDならnullを返す。
+ */
+export async function updateCustomerBirthday(
+  deps: CustomerDeps,
+  tenantId: string,
+  customerId: string,
+  dob: string | null | undefined,
+): Promise<CustomerRecord | null> {
+  // doc/14 §6: 元表記は必ず残し、parseDateOnlyで解析できた場合だけ日付型のdobDateに入れる。
+  const dobRaw = nullIfEmpty(dob);
+  return deps.customers.update(tenantId, customerId, {
+    dobDate: dobRaw ? parseDateOnly(dobRaw) : null,
+    dobRaw,
+  });
 }
 
 /**
@@ -273,6 +315,8 @@ export interface CustomerDetailView {
   paymentStatus: string | null;
   gender: string | null;
   ageBracket: string | null;
+  dobDate: string | null;
+  dobRaw: string | null;
   registeredAt: Date | null;
   externalLastUpdatedAt: Date | null;
   deactivatedAt: Date | null;
@@ -325,6 +369,8 @@ export async function getCustomerDetail(
     paymentStatus: row.paymentStatus,
     gender: row.gender,
     ageBracket: row.ageBracket,
+    dobDate: row.dobDate,
+    dobRaw: row.dobRaw,
     registeredAt: row.registeredAt,
     externalLastUpdatedAt: row.externalLastUpdatedAt,
     deactivatedAt: row.deactivatedAt,

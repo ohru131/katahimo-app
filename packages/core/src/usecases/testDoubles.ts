@@ -28,6 +28,8 @@ import type {
   CouponRedemptionRecord,
   CouponRedemptionRepositoryPort,
   CouponRepositoryPort,
+  CustomerCouponRecord,
+  CustomerCouponRepositoryPort,
   CustomerPatchInput,
   CustomerProfileFields,
   CustomerRecord,
@@ -40,6 +42,7 @@ import type {
   NewAccidentReportInput,
   NewCouponInput,
   NewCouponRedemptionInput,
+  NewCustomerCouponInput,
   NewCustomerInput,
   NewDailyReportInput,
   NewFamilyMemberInput,
@@ -348,6 +351,8 @@ const EMPTY_PROFILE_FIELDS: CustomerProfileFields = {
   paymentStatus: null,
   gender: null,
   ageBracket: null,
+  dobDate: null,
+  dobRaw: null,
   registeredAt: null,
   externalLastUpdatedAt: null,
 };
@@ -1012,6 +1017,46 @@ export class FakeCouponRepository implements CouponRepositoryPort {
   }
 }
 
+/**
+ * 顧客へのクーポン割当(customer_coupons)のインメモリ実装。同じ(顧客, クーポン)は
+ * 1行しか持たない(customer_coupons_tenant_customer_coupon_uk と同じ制約)。
+ */
+export class FakeCustomerCouponRepository implements CustomerCouponRepositoryPort {
+  private readonly rows: CustomerCouponRecord[] = [];
+  private seq = 0;
+
+  async listByCustomerId(tenantId: string, customerId: string): Promise<CustomerCouponRecord[]> {
+    return this.rows
+      .filter((r) => r.tenantId === tenantId && r.customerId === customerId)
+      .map((r) => ({ ...r }));
+  }
+
+  async upsert(input: NewCustomerCouponInput): Promise<CustomerCouponRecord> {
+    const existing = this.rows.find(
+      (r) =>
+        r.tenantId === input.tenantId && r.customerId === input.customerId && r.couponId === input.couponId,
+    );
+    if (existing) {
+      existing.validFrom = input.validFrom;
+      existing.validTo = input.validTo;
+      existing.note = input.note;
+      return { ...existing };
+    }
+    const record: CustomerCouponRecord = { id: `customer-coupon-${++this.seq}`, ...input };
+    this.rows.push(record);
+    return { ...record };
+  }
+
+  async remove(tenantId: string, customerId: string, couponId: string): Promise<boolean> {
+    const index = this.rows.findIndex(
+      (r) => r.tenantId === tenantId && r.customerId === customerId && r.couponId === couponId,
+    );
+    if (index < 0) return false;
+    this.rows.splice(index, 1);
+    return true;
+  }
+}
+
 export class FakeCouponRedemptionRepository
   implements CouponRedemptionRepositoryPort, FakeTransactionParticipant
 {
@@ -1032,11 +1077,16 @@ export class FakeCouponRedemptionRepository
         id: `coupon-redemption-${++this.seq}`,
         tenantId: input.tenantId,
         dailyReportId: input.dailyReportId,
+        customerId: input.customerId,
         couponId: input.couponId,
         appliedAt: new Date(),
         discountKind: input.discountKind,
         discountAmountYen: input.discountAmountYen,
         discountPercent: input.discountPercent,
+        usageLimitKind: input.usageLimitKind,
+        usageScopeKey: input.usageScopeKey,
+        birthdaySubjectName: input.birthdaySubjectName,
+        birthdaySubjectDob: input.birthdaySubjectDob,
         note: input.note ?? null,
       }),
     );
@@ -1054,6 +1104,12 @@ export class FakeCouponRedemptionRepository
     const idSet = new Set(dailyReportIds);
     return this.rows
       .filter((r) => r.tenantId === tenantId && idSet.has(r.dailyReportId))
+      .map((r) => ({ ...r }));
+  }
+
+  async listByCustomerId(tenantId: string, customerId: string): Promise<CouponRedemptionRecord[]> {
+    return this.rows
+      .filter((r) => r.tenantId === tenantId && r.customerId === customerId)
       .map((r) => ({ ...r }));
   }
 

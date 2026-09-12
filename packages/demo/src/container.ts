@@ -5,6 +5,7 @@ import {
   DrizzleAttendanceDayRepository,
   DrizzleCouponRedemptionRepository,
   DrizzleCouponRepository,
+  DrizzleCustomerCouponRepository,
   DrizzleCustomerRepository,
   DrizzleDailyReportRepository,
   DrizzleFamilyMemberRepository,
@@ -95,6 +96,7 @@ export function createDemoContainer(deps: DemoContainerDeps): DemoContainer {
     receipts: new DrizzleReceiptRepository(deps.db),
     coupons: new DrizzleCouponRepository(deps.db),
     couponRedemptions: new DrizzleCouponRedemptionRepository(deps.db),
+    customerCoupons: new DrizzleCustomerCouponRepository(deps.db),
     // 訪問者が入力したAPIキー/Webhook URLはメモリに留め、IndexedDBには書かない。
     appSettings: new DemoAppSettingsRepository(new DrizzleAppSettingsRepository(deps.db)),
     crypto,

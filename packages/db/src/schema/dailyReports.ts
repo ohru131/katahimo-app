@@ -118,6 +118,12 @@ export const dailyReports = pgTable(
     // 参照してもDBが検知できない)。PostgreSQL的にも、複合FKの参照先には参照する列の組と
     // 完全に一致するUNIQUE制約が必要(idだけのPKでは(tenant_id, id)を参照できない)。
     unique('daily_reports_tenant_id_uk').on(t.tenantId, t.id),
+    // doc/14 §9: coupon_redemptions.(tenant_id, daily_report_id, customer_id) からの複合FKの
+    // 参照先。適用記録側に顧客IDを持たせる(年1回などの使用上限をDBで縛るために必要)一方で、
+    // 「日報の顧客と食い違う顧客IDを書けてしまう」二重管理にしないため、顧客IDまで含めた
+    // この組をFKで縛る。PostgreSQLは複合FKの参照先に、参照する列の組と完全に一致する
+    // UNIQUE制約を要求するため、(tenant_id, id)とは別にこの3列の組も持つ。
+    unique('daily_reports_tenant_id_customer_uk').on(t.tenantId, t.id, t.customerId),
     // 「顧客の日報履歴」を開くたびに走る listByCustomer
     // (WHERE customer_id=? ORDER BY occurred_at DESC LIMIT n)を索引だけで返すための複合索引。
     // occurredAt を DESC で含めるのは、ORDER BY と向きを揃えて並べ替えを省くため(doc/14 §3)。

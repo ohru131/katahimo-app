@@ -1,11 +1,26 @@
 import type {
   AttendanceRowData,
+  CouponAudience,
+  CouponBirthdaySubject,
   CouponCreateRequest,
   CouponDiscountKind,
+  CouponEligibilityKind,
   CouponUpdateRequest,
+  CouponUsageLimitKind,
+  CustomerCouponUpsertRequest,
 } from '@katahimo/shared';
 
-export type { AttendanceRowData, CouponCreateRequest, CouponDiscountKind, CouponUpdateRequest };
+export type {
+  AttendanceRowData,
+  CouponAudience,
+  CouponBirthdaySubject,
+  CouponCreateRequest,
+  CouponDiscountKind,
+  CouponEligibilityKind,
+  CouponUpdateRequest,
+  CouponUsageLimitKind,
+  CustomerCouponUpsertRequest,
+};
 
 export interface StaffView {
   staffId?: string;
@@ -66,6 +81,8 @@ export interface CustomerDetailView {
   paymentStatus: string | null;
   gender: string | null;
   ageBracket: string | null;
+  dobDate: string | null;
+  dobRaw: string | null;
   registeredAt: string | null;
   externalLastUpdatedAt: string | null;
   deactivatedAt: string | null;
@@ -461,6 +478,12 @@ export interface CouponSelectionView {
   discountKind: CouponDiscountKind;
   discountAmountYen: number | null;
   discountPercent: number | null;
+  eligibilityKind: CouponEligibilityKind;
+  usageLimitKind: CouponUsageLimitKind;
+  /** 誕生月クーポンのとき、根拠になる人の氏名(「○○さんの誕生月」と出すため)。 */
+  birthdaySubjectName: string | null;
+  /** この顧客では使用上限に達している。選択肢には残すが選べない。 */
+  alreadyUsed: boolean;
 }
 
 /** 管理者のクーポン管理画面用の1件(GET /api/coupons/admin)。廃止済み(active=false)も含む。 */
@@ -475,9 +498,33 @@ export interface CouponView {
   validFrom: string | null;
   /** 有効期間の上限('YYYY-MM-DD')。nullは無期限。 */
   validTo: string | null;
+  /** 'all'=全顧客、'assigned'=配った顧客だけ(顧客カルテから配る)。 */
+  audience: CouponAudience;
+  /** 'manual'=条件なし、'birthday_month'=対象者の誕生月のみ。 */
+  eligibilityKind: CouponEligibilityKind;
+  /** eligibilityKind='birthday_month'のときだけ値が入る(誰の誕生日を見るか)。 */
+  birthdaySubject: CouponBirthdaySubject | null;
+  /** 同じ顧客が何回使えるか。 */
+  usageLimitKind: CouponUsageLimitKind;
   /** false=廃止済み。廃止しても行は消さない(doc/14 §9)ので一覧には引き続き出る。 */
   active: boolean;
   note: string | null;
+}
+
+/** 顧客カルテの「この顧客が使えるクーポン」1件(GET /api/coupons/admin/customers/:customerId)。 */
+export interface CustomerCouponView {
+  couponId: string;
+  code: string;
+  name: string;
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+  /** この顧客に限った有効期間。nullはクーポンマスタの期間に従う。 */
+  validFrom: string | null;
+  validTo: string | null;
+  note: string | null;
+  /** クーポンマスタ側が廃止済み。配ってあっても使えない。 */
+  couponInactive: boolean;
 }
 
 /** 日報1件に適用済みのクーポン1件(保存結果・履歴表示で使う)。core DailyReportCouponViewと同じ形。 */
@@ -488,16 +535,76 @@ export interface DailyReportCouponView {
   discountKind: CouponDiscountKind;
   discountAmountYen: number | null;
   discountPercent: number | null;
+  /** 誕生月クーポンのとき、根拠にした人の氏名(適用時点の値)。 */
+  birthdaySubjectName: string | null;
 }
 
 /**
- * 日報画面のクーポン選択用一覧。active かつ`date`('YYYY-MM-DD')の時点で有効なものだけが返る
- * (doc/14 §9)。dateは日報の対象日を渡すこと(有効期間の判定が日付依存のため)。
+ * 日報画面のクーポン選択用一覧。その顧客がその日に使える条件を満たすものだけが返る
+ * (doc/14 §9)。誕生月でない月の誕生月クーポンや、その顧客に配られていないクーポンは
+ * 返ってこないので、画面側で条件を判定する必要はない。
+ *
+ * reportIdは編集中の日報。その日報が既に使っている分を「使用済み」に数えないために渡す。
  */
-export async function fetchCouponsForSelection(date: string): Promise<CouponSelectionView[]> {
-  const res = await fetch(`/api/coupons?date=${encodeURIComponent(date)}`, { credentials: 'include' });
+export async function fetchCouponsForSelection(
+  customerId: string,
+  date: string,
+  reportId?: string | null,
+): Promise<CouponSelectionView[]> {
+  const params = new URLSearchParams({ customerId, date });
+  if (reportId) params.set('reportId', reportId);
+  const res = await fetch(`/api/coupons?${params.toString()}`, { credentials: 'include' });
   const body = await parseJsonOrThrow<{ coupons: CouponSelectionView[] }>(res);
   return body.coupons;
+}
+
+/**
+ * 顧客の生年月日を登録・更新する(管理者のみ)。誕生月クーポンの判定に使う。
+ * 空文字を渡すと消える。顧客の他の項目はRESERVA CSVの取込が正なので編集できない。
+ */
+export async function updateCustomerBirthday(customerId: string, dob: string): Promise<void> {
+  const res = await fetch(`/api/customers/${encodeURIComponent(customerId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ dob }),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || '生年月日の更新に失敗しました');
+}
+
+/** 顧客カルテの「この顧客が使えるクーポン」一覧(管理者のみ)。 */
+export async function fetchCustomerCoupons(customerId: string): Promise<CustomerCouponView[]> {
+  const res = await fetch(`/api/coupons/admin/customers/${encodeURIComponent(customerId)}`, {
+    credentials: 'include',
+  });
+  const body = await parseJsonOrThrow<{ coupons: CustomerCouponView[] }>(res);
+  return body.coupons;
+}
+
+/** 顧客にクーポンを配る(既に配ってあれば有効期間・メモを上書きする)。 */
+export async function assignCouponToCustomer(
+  customerId: string,
+  input: CustomerCouponUpsertRequest,
+): Promise<void> {
+  const res = await fetch(`/api/coupons/admin/customers/${encodeURIComponent(customerId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'クーポンの配布に失敗しました');
+}
+
+/** 顧客への配布を取り消す。過去の適用記録は残る。 */
+export async function unassignCouponFromCustomer(customerId: string, couponId: string): Promise<void> {
+  const res = await fetch(
+    `/api/coupons/admin/customers/${encodeURIComponent(customerId)}/${encodeURIComponent(couponId)}`,
+    { method: 'DELETE', credentials: 'include' },
+  );
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'クーポンの配布取り消しに失敗しました');
 }
 
 /** 管理者のクーポン管理画面用。廃止済みも含む全件。 */
