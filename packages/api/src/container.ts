@@ -54,7 +54,7 @@ export interface Container {
   dailyReports: DailyReportRepositoryPort;
   accidentReports: AccidentReportRepositoryPort;
   receipts: ReceiptRepositoryPort;
-  /** 割引クーポンの種別マスタ・適用記録(doc/14 4.1章)。 */
+  /** 割引クーポンの種別マスタ・適用記録(doc/14 §9)。 */
   coupons: CouponRepositoryPort;
   couponRedemptions: CouponRedemptionRepositoryPort;
   appSettings: AppSettingsRepositoryPort;

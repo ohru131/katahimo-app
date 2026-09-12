@@ -97,7 +97,7 @@ function TextField({
  * 「移動・距離・その他」パネル。特定の予定(訪問・事務作業)に紐づかない、その日全体の
  * 項目をまとめて1か所で編集する。GAS版のpastScheduleDetailPanelと同じ役割・見た目。
  *
- * doc/14 B項の段階1でrowDataの数値項目がstring→numberになったため、列記号(fieldKey)ではなく
+ * doc/14 §2の段階1でrowDataの数値項目がstring→numberになったため、列記号(fieldKey)ではなく
  * commuteDistanceKm/visits[0].plannedMoveMinのような新形式のフィールドを直接編集する。
  * onChangeは更新後のrowData全体を渡す(visits配列の途中の要素を更新するのに配列の穴埋め
  * (setArraySlot)が要るため、キー→値のパッチより扱いやすい)。

@@ -7,7 +7,7 @@ import type { DemoMigration } from './database';
 import { applyPendingMigrations } from './database';
 
 /**
- * doc/14 E項: `updated_at` はアプリのコードではなく、DBのトリガー(set_updated_at)が
+ * doc/14 §5: `updated_at` はアプリのコードではなく、DBのトリガー(set_updated_at)が
  * `now()` で更新する方針にした。本番と同じマイグレーションを当てた本物のPostgres
  * (PGlite/WASM)で、その実挙動を固定する(checkConstraints.test.ts と同じ方式)。
  *

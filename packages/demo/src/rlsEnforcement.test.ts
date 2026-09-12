@@ -333,7 +333,7 @@ describe('テナントコンテキストを張らない接続(安全側に倒れ
 });
 
 /**
- * coupons/coupon_redemptions(doc/14 4.1章)専用のフィクスチャ。既存のcreateFixture()を
+ * coupons/coupon_redemptions(doc/14 §9)専用のフィクスチャ。既存のcreateFixture()を
  * 拡張しない理由: あちらは他の2つのdescribeブロック(FORCEの比較用テーブル・
  * 未設定コンテキストの検証)でも使い回されており、そちらの期待値(staffの件数等)に
  * 影響を与えたくないため、新テーブル専用に独立させる。
@@ -418,7 +418,7 @@ async function createCouponFixture(): Promise<CouponFixture> {
   return { client, tenantA, tenantB, couponA, couponB, dailyReportA, dailyReportB };
 }
 
-describe('coupons/coupon_redemptionsがクロステナントのアクセスを止める(doc/14 4.1章)', () => {
+describe('coupons/coupon_redemptionsがクロステナントのアクセスを止める(doc/14 §9)', () => {
   let fixture: CouponFixture;
 
   beforeAll(async () => {

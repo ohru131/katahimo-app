@@ -25,7 +25,7 @@ type RowDataValidation =
  * 詰めて返す(apiErrorSchema.fields、packages/shared/src/contracts/common.ts参照)。
  *
  * 件数の上限(MAX_VISITS/MAX_OFFICE_WORK)はattendanceRowDataSchema自体には無い
- * (データの形としては訪問件数に上限を持たせない、というdoc/14 B項の判断)。上限チェックは
+ * (データの形としては訪問件数に上限を持たせない、というdoc/14 §2の判断)。上限チェックは
  * アプリの入口であるここで行い、超えた場合は理由と解消時期が分かるメッセージで拒否する。
  * 黙って4件目以降を捨てると、給与に直結する値が気付かれないまま失われるため。
  */

@@ -41,7 +41,7 @@ export function formatJstDateOnly(date: Date): string {
 /**
  * 'YYYY-MM-DD'(JST)。parseJstDateTimeが受け付ける区切り("-")に合わせた日付キー。
  * Web側のformatDateKey(toLocaleDateString('sv-SE'))と同じ基準日をバックエンドでも
- * 作れるようにする(doc/14 F項。reportDate省略時のフォールバック等に使う)。
+ * 作れるようにする(doc/14 §6。reportDate省略時のフォールバック等に使う)。
  */
 export function formatJstDateKey(date: Date): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -54,7 +54,7 @@ export function formatJstDateKey(date: Date): string {
 
 /**
  * 'HH:mm'(JST)。daily_reports.started_at/ended_at(timestamptz)を、GAS側スプレッドシートの
- * "HH:mm"表記へ戻すためのミラー送信専用フォーマッタ(doc/14 F項。保存時は"HH:mm"へ整形し直さない)。
+ * "HH:mm"表記へ戻すためのミラー送信専用フォーマッタ(doc/14 §6。保存時は"HH:mm"へ整形し直さない)。
  * 未入力(null)の場合は呼び出し側で空文字にフォールバックすること。
  */
 export function formatJstTimeOnly(date: Date): string {

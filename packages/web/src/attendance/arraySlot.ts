@@ -4,7 +4,7 @@ import type { AttendanceRowData, ScheduleEventSlot } from '../api';
  * 配列(visits/officeWork)のindex番目の要素を更新する。indexが配列の長さを超える場合は、
  * 間を空オブジェクトで埋める。
  *
- * doc/14 B項の段階1で訪問・事務作業が固定5枠(スプレッドシートの列記号)から配列になったが、
+ * doc/14 §2の段階1で訪問・事務作業が固定5枠(スプレッドシートの列記号)から配列になったが、
  * 画面(AttendanceCalendar/slotFields.ts)は引き続き5枠固定で表示する。そのため「訪問その3」
  * (index=2)だけを先に入力する、といった操作が起き得て、その場合visits配列にはindex0・1に
  * 相当する要素がまだ無い。pushだけでは意図した位置に入らないため、間を空オブジェクトで

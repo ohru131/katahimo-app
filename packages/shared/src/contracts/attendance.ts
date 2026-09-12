@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
 /**
- * 出勤簿(勤怠)1日分のrow_data(jsonb)の形。doc/14 B項「勤怠row_dataを意味のあるキー・
+ * 出勤簿(勤怠)1日分のrow_data(jsonb)の形。doc/14 §2「勤怠row_dataを意味のあるキー・
  * 数値にする」の段階1。スプレッドシートの列記号(C/D/E…)ではなく意味のあるキーにし、
  * 分・km・件数はnumberにする(時刻だけは"HH:mm"文字列のまま。business_dateと組み合わせれば
  * 日時が一意に決まり、日跨ぎ勤務もend<startで表現できるため timestamptz にする必要が無い)。
  *
  * ここがapi/webの両方から参照できる唯一の場所になることで、「どの形が正しいか」が
- * スキーマとして1か所に書かれる状態にする(doc/14 B項の狙い)。
+ * スキーマとして1か所に書かれる状態にする(doc/14 §2の狙い)。
  */
 
 /**
@@ -64,7 +64,7 @@ export type AttendanceOfficeWork = z.infer<typeof attendanceOfficeWorkSchema>;
 /**
  * 勤怠計算(packages/core/src/domain/attendance/attendanceCalc.ts)が対応できる上限
  * (訪問3件・事務作業2件)。GAS版との数値一致を19ケースで検証済みの計算ロジックを
- * 段階1では変更しない、というdoc/14 B項の判断に基づく。
+ * 段階1では変更しない、というdoc/14 §2の判断に基づく。
  *
  * データ構造(このファイルのスキーマ・jsonbの中身・TypeScriptの型)自体には上限を
  * 持たせない――「スプレッドシートの列レイアウトがデータモデルの制約に化けている」状態を

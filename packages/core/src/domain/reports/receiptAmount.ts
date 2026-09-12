@@ -2,7 +2,7 @@ import { normalizeAmount, normalizeText } from './receiptDedupe';
 
 /**
  * 領収書の金額(集計用整数amountYen + OCRの生文字列amountRaw)。
- * doc/14 A項の変換規則。normalizeAmount()(dedupeKeyの材料と同じ正規化)を経由して数値化するが、
+ * doc/14 §1の変換規則。normalizeAmount()(dedupeKeyの材料と同じ正規化)を経由して数値化するが、
  * この結果をdedupeKeyの材料に使い替えることはしない(dedupeKeyは従来どおり正規化済み文字列から作る)。
  */
 export interface ReceiptAmount {

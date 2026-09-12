@@ -40,7 +40,7 @@ export const sessions = pgTable(
       columns: [t.tenantId, t.staffId],
       foreignColumns: [staff.tenantId, staff.id],
     }),
-    // deleteAllForStaff(DELETE WHERE tenant_id=? AND staff_id=?)を索引だけで返すため(doc/14 C項)。
+    // deleteAllForStaff(DELETE WHERE tenant_id=? AND staff_id=?)を索引だけで返すため(doc/14 §3)。
     index('sessions_tenant_staff_idx').on(t.tenantId, t.staffId),
   ],
 ).enableRLS();

@@ -24,7 +24,7 @@ import { tenants } from './tenants';
  * occurredAtは訪問日時(reportDate+startTimeから算出。GAS版のTimestamp列と同じ)で、履歴の並び替え・
  * 絞り込みに使う。PSI/ES評価は小さな数値。
  *
- * 【occurredAtとstartedAtの二重管理(doc/14 F項)】
+ * 【occurredAtとstartedAtの二重管理(doc/14 §6)】
  * startedAtはoccurredAt(=訪問日+開始時刻)と同じ情報の二重管理になっている。食い違いが
  * 起きないよう、usecases/reports.tsのsaveDailyReportは両方を同じ入力(reportDate+startTime)
  * から同じ関数(parseJstDateTime)で作り、startTimeが入力されているときはoccurredAtの
@@ -67,7 +67,7 @@ export const dailyReports = pgTable(
     /** 満足度(ES)評価(1〜5)。未評価はnull。 */
     esRating: integer(),
 
-    // doc/14 F項: 'HH:mm'文字列(未入力は空文字)をtimestamptzに変える。NULLを「未入力」に
+    // doc/14 §6: 'HH:mm'文字列(未入力は空文字)をtimestamptzに変える。NULLを「未入力」に
     // 使えるようにし、滞在時間の集計や日跨ぎ勤務(22:00〜01:00等)の計算をSQLでできるようにする。
     // "HH:mm"表記が必要な場面(GASミラー・画面表示)は、保存時ではなくその場で整形し直す
     // (usecases/mirrorWorker.ts、domain/reports/jstTime.tsのformatJstTimeOnly参照)。
@@ -112,7 +112,7 @@ export const dailyReports = pgTable(
     uniqueIndex('daily_reports_tenant_reservation_uidx')
       .on(t.tenantId, t.reservationId)
       .where(sql`${t.reservationId} IS NOT NULL`),
-    // doc/14 4.1章: coupon_redemptions.daily_report_id からの複合外部キー
+    // doc/14 §9: coupon_redemptions.daily_report_id からの複合外部キー
     // (tenant_id, daily_report_id)の参照先。customers.ts の customers_tenant_id_uk と同じ理由
     // (RLSはFK制約をバイパスするため、単一列PKだけでは他テナントのdaily_report_idを誤って
     // 参照してもDBが検知できない)。PostgreSQL的にも、複合FKの参照先には参照する列の組と
@@ -120,14 +120,14 @@ export const dailyReports = pgTable(
     unique('daily_reports_tenant_id_uk').on(t.tenantId, t.id),
     // 「顧客の日報履歴」を開くたびに走る listByCustomer
     // (WHERE customer_id=? ORDER BY occurred_at DESC LIMIT n)を索引だけで返すための複合索引。
-    // occurredAt を DESC で含めるのは、ORDER BY と向きを揃えて並べ替えを省くため(doc/14 C項)。
+    // occurredAt を DESC で含めるのは、ORDER BY と向きを揃えて並べ替えを省くため(doc/14 §3)。
     index('daily_reports_tenant_customer_occurred_idx').on(t.tenantId, t.customerId, t.occurredAt.desc()),
     // risk_rating/es_ratingは「1〜5」という前提でUIやミラー送信のコードが書かれており、
-    // 範囲外の値が混入すると気付かないままスプレッドシートにも書き出される(doc/14 D項)。
+    // 範囲外の値が混入すると気付かないままスプレッドシートにも書き出される(doc/14 §4)。
     check('daily_reports_risk_rating_check', sql`${t.riskRating} IS NULL OR ${t.riskRating} BETWEEN 1 AND 5`),
     check('daily_reports_es_rating_check', sql`${t.esRating} IS NULL OR ${t.esRating} BETWEEN 1 AND 5`),
     // 日跨ぎ勤務(22:00〜01:00等)はendedAtがstartedAtの翌日になるのを許すため、単純な
-    // ">="ではなく「どちらかがNULL(未入力)ならスキップ」を先に見る(doc/14 F項)。
+    // ">="ではなく「どちらかがNULL(未入力)ならスキップ」を先に見る(doc/14 §6)。
     // endedAt/startedAtを組み立てる側(usecases/reports.ts)が、end<startのときendedAtを
     // 翌日にずらす責任を持つ。
     check(

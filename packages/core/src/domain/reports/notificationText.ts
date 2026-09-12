@@ -15,7 +15,7 @@ export function buildDailyReportNotificationText(params: {
   customerName: string;
   /**
    * startTime/endTimeはDBの型が変わってもここでは元の入力文字列('HH:mm')をそのまま使う
-   * (doc/14 F項。通知はDB保存前に作るため、startedAt/endedAtへ変換してから再度'HH:mm'に
+   * (doc/14 §6。通知はDB保存前に作るため、startedAt/endedAtへ変換してから再度'HH:mm'に
    * 戻すような回り道をしない。usecases/reports.tsのsaveDailyReportがinput.startTime/
    * endTimeをそのまま渡す)。
    */

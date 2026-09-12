@@ -3,7 +3,7 @@ import type { AttendanceColumnRow, AttendanceOfficeWork, AttendanceRowData, Atte
 
 /**
  * 永続形式(AttendanceRowData、意味のあるキー)と、勤怠計算の内部実装が使う列記号形式
- * (AttendanceColumnRow)を相互変換する。doc/14 B項が求める「照合のためにDBのキー名を
+ * (AttendanceColumnRow)を相互変換する。doc/14 §2が求める「照合のためにDBのキー名を
  * 犠牲にする必要が無い」を成立させている核。
  *
  *   toColumnRow()   … 計算(computeDayDerived/computeMonthlyTotals)とGASミラー送信で使う。

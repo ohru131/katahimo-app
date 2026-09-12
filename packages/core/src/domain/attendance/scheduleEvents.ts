@@ -3,7 +3,7 @@ import type { AttendanceRowData } from './types';
 export type ScheduleEventType = 'CUSTOMER APPOINTMENT' | 'OFFICE WORK';
 
 /**
- * どの枠のイベントかを、配列の種類と添字で表す。doc/14 B項の段階1で訪問・事務作業が
+ * どの枠のイベントかを、配列の種類と添字で表す。doc/14 §2の段階1で訪問・事務作業が
  * 固定5枠(slot1〜3, office1〜2)から配列になったことに合わせ、'slot1'のような固定キーではなく
  * { kind, index } にした(配列にすることで枠の上限が外れる、というAttendanceRowData側の変更と
  * 整合させるため。indexは0始まり)。

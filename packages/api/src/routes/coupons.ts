@@ -30,7 +30,7 @@ export function createCouponRoutes(container: Container) {
 
   /**
    * 日報画面の「クーポンを選ぶ」セレクタ用。active かつ対象日に有効なものだけを返す
-   * (doc/14 4.1章)。管理者以外(現場スタッフ)も日報保存のために必要なので、
+   * (doc/14 §9)。管理者以外(現場スタッフ)も日報保存のために必要なので、
    * 認証済みであれば誰でも呼べる(routes/staff.tsのGET /と同じ、閲覧だけの緩さ)。
    *
    * dateクエリは'YYYY-MM-DD'。省略時は「今日」(JST)。

@@ -9,7 +9,7 @@ import * as schema from './schema';
 /**
  * 「updated_at列を持つ全テーブルにトリガーが張られている」ことの静的検査。
  *
- * doc/14 E項: 更新日時はDBトリガー(set_updated_at)で一元管理する方針にした。
+ * doc/14 §5: 更新日時はDBトリガー(set_updated_at)で一元管理する方針にした。
  * アプリのコードがSETし忘れても(実際に customers で起きていた)DBが強制するので壊れない、
  * という前提のため、トリガーの張り忘れ自体は rlsPolicies.test.ts の「RLSの張り忘れ」と
  * 同じ重さの事故になる。書き方もそれに合わせる。

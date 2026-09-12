@@ -217,7 +217,7 @@ describe('attendance_days.row_data(jsonb)の往復', () => {
     if (!staffId) throw new Error('スタッフの準備に失敗しました');
 
     const repo = new DrizzleAttendanceDayRepository(db);
-    // doc/14 B項の段階1で row_data の形が列記号(C/D/E…)から意味のあるキーに変わったので、
+    // doc/14 §2の段階1で row_data の形が列記号(C/D/E…)から意味のあるキーに変わったので、
     // ここも新形式で固定する。
     const rowData = { visits: [{ place: '田中', start: '10:00' }] };
     await repo.upsert(tenantId, staffId, '2026-09-01', rowData);
@@ -275,13 +275,13 @@ describe('receipts_tenant_dedupe_key_uidx(dedupeKeyがある行だけの一意�
 });
 
 /**
- * doc/14 A項の目的そのもの: amount(text)をamount_yen(integer)に分けたことで、SQLのSUM()が
+ * doc/14 §1の目的そのもの: amount(text)をamount_yen(integer)に分けたことで、SQLのSUM()が
  * そのまま使える(文字列だった頃は"1,000"と"1000"が別の値になり集計できなかった)。
  * amount_yenがnull(OCRが数値化できなかった領収書)の行は、SQLのSUMが自動でスキップすることも
  * 合わせて確認する(取りこぼして0円扱いになっていないか=誤って合計に含めていないか、
  * ではなく単に無視されることの確認)。
  */
-describe('SUM(amount_yen)による集計(doc/14 A項)', () => {
+describe('SUM(amount_yen)による集計(doc/14 §1)', () => {
   it('複数の領収書のamount_yenを合計できる(amount_yenがnullの行は無視される)', async () => {
     const client = new PGlite();
     await client.waitReady;

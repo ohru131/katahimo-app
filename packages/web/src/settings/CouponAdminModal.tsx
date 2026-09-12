@@ -3,7 +3,7 @@ import { useState } from 'react';
 import type { CouponDiscountKind, CouponView } from '../api';
 import { createCoupon, fetchCouponsForAdmin, updateCoupon } from '../api';
 
-/** 割引条件の表示(例 '500円引き' '10%引き')。doc/14 4.1章の2種別に対応。 */
+/** 割引条件の表示(例 '500円引き' '10%引き')。doc/14 §9の2種別に対応。 */
 function discountLabel(coupon: Pick<CouponView, 'discountKind' | 'discountAmountYen' | 'discountPercent'>) {
   return coupon.discountKind === 'amount'
     ? `${coupon.discountAmountYen}円引き`
@@ -19,7 +19,7 @@ function periodLabel(coupon: Pick<CouponView, 'validFrom' | 'validTo'>) {
 }
 
 /**
- * 管理者による割引クーポンの登録・廃止管理(doc/14 4.1章)。StaffAdminModalと同じ構成
+ * 管理者による割引クーポンの登録・廃止管理(doc/14 §9)。StaffAdminModalと同じ構成
  * (追加フォーム+一覧+行内操作)にしている。
  *
  * 編集はStaffAdminModal(名前・メールは変更不可、権限や在籍状態の切り替えのみ)に合わせ、

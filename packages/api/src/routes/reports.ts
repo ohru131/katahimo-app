@@ -15,7 +15,7 @@ const HISTORY_LIMIT = 5;
 
 /**
  * 事故報告/ヒヤリハットの種別。packages/db/src/schema/accidentReports.ts の
- * accident_reports_report_type_check と一致させる(doc/14 D項)。DB側の制約は「最後の砦」で、
+ * accident_reports_report_type_check と一致させる(doc/14 §4)。DB側の制約は「最後の砦」で、
  * ここで弾いておかないとGAS版のシートに任意の文字列がそのまま書き出されてしまう。
  */
 export const ACCIDENT_REPORT_TYPES = ['事故報告', 'ヒヤリハット'] as const;
@@ -27,7 +27,7 @@ export function isAccidentReportType(value: unknown): value is AccidentReportTyp
 
 /**
  * PSI/満足度評価。packages/db/src/schema/dailyReports.ts の
- * daily_reports_risk_rating_check/es_rating_check と一致させる(doc/14 D項)。
+ * daily_reports_risk_rating_check/es_rating_check と一致させる(doc/14 §4)。
  */
 export function isValidRating(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5;
@@ -88,7 +88,7 @@ export function createReportRoutes(container: Container) {
     if (body.esRating != null && !isValidRating(body.esRating)) {
       return c.json({ code: 'validation_failed', message: 'esRating は1〜5の整数にしてください' }, 400);
     }
-    // couponIds(doc/14 4.1章)は「文字列かどうか」ではなく実際の形(UUID文字列の配列)を見る。
+    // couponIds(doc/14 §9)は「文字列かどうか」ではなく実際の形(UUID文字列の配列)を見る。
     // 省略はサーバー側で「クーポン無し」として扱う(空配列)。
     let couponIds: string[] = [];
     if (body.couponIds !== undefined) {
@@ -134,7 +134,7 @@ export function createReportRoutes(container: Container) {
       return c.json({ code: 'validation_failed', message: 'customerId が必要です' }, 400);
     }
     // undefinedは「省略」として許容する(saveAccidentReport側で'事故報告'にフォールバックする)。
-    // 値がある場合は、文字列かどうかではなく許可された2値かどうかを見る(doc/14 D項)。
+    // 値がある場合は、文字列かどうかではなく許可された2値かどうかを見る(doc/14 §4)。
     if (body.reportType !== undefined && !isAccidentReportType(body.reportType)) {
       return c.json(
         {

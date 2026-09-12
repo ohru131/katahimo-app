@@ -15,7 +15,7 @@ import { TENANT_RLS_USING } from './_rls';
 import { tenants } from './tenants';
 
 /**
- * outbox_jobs.kind のCHECK制約に使う許可値。doc/14 D項のDDLをそのまま書き写すと、
+ * outbox_jobs.kind のCHECK制約に使う許可値。doc/14 §4のDDLをそのまま書き写すと、
  * MirrorKind(packages/core/src/ports/mirror.ts)側の変更(例: calendar_eventの廃止)に
  * 追従できず、ズレに気付かないままDBが誤った値を許可/拒否し続ける。
  * `Record<MirrorKind, true>` の形で持つことで、MirrorKindに追加/削除があれば
@@ -68,16 +68,16 @@ export const outboxJobs = pgTable(
     // テナントを跨いでidempotencyKeyの一意性を要求する理由はない(生成ロジック次第では
     // 他テナントの値と衝突しうる)ため、tenant_idでスコープする(データベース構造レビューで指摘)。
     uniqueIndex('outbox_jobs_tenant_idempotency_key_idx').on(t.tenantId, t.idempotencyKey),
-    // ワーカーのポーリング(claimPending)が status と next_attempt_at で絞って
-    // created_at 順に取り出すため、done/failedが積み上がってもフルスキャンにならないようにする。
+    // ワーカーのポーリング(claimPending)は status で2つの枝を OR で取り出す
+    //   - pending          かつ next_attempt_at <= now()(再試行の待ち時間が明けたもの)
+    //   - processing       かつ updated_at が可視性タイムアウトより古い(落ちたワーカーの回収)
+    // この索引は status を前置きにした枝ごとの絞り込みを支え、done/failedが積み上がっても
+    // フルスキャンにならないようにする。
     //
-    // doc/14 H項は (tenant_id, status, created_at) という役割の重複したインデックス
-    // (outbox_jobs_tenant_status_created_at_idx)の削除を指示しているが、それは実際には
-    // 0002_outbox_retry.sql(このインデックスをnext_attempt_at付きで作り直した際)で
-    // 既に削除済みで、このリポジトリには残っていない(repositories/outboxRepository.ts の
-    // claimPendingがstatus/next_attempt_atで絞ってnext_attempt_at, created_at順に読むのは
-    // 昔からこのインデックス1本で足りている)。0013では重複インデックスが無いため
-    // DROP INDEXは発生しない。
+    // 並べ替えは next_attempt_at ASC, created_at ASC。枝が2つあるため、この索引だけで
+    // 併合後の並びまで保証できるわけではない(created_at は先頭キーではない)。
+    // それでも (tenant_id, status, created_at) を別に持たないのは、絞り込みの役割が
+    // この1本と重複するため(doc/14 §8.5)。
     index('outbox_jobs_tenant_status_next_attempt_idx').on(
       t.tenantId,
       t.status,
@@ -85,7 +85,7 @@ export const outboxJobs = pgTable(
       t.createdAt,
     ),
     // statusはTypeScript上は enum({...}) で型付けているが、Drizzleはそこから
-    // CHECK制約を生成しない(doc/14 D項)。psqlから直接でたらめな値を書けてしまい、
+    // CHECK制約を生成しない(doc/14 §4)。psqlから直接でたらめな値を書けてしまい、
     // 書けばワーカーが永久に拾わない行になるため、DB側でも縛る。
     check('outbox_jobs_status_check', sql`${t.status} IN ('pending', 'processing', 'done', 'failed')`),
     // kindの許可値はMirrorKindと実行時にも一致させる(上のMIRROR_KINDS参照)。

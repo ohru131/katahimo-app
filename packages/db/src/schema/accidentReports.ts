@@ -48,7 +48,7 @@ export const accidentReports = pgTable(
 
     /** 対象児(世帯構成員)の氏名。GAS版のTargetName列。 */
     targetName: text().notNull().default(''),
-    // doc/14 F項: family_membersのdobと同じ理由でtargetDob(text)を分割する。
+    // doc/14 §6: family_membersのdobと同じ理由でtargetDob(text)を分割する。
     /** 対象児の生年月日(parseDateOnlyで解析できた場合のみ)。不完全な表記はnullのまま。 */
     targetDobDate: date(),
     /** 対象児の生年月日の元表記('yyyy/MM/dd'。GAS版のTargetDob列と同じ)。常に保持する。 */
@@ -82,7 +82,7 @@ export const accidentReports = pgTable(
     }),
     // dailyReports.tsと同じ理由(顧客の履歴表示が同じ形のクエリで走る)。
     index('accident_reports_tenant_customer_occurred_idx').on(t.tenantId, t.customerId, t.occurredAt.desc()),
-    // 入口(API)・TypeScriptの型では値域を見ていなかった箇所(doc/14 D項)。GAS版と同じ表示文字列
+    // 入口(API)・TypeScriptの型では値域を見ていなかった箇所(doc/14 §4)。GAS版と同じ表示文字列
     // をそのまま値として使う方針は変えず(上のコメント参照)、値域だけDBで縛る。
     check('accident_reports_report_type_check', sql`${t.reportType} IN ('事故報告', 'ヒヤリハット')`),
   ],

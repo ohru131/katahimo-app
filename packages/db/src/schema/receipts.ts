@@ -30,16 +30,15 @@ import { tenants } from './tenants';
  *
  * dedupeKeyは「同一スタッフ・同一顧客・同一日時・同一金額・同一店舗名」の重複登録を検出する
  * ためのキーで、buildReceiptDedupeKey()(packages/core/src/domain/reports/receiptDedupe.ts)の
- * 正規化済み文字列をそのまま入れる(等値一致で照合。GAS版processReceiptImagesのbuildKeyと同じ挙動。
- * 以前のHMACブラインドインデックスは廃止)。金額または店舗名が空の場合はGAS版と同様に
- * 重複判定自体を行わないためnullになる。
+ * 正規化済み文字列をそのまま入れる(等値一致で照合。GAS版processReceiptImagesのbuildKeyと同じ挙動)。
+ * 金額または店舗名が空の場合はGAS版と同様に重複判定自体を行わないためnullになる。
  *
- * 【doc/14 A項】amount(text)はamountYen(集計・請求用の整数)とamountRaw(OCRの生文字列)に分割した。
- * dedupeKeyはamountYenではなく従来どおりnormalizeAmount()の出力から作る(GAS版buildKeyと1文字も
+ * 【doc/14 §1】金額はamountYen(集計・請求用の整数)とamountRaw(OCRの生文字列)の2列で持つ。
+ * dedupeKeyはamountYenではなくnormalizeAmount()の出力から作る(GAS版buildKeyと1文字も
  * 違えてはいけないため。移行期に同じ領収書を重複と判定できなくなる)。amountYenはこのキーの材料に
  * 使い替えない。
  *
- * 【doc/14 4章】billingTypeは「顧客に請求する分/会社が立て替える分」を区別する。既定を
+ * 【doc/14 §10】billingTypeは「顧客に請求する分/会社が立て替える分」を区別する。既定を
  * company_expense にしているのは、取りこぼし(スタッフが選び忘れた場合)が「うっかり顧客に
  * 請求してしまう」方向に転ばないようにするため。顧客に紐付かない領収書はcustomer_billableに
  * できない(receipts_billable_requires_customer)。
@@ -112,7 +111,7 @@ export const receipts = pgTable(
     uniqueIndex('receipts_tenant_dedupe_key_uidx')
       .on(t.tenantId, t.dedupeKey)
       .where(sql`${t.dedupeKey} IS NOT NULL`),
-    // 顧客の領収書一覧を新しい順に返すクエリを索引だけで返すため(doc/14 C項)。
+    // 顧客の領収書一覧を新しい順に返すクエリを索引だけで返すため(doc/14 §3)。
     // customerIdはnull許容だが、それでも(tenant_id, customer_id, ...)の複合索引として作る
     // (customerIdがnullの行はこの索引の対象外になるだけで、絞り込み自体は害にならない)。
     index('receipts_tenant_customer_timestamp_idx').on(t.tenantId, t.customerId, t.receiptTimestamp.desc()),
