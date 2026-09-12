@@ -68,12 +68,16 @@ export const outboxJobs = pgTable(
     // テナントを跨いでidempotencyKeyの一意性を要求する理由はない(生成ロジック次第では
     // 他テナントの値と衝突しうる)ため、tenant_idでスコープする(データベース構造レビューで指摘)。
     uniqueIndex('outbox_jobs_tenant_idempotency_key_idx').on(t.tenantId, t.idempotencyKey),
-    // ワーカーのポーリング(claimPending)が status と next_attempt_at で絞って
-    // created_at 順に取り出すため、done/failedが積み上がってもフルスキャンにならないようにする。
+    // ワーカーのポーリング(claimPending)は status で2つの枝を OR で取り出す
+    //   - pending          かつ next_attempt_at <= now()(再試行の待ち時間が明けたもの)
+    //   - processing       かつ updated_at が可視性タイムアウトより古い(落ちたワーカーの回収)
+    // この索引は status を前置きにした枝ごとの絞り込みを支え、done/failedが積み上がっても
+    // フルスキャンにならないようにする。
     //
-    // (tenant_id, status, created_at) だけの索引は別に持たない。next_attempt_at を含む
-    // この1本で claimPending の絞り込みと並べ替えの両方をまかなえるため、役割が重複する
-    // (doc/14 §8.5)。
+    // 並べ替えは next_attempt_at ASC, created_at ASC。枝が2つあるため、この索引だけで
+    // 併合後の並びまで保証できるわけではない(created_at は先頭キーではない)。
+    // それでも (tenant_id, status, created_at) を別に持たないのは、絞り込みの役割が
+    // この1本と重複するため(doc/14 §8.5)。
     index('outbox_jobs_tenant_status_next_attempt_idx').on(
       t.tenantId,
       t.status,

@@ -882,7 +882,7 @@ text(s, ML, 2.96, 6.0, 0.5,
      size=10.5, color=MUTED, line=1.3)
 
 text(s, ML, 3.52, 6.0, 0.28, "使えない理由", size=12, color=RED, bold=True)
-bullets(s, ML, 3.82, 6.0, 1.4, [
+bullets(s, ML, 3.82, 6.0, 1.3, [
     {"t": [("EXCLUDE には btree_gist 拡張が要る", {"bold": True}),
            ("。公開デモとテストで使っているブラウザ内PostgreSQL(PGlite)には、この拡張が存在しない"
             "(実機で確認済み)", {})]},
@@ -911,7 +911,7 @@ text(s, ML + 6.33, 5.64, 6.0, 0.5,
      "(その処理もまだ実装していません)。",
      size=10, color=MUTED, line=1.3)
 
-note(s, ML, 5.30, 6.0, 1.0, "同じ形の穴が他にもある",
+note(s, ML, 5.18, 6.0, 0.9, "同じ形の穴が他にもある",
      "「同じ顧客に同時刻の予約を2件入れない」なども、範囲の重なりで表す種類の制約です。"
      "1つ方針を決めれば、まとめて同じやり方に揃えられます。",
      accent=AMBER, fill=AMBER_L, size=10.5)

@@ -129,7 +129,7 @@
         <h3>規模</h3>
         <dl class="kv">
           <dt>パッケージ</dt><dd>9(pnpm workspace)</dd>
-          <dt>TypeScript</dt><dd>205ファイル / 約20,400行(テスト除く)</dd>
+          <dt>TypeScript</dt><dd>228ファイル / 約25,900行(テスト除く)</dd>
           <dt>テスト</dt><dd>55ファイル / 692件、CIで毎回実行</dd>
           <dt>DB</dt><dd>33テーブル、マイグレーション1本</dd>
         </dl>
@@ -297,7 +297,7 @@
       <text class="sm" x="300" y="104" text-anchor="middle">XxxDeps = 必要なポートの部分集合</text>
       <rect class="box" x="200" y="140" width="200" height="60"/>
       <text class="lbl" x="300" y="164" text-anchor="middle">ports</text>
-      <text class="sm" x="300" y="182" text-anchor="middle">Repository×13 / UnitOfWork / Crypto …</text>
+      <text class="sm" x="300" y="182" text-anchor="middle">Repository×14 / UnitOfWork / Crypto …</text>
       <rect class="box" x="200" y="218" width="200" height="140" style="stroke:var(--c-core)"/>
       <text class="lbl" x="300" y="244" text-anchor="middle">domain(純関数・I/Oなし)</text>
       <text class="sm" x="300" y="266" text-anchor="middle">勤怠計算 / 日報履歴 / 重複判定</text>
@@ -307,7 +307,7 @@
       <!-- driven side -->
       <g>
         <rect class="box" x="460" y="40" width="130" height="54" style="stroke:var(--c-db)"/>
-        <text class="lbl" x="525" y="63" text-anchor="middle">Drizzle リポジトリ</text><text class="sm" x="525" y="80" text-anchor="middle">13クラス + Outbox</text>
+        <text class="lbl" x="525" y="63" text-anchor="middle">Drizzle リポジトリ</text><text class="sm" x="525" y="80" text-anchor="middle">14クラス + Outbox</text>
         <rect class="box" x="460" y="110" width="130" height="54" style="stroke:var(--c-ext)"/>
         <text class="lbl" x="525" y="133" text-anchor="middle">GAS Bridge ×4</text><text class="sm" x="525" y="150" text-anchor="middle">Mail/Maps/Schedule/Mirror</text>
         <rect class="box" x="460" y="180" width="130" height="54" style="stroke:var(--c-ext)"/>
@@ -443,8 +443,8 @@
   </div>
   <div class="card" style="flex:0 0 auto">
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.15em 1.4em;font-size:.86em">
-      <div><b class="muted">内訳</b><br>テナント基盤3 / 認証3 / 業務6 / 連携1</div>
-      <div><b class="muted">共通の形</b><br>tenants 以外の全12テーブルが <code>tenant_id</code> を持ち、RLS の対象</div>
+      <div><b class="muted">内訳</b><br>稼働中15 / スキーマのみ18</div>
+      <div><b class="muted">共通の形</b><br>tenants 以外の全32テーブルが <code>tenant_id</code> を持ち、RLS の対象</div>
       <div><b class="muted">例外は3つだけ</b><br><code>tenants</code>=RLS対象外 / <code>receipts.customer_id</code>=nullable / <code>sessions.token_hash</code>=グローバル一意</div>
     </div>
   </div>
@@ -472,7 +472,7 @@
       <text class="lbl" x="24" y="209">③ withTenant(db, tenantId, tx ⇒ …)</text>
       <text class="mono sm" x="24" y="230">BEGIN;  SELECT set_config('app.tenant_id', $1, true);  …  COMMIT;</text>
       <text class="sm" x="24" y="250">第3引数 true = トランザクションローカル。プール接続を使い回しても設定が残らない</text>
-      <text class="sm" x="24" y="268">全13リポジトリの全メソッドがこれで包まれる(tenants テーブルだけ例外)</text>
+      <text class="sm" x="24" y="268">全14リポジトリの全メソッドがこれで包まれる(tenants テーブルだけ例外)</text>
       <path class="arrow" d="M300 280 V300"/>
       <rect class="box" x="10" y="302" width="580" height="66" style="stroke:var(--c-db)"/>
       <text class="lbl" x="24" y="326">④ POLICY tenant_isolation FOR ALL</text>
@@ -535,7 +535,7 @@
     </div>
     <div>
       <div class="card">
-        <h3>暗号化する / しない(2026-09 見直し: 資格情報のみ)</h3>
+        <h3>暗号化する / しない(アプリ層は資格情報のみ)</h3>
         <dl class="kv">
           <dt class="ok">暗号化</dt><dd>Gemini APIキー・Google Chat Webhook URL(資格情報のみ)</dd>
           <dt class="muted">平文</dt><dd>顧客・世帯構成員・日報/事故報告本文(項目別列)・勤怠・領収書(検索性と AI 活用優先。RLS + IAM で保護し、保存時暗号化は本番配備先(Cloud SQL)に委ねる想定。<b>本番は未配備</b>)</dd>
@@ -555,7 +555,7 @@
   </div>
   <div class="foot"><span>packages/integrations/src/local-crypto, local-kms / doc/09 3章</span><span>katahimo-app</span></div>
   <div class="notes">
-    2026-09 に方針を変えました。アプリ層で暗号化するのは管理者設定の資格情報 3 列だけで、顧客・日報などの業務データは平文列です。理由は 3 つ、SQL での検索性、日報データの AI 活用、そして秘密保持契約(案)第6条が求めるのが「アクセス制限・通信/保存時の暗号化・パスワード管理」であってフィールド暗号化ではないこと。保存時の暗号化は本番配備先(Cloud SQL)の既定機能に委ねる想定で、RLS と IAM を組み合わせます。ただし本番(Cloud Run + Cloud SQL)は未配備で、いま動いているのはローカル開発(Docker の PostgreSQL、TDE なし)と公開デモ(ブラウザ内 PGlite、鍵は公開固定値)だけなので、保存時暗号化・TLS・IAM は配備時に満たすべき前提条件として扱っています。第7条の返還・廃棄はテナント単位の DELETE とバックアップ保持期間で担保する想定で、revoke による暗号学的削除が効くのは資格情報だけです。封筒暗号化の形は本番相当ですが、KEKがまだ環境変数です。「インターフェースを変えずにCloud KMSへ差し替える」設計なので構造は問題ないと考えていますが、現時点では本番相当の鍵管理が存在しない、とはっきり言っておきます。DEKは世代を並存させるので、鍵を差し替えても既存の暗号文は記録された世代の鍵でそのまま読めます。ただし再暗号化バッチが無いため、古い世代の鍵はまだ捨てられません。
+    アプリ層で暗号化するのは管理者設定の資格情報 3 列だけで、顧客・日報などの業務データは平文列です。理由は 3 つ、SQL での検索性、日報データの AI 活用、そして秘密保持契約(案)第6条が求めるのが「アクセス制限・通信/保存時の暗号化・パスワード管理」であってフィールド暗号化ではないこと。保存時の暗号化は本番配備先(Cloud SQL)の既定機能に委ねる想定で、RLS と IAM を組み合わせます。ただし本番(Cloud Run + Cloud SQL)は未配備で、いま動いているのはローカル開発(Docker の PostgreSQL、TDE なし)と公開デモ(ブラウザ内 PGlite、鍵は公開固定値)だけなので、保存時暗号化・TLS・IAM は配備時に満たすべき前提条件として扱っています。第7条の返還・廃棄はテナント単位の DELETE とバックアップ保持期間で担保する想定で、revoke による暗号学的削除が効くのは資格情報だけです。封筒暗号化の形は本番相当ですが、KEKがまだ環境変数です。「インターフェースを変えずにCloud KMSへ差し替える」設計なので構造は問題ないと考えていますが、現時点では本番相当の鍵管理が存在しない、とはっきり言っておきます。DEKは世代を並存させるので、鍵を差し替えても既存の暗号文は記録された世代の鍵でそのまま読めます。ただし再暗号化バッチが無いため、古い世代の鍵はまだ捨てられません。
   </div>
 </section>
 <!-- 9 schema conventions -->
@@ -568,10 +568,10 @@
         <ul style="margin:0">
           <li>主キーは <code>uuid</code> + <code>gen_random_uuid()</code>。連番を使わない(件数が漏れない・採番の集中点を作らない)</li>
           <li>日時はすべて <code>timestamptz</code>。業務上の「日」だけ <code>date</code>(<code>business_date</code>)</li>
-          <li>暗号化列は <code>app_settings</code> の資格情報3列<b>だけ</b>。そこは <code>xxx_ciphertext</code> と <code>xxx_key_version</code> の必ず2列ペアで、世代を記録しない暗号文を作れない形にしてある(業務データは平文列。2026-09 見直し)</li>
+          <li>暗号化列は <code>app_settings</code> の資格情報3列<b>だけ</b>。そこは <code>xxx_ciphertext</code> と <code>xxx_key_version</code> の必ず2列ペアで、世代を記録しない暗号文を作れない形にしてある(業務データは平文列。第1.3節見直し)</li>
           <li><b>派生値は保存しない</b>。残業時間などは入力値から都度計算(二重管理を作らない)</li>
           <li>削除は <code>deactivated_at</code> のソフトデリート。物理削除の経路を持たない(テナント丸ごとの廃棄だけは例外)</li>
-          <li class="warn"><code>updated_at</code> はアプリが毎回セットしている。DBトリガーは無いので、psql等で直接UPDATEすると古いまま残る</li>
+          <li><code>updated_at</code> は <code>set_updated_at</code> トリガーがDB側で更新する。アプリのコードでは書かない(書き忘れを構造的に起こせなくする)</li>
         </ul>
       </div>
       <div class="card" style="margin-top:.6em">
@@ -596,9 +596,9 @@
       <div class="card" style="margin-top:.6em">
         <h3>マイグレーション運用 <small class="muted">0000_baseline_schema の1本</small></h3>
         <ul style="margin:0">
-          <li><code>drizzle-kit generate</code> で生成 → 手で追記 → <code>migrate</code> で適用。前方適用のみで <code>down</code> は持たない</li>
-          <li>手を入れるのは2種類だけ: <b><code>FORCE ROW LEVEL SECURITY</code></b>(生成されない)と <code>tenant_keys</code> の主キー張り替え。どちらもSQLに理由をコメントで残している</li>
-          <li>2026-09 の方針変更は <code>0005</code>(暗号化列の削除)→ <code>0006</code>(平文列の追加)→ <code>0007</code>(領収書の部分一意)の3本。<b>既存の暗号化済みデータは引き継がない</b>(NOT NULL 列に <code>DEFAULT ''</code>/<code>'{}'</code> を付けて適用は通す)</li>
+          <li><code>drizzle-kit generate</code> で生成 → 手で追記 → <code>migrate</code> で適用。前方適用のみで <code>down</code> は持たない。本番配備までは <code>0000_baseline_schema</code> の1本に保ち、配備後は <code>0001</code> 以降を積み増す</li>
+          <li>手を入れるのは2種類だけ: <b><code>FORCE ROW LEVEL SECURITY</code></b> と <code>set_updated_at</code> トリガー(どちらも生成されない)。SQLに理由をコメントで残している</li>
+          <li>運用前で移行対象が無いため、<b>既存の暗号化済みデータは引き継がない</b>。復号→再保存の移行スクリプトも持たない</li>
           <li>ロール分離: 所有者 <code>katahimo</code>(DDL)/ アプリ <code>katahimo_app</code>(DMLのみ・RLS対象)。<code>ALTER DEFAULT PRIVILEGES</code> で新テーブルにも自動付与</li>
         </ul>
       </div>
@@ -606,13 +606,13 @@
   </div>
   <div class="foot"><span>packages/db/src/schema / drizzle/*.sql / infra/initdb/01_bootstrap.sql / packages/ingestion</span><span>katahimo-app</span></div>
   <div class="notes">
-    テーブルごとに判断せず、13本すべてで同じ規約に寄せています。強調したいのは3つ。1つ目、参照を全部「テナントIDを含む複合FK」にして、インデックスと一意制約も tenant_id 先頭にそろえていること。2つ目、暗号化列を残した唯一の場所(app_settings の資格情報)では2列ペアを崩さず、復号世代を記録し忘れた暗号文が作れないようにしていること。3つ目、マイグレーションで手を入れるのは FORCE RLS と tenant_keys の主キー張り替えの2種類だけで、それ以外は生成物のままだということ。0005〜0007 が今回の方針変更で、暗号化列を落として平文列を足しています。既存の暗号文は引き継がない判断をしました。updated_at だけはアプリ任せで、DBトリガーを置いていません。直接SQLを叩く運用が入るなら見直しが要ります。
+    テーブルごとに判断せず、33本すべてで同じ規約に寄せています。強調したいのは3つ。1つ目、参照を全部「テナントIDを含む複合FK」にして、インデックスと一意制約も tenant_id 先頭にそろえていること。2つ目、暗号化列を残した唯一の場所(app_settings の資格情報)では2列ペアを崩さず、復号世代を記録し忘れた暗号文が作れないようにしていること。3つ目、マイグレーションで手を入れるのは FORCE RLS と set_updated_at トリガーの2種類だけで、それ以外は生成物のままだということ。updated_at をアプリ任せにせずDBトリガーに寄せたのは、UPDATE経路を足したときの書き忘れが、スプレッドシートへのミラーの取り残しという気付けない壊れ方につながるためです。運用前で移行対象が無いので、既存の暗号文は引き継がない判断にしています。
   </div>
 </section>
 
 <!-- 10 column design -->
 <section class="slide mid">
-  <h2>列をどう分けたか <small>2026-09に業務データを平文化した結果</small></h2>
+  <h2>列をどう分けたか <small>業務データは全て平文列</small></h2>
   <div class="cols w-3-2">
     <div>
       <h3 class="muted" style="margin:.1em 0 .3em"><code>customers</code> の全37列(RESERVA CSVの全項目に対応・すべて平文)</h3>
@@ -621,7 +621,7 @@
         <tr><td>識別子 <span class="muted">4</span></td><td><code>id</code> / <code>tenant_id</code> / <code>external_source</code> / <code>external_id</code></td><td class="muted">識別子そのもの</td></tr>
         <tr><td>氏名 <span class="muted">5</span></td><td>姓・名・かな2種・表示名</td><td class="muted">姓は <code>(tenant_id, family_name)</code> のインデックスで検索</td></tr>
         <tr><td>連絡先・住所 <span class="muted">7</span></td><td>メール・電話・市区・住所・駐車場2種・第2住所</td><td class="muted">分析・報告時は除外/座標化の対象(NDA 第3条2・第4条)</td></tr>
-        <tr><td class="warn">第三者情報・位置・自由記述 <span class="muted">5</span></td><td>緊急連絡先・続柄・避難場所・メモ・緯度経度</td><td class="warn">2026-09 まで暗号化列。検索性とAI活用のため平文化</td></tr>
+        <tr><td class="warn">第三者情報・位置・自由記述 <span class="muted">5</span></td><td>緊急連絡先・続柄・避難場所・メモ・緯度経度</td><td class="warn">検索性とAI活用のため平文</td></tr>
         <tr><td>他システムの会員証 <span class="muted">1</span></td><td>Benefit会員ID</td><td class="warn">同上</td></tr>
         <tr><td>運用区分 <span class="muted">6</span></td><td>会員種別・状態・支払方法・支払状況・性別・年齢層</td><td class="muted">個人特定に直結しない</td></tr>
         <tr><td>日時 <span class="muted">7</span></td><td>登録日・外部更新日・第2住所期間2・退会日・作成/更新</td><td class="muted"></td></tr>
@@ -653,7 +653,7 @@
   </div>
   <div class="foot"><span>doc/09 1.3節 / 4.1節 ・ packages/db/src/schema/{customers,dailyReports,attendanceDays,receipts}.ts</span><span>katahimo-app</span></div>
   <div class="notes">
-    2026-08 のレビューで要配慮6項目まで絞った暗号化を、2026-09 にさらに資格情報だけへ縮小しました。理由は3つ。SQLでの検索性、日報データのAI活用、そして秘密保持契約(案)第6条が求めるのが「アクセス制限・通信/保存時の暗号化・パスワード管理」であってフィールド暗号化ではないこと。左の表で色が付いている6項目が、前回まで暗号化列だったところです。右上が今日いちばん見ていただきたい判断で、日報と事故報告の本文をJSON1本の暗号文から項目ごとの平文列に開きました。勤怠だけはJSONのままです。引き受けたリスクは正直に書いてあります。DBに届く経路があれば業務データは読める、保存時暗号化はCloud SQL頼み、そしてその本番はまだ配備していません。
+    アプリ層での暗号化は資格情報だけに絞っています。理由は3つ。SQLでの検索性、日報データのAI活用、そして秘密保持契約(案)第6条が求めるのが「アクセス制限・通信/保存時の暗号化・パスワード管理」であってフィールド暗号化ではないこと。左の表で色が付いている6項目が、前回まで暗号化列だったところです。右上が今日いちばん見ていただきたい判断で、日報と事故報告の本文をJSON1本の暗号文から項目ごとの平文列に開きました。勤怠だけはJSONのままです。引き受けたリスクは正直に書いてあります。DBに届く経路があれば業務データは読める、保存時暗号化はCloud SQL頼み、そしてその本番はまだ配備していません。
   </div>
 </section>
 
