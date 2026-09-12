@@ -58,7 +58,7 @@ export interface CreateCustomerInput {
   address2EndDate?: string;
   /**
    * 緯度・経度の元表記("38.26, 140.87"のような1本の文字列。RESERVA CSVの「緯度・経度」列と
-   * 同じ形)。数値2列への分解(doc/14 G項)はbuildCustomerRecordFieldsがparseLatLngで行う
+   * 同じ形)。数値2列への分解(doc/14 §7)はbuildCustomerRecordFieldsがparseLatLngで行う
    * ため、呼び出し側(ingestion/デモ投入等)は従来通りCSVの生文字列をそのまま渡せばよい。
    */
   latLng?: string;
@@ -78,7 +78,7 @@ function buildCustomerRecordFields(tenantId: string, input: CreateCustomerInput)
   const familyName = input.familyName ?? splitJapaneseFullName(input.name).familyName;
   const givenName = input.givenName ?? splitJapaneseFullName(input.name).givenName;
 
-  // doc/14 G項: latLng(元表記の1本の文字列)はlatLngRawへそのまま残しつつ、
+  // doc/14 §7: latLng(元表記の1本の文字列)はlatLngRawへそのまま残しつつ、
   // parseLatLngで分解できた場合だけlat/lngに数値を入れる(解析できない表記はnull)。
   const latLngRaw = nullIfEmpty(input.latLng);
   const { lat, lng } = latLngRaw ? parseLatLng(latLngRaw) : { lat: null, lng: null };
@@ -128,7 +128,7 @@ function buildFamilyMemberInputs(
   members: FamilyMemberInput[],
 ): NewFamilyMemberInput[] {
   return members.map((m) => {
-    // doc/14 F項: dob(自由記述由来の"YYYY/M/D"等)はdobRawへそのまま残しつつ、
+    // doc/14 §6: dob(自由記述由来の"YYYY/M/D"等)はdobRawへそのまま残しつつ、
     // parseDateOnlyで解析できた場合だけdobDateに'YYYY-MM-DD'を入れる。
     const dobRaw = nullIfEmpty(m.dob);
     return {

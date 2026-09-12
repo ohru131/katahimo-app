@@ -40,7 +40,7 @@ export interface ReceiptImageInput {
   /** OCRで取得した領収書日時('yyyy/MM/dd HH:mm'等)。無ければfallbackTimestampを使う。 */
   receiptDate?: string | null;
   /**
-   * 請求区分(doc/14 第4章)。領収書1枚ごとに選べる(同じ訪問でも顧客請求分/会社立替分が
+   * 請求区分(doc/14 §10)。領収書1枚ごとに選べる(同じ訪問でも顧客請求分/会社立替分が
    * 混在しうるため)。未指定ならcompany_expense(取りこぼしが「うっかり顧客に請求してしまう」
    * 向きに転ばないようにするための既定値。receipts.tsのコメントと同じ理由)。
    */
@@ -173,7 +173,7 @@ export async function uploadReceipts(
 
     // 金額・店舗名・申し送りは正規化済みの平文で保存する(未入力はnull)。
     // amountYen/amountRawの組み立てはdedupeKey(上でp.dedupeKeyとして計算済み)とは独立に行う
-    // (doc/14 A項。amountYenをdedupeKeyの材料に使い替えてはいけない)。
+    // (doc/14 §1。amountYenをdedupeKeyの材料に使い替えてはいけない)。
     const { amountYen, amountRaw } = computeReceiptAmount(p.img.amount);
     const storeName = p.img.storeName ? normalizeText(p.img.storeName) || null : null;
     const handoffText = input.handoffText?.trim() || null;

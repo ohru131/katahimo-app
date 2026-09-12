@@ -96,7 +96,7 @@ export const staff = pgTable(
     // attendance_days/daily_reports等からの複合外部キー(tenant_id, staff_id)の参照先。
     // customers.ts の customers_tenant_id_uk と同じ理由(RLSはFK制約をバイパスするため)。
     unique('staff_tenant_id_uk').on(t.tenantId, t.id),
-    // 負の失敗回数はloginThrottleのロジックが想定していない(doc/14 D項)。
+    // 負の失敗回数はloginThrottleのロジックが想定していない(doc/14 §4)。
     check('staff_failed_login_attempts_check', sql`${t.failedLoginAttempts} >= 0`),
     // customers_lat_range/customers_lng_range と同じ理由(実在しない座標を弾く)。
     check('staff_home_lat_range', sql`${t.homeLat} IS NULL OR ${t.homeLat} BETWEEN -90 AND 90`),

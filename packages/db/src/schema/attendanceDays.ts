@@ -23,14 +23,14 @@ import { tenants } from './tenants';
  * jsonb 列でそのまま持つ(以前は1本の暗号文にしていたが、フィールド単位の暗号化は app_settings の
  * 資格情報だけに縮小した)。保護はDB/バックアップの保存時暗号化 + RLS + アクセス制御で行う。
  *
- * 【row_dataの形(doc/14 B項 段階1)】
+ * 【row_dataの形(doc/14 §2 段階1)】
  * キーはスプレッドシートの列記号(C/D/E…)ではなく、visits(訪問の配列)/officeWork(事務作業の
  * 配列)/commuteDistanceKm/returnDistanceKm/shoppingErrandCount/note という意味のあるキーにした
  * (実体は @katahimo/shared の attendanceRowDataSchema、packages/shared/src/contracts/
  * attendance.ts参照)。配列にしたことで「訪問3件・事務作業2件まで」というスプレッドシートの
  * 列レイアウト由来の上限はデータの形としては無くなった(ただし勤怠計算attendanceCalc.tsは
  * GAS版との数値一致を守るため引き続き3件・2件までしか計算できない。上限はAPI境界
- * packages/api/src/routes/attendance.tsで400として拒否する。詳しくはdoc/14 B項参照)。
+ * packages/api/src/routes/attendance.tsで400として拒否する。詳しくはdoc/14 §2参照)。
  *
  * 日報・事故報告のように項目ごとの列に分けずJSONオブジェクトのままにしているのは、常に
  * 「1日分をまるごと読み書きする」用途しか無いため。jsonbなので必要になればSQL側から個別キーを
@@ -73,7 +73,7 @@ export const attendanceDays = pgTable(
       foreignColumns: [staff.tenantId, staff.id],
     }),
     // 中身の形まではDBで縛れないが、そもそもJSONオブジェクトでない値(配列・文字列・数値等)が
-    // 紛れ込むことだけは防ぐ(doc/14 B項)。
+    // 紛れ込むことだけは防ぐ(doc/14 §2)。
     check('attendance_days_row_data_object', sql`jsonb_typeof(${t.rowData}) = 'object'`),
   ],
 ).enableRLS();

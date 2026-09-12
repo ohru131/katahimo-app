@@ -61,7 +61,7 @@ export async function getAttendanceDay(
  *
  * 保存前に attendanceRowDataSchema で検証する。API層(packages/api/src/routes/attendance.ts)も
  * 同じスキーマで検証しているが、usecaseはAPIを経由しない呼び出し(シード投入・将来のバッチ等)
- * からも呼ばれ得るため、ここでも独立に検証しておく(doc/14 B項: 「アプリ境界でZodにより検証する」)。
+ * からも呼ばれ得るため、ここでも独立に検証しておく(doc/14 §2: 「アプリ境界でZodにより検証する」)。
  */
 export async function saveAttendanceDay(
   deps: AttendanceDeps,

@@ -90,7 +90,7 @@ export const customerPaymentProfiles = pgTable(
  * 請求書。1顧客・1請求期間につき1枚。
  *
  * 【金額を全て「円の整数」で持つ理由】
- * 領収書の金額(doc/14 A項)と同じ。numeric や double にすると、丸め方の違いで
+ * 領収書の金額(doc/14 §1)と同じ。numeric や double にすると、丸め方の違いで
  * 請求額と入金額が1円合わない事故が起きる。円未満の端数は税計算の時点で丸め、
  * DBには丸め後の整数だけを入れる。
  *

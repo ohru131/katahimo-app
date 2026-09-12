@@ -102,7 +102,7 @@ export async function seedDemoData(
   if (!adminStaffId) throw new Error('デモ用スタッフの作成に失敗しました');
   const adminStaffName = DEMO_STAFF[0].name;
 
-  // 割引クーポン(doc/14 4.1章)。デモを開いた人が「クーポン管理」画面と、日報タブの
+  // 割引クーポン(doc/14 §9)。デモを開いた人が「クーポン管理」画面と、日報タブの
   // クーポン選択の両方をすぐ触れるよう、金額引き/率引き・無期限/有効期間ありを1つずつ混ぜる。
   onProgress({ message: 'クーポンを登録しています…', ratio: 0.1 });
   const welcomeCoupon = await createCoupon(container, tenant.id, {
@@ -202,7 +202,7 @@ export async function seedDemoData(
         customerText: `本日は${visit.start}〜${visit.end}でご訪問しました。${note}`,
         riskRating: (visitCounter % 5) + 1,
         esRating: (visitCounter % 4) + 2,
-        // 最初の1件にだけ適用しておく(doc/14 4.1章の適用記録表示が、デモでは常に空という
+        // 最初の1件にだけ適用しておく(doc/14 §9の適用記録表示が、デモでは常に空という
         // 状態にならないように)。2件とも渡すことで「1回の訪問に複数のクーポンを適用できる」
         // ことも合わせて示す。
         couponIds: visitCounter === 1 ? [welcomeCoupon.couponId, springCoupon.couponId] : undefined,
@@ -269,7 +269,7 @@ const MOVE_AFTER_VISIT: ReadonlyArray<{ plannedMoveMin: number; distanceKm: numb
 ];
 
 /**
- * 出勤簿1日分。doc/14 B項の段階1で永続形式(row_data)が意味のあるキーの配列(visits/officeWork)
+ * 出勤簿1日分。doc/14 §2の段階1で永続形式(row_data)が意味のあるキーの配列(visits/officeWork)
  * になったのに合わせている(以前は列記号C/D/E…をキーにしたオブジェクトだった)。
  *
  * visitsは「計画された件数ぶんだけ」作る。visitPlan.tsのvisitCountForDateは土曜2件・日曜1件を

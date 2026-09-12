@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { businessDateSchema, idSchema } from './common';
 
 /**
- * 割引クーポンの割引種別。'amount'=金額引き、'percent'=率引き(doc/14 4.1章)。
+ * 割引クーポンの割引種別。'amount'=金額引き、'percent'=率引き(doc/14 §9)。
  *
  * DB(coupons_discount_kind_check/coupon_redemptions_discount_kind_check)・core(usecases/coupons.ts)・
  * web(クーポン管理画面)の全てがこの配列を参照することで、許可値がズレることを防ぐ
@@ -124,7 +124,7 @@ export const couponUpdateRequestSchema = z.object({
 export type CouponUpdateRequest = z.infer<typeof couponUpdateRequestSchema>;
 
 /**
- * 日報に適用するクーポンIDの配列(doc/14 4.1章)。POST /api/reports/daily のリクエストに
+ * 日報に適用するクーポンIDの配列(doc/14 §9)。POST /api/reports/daily のリクエストに
  * 含める。空配列は「クーポン無し」。
  */
 export const couponIdsSchema = z.array(idSchema);

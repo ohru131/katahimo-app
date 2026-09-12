@@ -1,21 +1,26 @@
-# 開発メモ(旧モノレポ `C001-cutest-internal/01_GAS/katahimo-app` からの引き継ぎ)
+# GAS版連携の制約と方針
 
-2026-09-01、このリポジトリは `01_GAS/katahimo-app` を git 履歴付きで切り出して作成した。以下は移行元セッションで蓄積されていた開発メモ(Claude Codeのメモリ機能)のうち、本プロジェクトに関わるもの。
+本アプリは本番稼働中の Apps Script アプリ `gas-childcare-visit-app` の移植先で、移行期間中は
+GAS 版と併存する。ここには、その併存から来る**現在も有効な制約と方針**をまとめる。
 
-## リポジトリ独立化に伴う注意
+## GAS版のソースの参照先
 
-- 本README/ドキュメント内の `../gas-childcare-visit-app` という相対パス表記は、旧モノレポ(`01_GAS/`配下に `gas-childcare-visit-app` が兄弟ディレクトリとして存在する構成)を前提にしている。本リポジトリ単体ではそのパスは存在しない。GAS版本体(2026-09-01時点のスナップショット)は `reference/gas-childcare-visit-app/` に同梱した(詳細は `reference/README.md`)。ただしこれは**その場限りのコピーで以後のGAS側修正には追従しない**ため、最新の実装を確認する場合は旧モノレポ(`C001-cutest-internal/01_GAS/gas-childcare-visit-app`、本番稼働中で独立に更新され続ける)を参照すること。
-- `Bridge.js`(GAS版の `gas-childcare-visit-app/Bridge.js`)とそれを呼ぶ本リポジトリの `packages/integrations/src/gas-bridge/` は実装・コミット済みだが、**本番デプロイはまだされていない**。詳細は下記。
+GAS版本体のスナップショットを `reference/gas-childcare-visit-app/` に同梱してある(詳細は
+`reference/README.md`)。ただしこれは**その場限りのコピーで以後のGAS側修正には追従しない**ため、
+最新の実装を確認する場合は本番稼働中のリポジトリ
+(`C001-cutest-internal/01_GAS/gas-childcare-visit-app`)を参照すること。
+README・ドキュメント中の `../gas-childcare-visit-app` という相対パス表記は、GAS版が兄弟ディレクトリに
+存在する構成を前提にしたもので、本リポジトリ単体ではそのパスは存在しない。
 
 ## Bridge.js は未デプロイ(重要)
 
-`01_GAS/gas-childcare-visit-app/Bridge.js`(読み取り側: Maps geocode/route + schedule/scheduleWithRoute JSON API を `doGet` で提供。書き込み側: `doPost` + writeDailyReport/writeAccidentReport/writeReceipt/writeAttendanceDay のミラー書き込みアクション、`BRIDGE_API_SECRET` で保護)と、それを呼ぶ katahimo-app 側(`GasBridgeMapsPort`/`GasBridgeSchedulePort`/`GasBridgeMirrorSenderPort`、`packages/worker` のoutboxポーラーが駆動)は書かれてコミット済みだが、2026-08-30時点で**一度もデプロイされていない**。katahimo-app側の `GAS_BRIDGE_URL`/`GAS_BRIDGE_SECRET` は未設定のため、現状は `NoopMapsPort`/`NoopSchedulePort`/`NoopMirrorSenderPort` で動作する(安全確認済み)。`MIRROR_TO_GOOGLE_SHEETS` もデフォルト `false` でoutboxジョブすら積まれない。
+`01_GAS/gas-childcare-visit-app/Bridge.js`(読み取り側: Maps geocode/route + schedule/scheduleWithRoute JSON API を `doGet` で提供。書き込み側: `doPost` + writeDailyReport/writeAccidentReport/writeReceipt/writeAttendanceDay のミラー書き込みアクション、`BRIDGE_API_SECRET` で保護)と、それを呼ぶ katahimo-app 側(`GasBridgeMapsPort`/`GasBridgeSchedulePort`/`GasBridgeMirrorSenderPort`、`packages/worker` のoutboxポーラーが駆動)は書かれてコミット済みだが、**一度もデプロイされていない**。katahimo-app側の `GAS_BRIDGE_URL`/`GAS_BRIDGE_SECRET` は未設定のため、現状は `NoopMapsPort`/`NoopSchedulePort`/`NoopMirrorSenderPort` で動作する(安全確認済み)。`MIRROR_TO_GOOGLE_SHEETS` もデフォルト `false` でoutboxジョブすら積まれない。
 
 **Why**: `gas-childcare-visit-app` は実際の保育スタッフが毎日使う本番稼働中のApps Script Webアプリ。ユーザーには2回(GCP認証情報が「まだ用意していない」/ Bridge.js pushが「いいえ、まだ」)明示的に確認し、いずれも見送られている。
 
 **How to apply**: `gas-childcare-visit-app`(または他の `01_GAS/gas-*` プロジェクト)に対して `clasp push`・新規デプロイ作成・Script Property設定を行う前には、必ず改めてユーザーに確認する。過去の「まだ」が期限切れになったと仮定しない。「このコミット・git pushして」という指示を、GASデプロイの承認と混同しない(GitHubへの `git push` と本番Apps Scriptへの `clasp push`/デプロイはリスクレベルが異なる別の操作)。
 
-## Bridge.js に `sendEmail` アクションの追加が必要(2026-09-06)
+## Bridge.js に `sendEmail` アクションの追加が必要
 
 パスワード再設定コードと初期パスワードの通知メールは `MailerPort` 経由で送る。既定の実装
 `GasBridgeMailerPort` は Bridge.js の `sendEmail` アクション(`doPost`、`{to, subject, body}` を

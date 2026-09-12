@@ -15,7 +15,7 @@ import { TENANT_RLS_USING } from './_rls';
 import { tenants } from './tenants';
 
 /**
- * outbox_jobs.kind のCHECK制約に使う許可値。doc/14 D項のDDLをそのまま書き写すと、
+ * outbox_jobs.kind のCHECK制約に使う許可値。doc/14 §4のDDLをそのまま書き写すと、
  * MirrorKind(packages/core/src/ports/mirror.ts)側の変更(例: calendar_eventの廃止)に
  * 追従できず、ズレに気付かないままDBが誤った値を許可/拒否し続ける。
  * `Record<MirrorKind, true>` の形で持つことで、MirrorKindに追加/削除があれば
@@ -71,13 +71,9 @@ export const outboxJobs = pgTable(
     // ワーカーのポーリング(claimPending)が status と next_attempt_at で絞って
     // created_at 順に取り出すため、done/failedが積み上がってもフルスキャンにならないようにする。
     //
-    // doc/14 H項は (tenant_id, status, created_at) という役割の重複したインデックス
-    // (outbox_jobs_tenant_status_created_at_idx)の削除を指示しているが、それは実際には
-    // 0002_outbox_retry.sql(このインデックスをnext_attempt_at付きで作り直した際)で
-    // 既に削除済みで、このリポジトリには残っていない(repositories/outboxRepository.ts の
-    // claimPendingがstatus/next_attempt_atで絞ってnext_attempt_at, created_at順に読むのは
-    // 昔からこのインデックス1本で足りている)。0013では重複インデックスが無いため
-    // DROP INDEXは発生しない。
+    // (tenant_id, status, created_at) だけの索引は別に持たない。next_attempt_at を含む
+    // この1本で claimPending の絞り込みと並べ替えの両方をまかなえるため、役割が重複する
+    // (doc/14 §8.5)。
     index('outbox_jobs_tenant_status_next_attempt_idx').on(
       t.tenantId,
       t.status,
@@ -85,7 +81,7 @@ export const outboxJobs = pgTable(
       t.createdAt,
     ),
     // statusはTypeScript上は enum({...}) で型付けているが、Drizzleはそこから
-    // CHECK制約を生成しない(doc/14 D項)。psqlから直接でたらめな値を書けてしまい、
+    // CHECK制約を生成しない(doc/14 §4)。psqlから直接でたらめな値を書けてしまい、
     // 書けばワーカーが永久に拾わない行になるため、DB側でも縛る。
     check('outbox_jobs_status_check', sql`${t.status} IN ('pending', 'processing', 'done', 'failed')`),
     // kindの許可値はMirrorKindと実行時にも一致させる(上のMIRROR_KINDS参照)。

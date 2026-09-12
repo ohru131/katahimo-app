@@ -67,7 +67,7 @@ export interface SaveDailyReportInput {
   riskRating: number | null;
   esRating: number | null;
   /**
-   * 適用する割引クーポンのID配列(doc/14 4.1章)。省略/空配列は「クーポン無し」。
+   * 適用する割引クーポンのID配列(doc/14 §9)。省略/空配列は「クーポン無し」。
    * 既存の適用記録は保存のたびに削除して入れ直す(saveDailyReport内のコメント参照)ため、
    * 編集時にこの配列から外したクーポンは、保存後に自動的に消える。
    */
@@ -84,13 +84,13 @@ export interface DailyReportView {
   startedAt: Date | null;
   endedAt: Date | null;
   content: DailyReportContent;
-  /** この日報に適用された割引クーポン(doc/14 4.1章)。 */
+  /** この日報に適用された割引クーポン(doc/14 §9)。 */
   coupons: DailyReportCouponView[];
 }
 
 /**
  * 'YYYY-MM-DD'の訪問日とstart/endTime('HH:mm'。未入力は空文字)から、startedAt/endedAtを
- * 組み立てる(doc/14 F項)。
+ * 組み立てる(doc/14 §6)。
  *
  * occurredAt(=訪問日+開始時刻。並べ替えキー)とstartedAtは同じ情報の二重管理になるため、
  * 呼び出し側(saveDailyReport)はこの関数が返すstartedAtをoccurredAtとしてもそのまま使う
@@ -266,7 +266,7 @@ export async function saveAccidentReport(
   tenantId: string,
   input: SaveAccidentReportInput,
 ): Promise<AccidentReportView> {
-  // doc/14 F項: targetDob(自由記述由来の生文字列)はtargetDobRawへそのまま残しつつ、
+  // doc/14 §6: targetDob(自由記述由来の生文字列)はtargetDobRawへそのまま残しつつ、
   // parseDateOnlyで解析できた場合だけtargetDobDateに'YYYY-MM-DD'を入れる。
   const targetDobRaw = input.targetDob || '';
   const content: AccidentReportContent = {
@@ -373,7 +373,7 @@ export interface HistoryItem {
   es?: number | null;
   isAccident?: boolean;
   subtype?: string;
-  /** この日報に適用された割引クーポン(doc/14 4.1章)。日報(type: 'daily')にのみ持つ。 */
+  /** この日報に適用された割引クーポン(doc/14 §9)。日報(type: 'daily')にのみ持つ。 */
   coupons?: DailyReportCouponView[];
 }
 
@@ -405,7 +405,7 @@ export async function getCustomerHistory(
     }),
   );
 
-  // 日報履歴にも適用済みクーポンを含める(doc/14 4.1章)。事故報告にはcoupon_redemptionsの
+  // 日報履歴にも適用済みクーポンを含める(doc/14 §9)。事故報告にはcoupon_redemptionsの
   // FKが無い(日報にしか紐付かない)ため対象外。
   const redemptions = await deps.couponRedemptions.listByDailyReportIds(
     tenantId,

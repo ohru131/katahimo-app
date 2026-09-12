@@ -106,7 +106,7 @@ export const serviceMenus = pgTable(
  *
  * 【開始・終了を timestamptz で持つ理由】
  * 予約は日付+時刻の1点で決まるため、日付と時刻を別々の文字列で持つ必要がない
- * (日報の start_time/end_time を timestamptz に寄せたのと同じ理由。doc/14 F項)。
+ * (日報の start_time/end_time を timestamptz に寄せたのと同じ理由。doc/14 §6)。
  *
  * 【訪問場所を住所文字列でも持つ理由】
  * 通常は顧客の登録住所だが、「今日は祖父母宅に来てほしい」という依頼が実際にある。

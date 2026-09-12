@@ -4,7 +4,7 @@ import { buildScheduleEventsFromRowData } from './scheduleEvents';
 /**
  * 期待値はGAS版 gas-childcare-visit-app/PastSchedule.js の
  * buildScheduleEventsFromRowData_ をNode上でそのまま実行した結果と一致することを確認済み
- * (rowData自体は doc/14 B項の段階1で新形式=意味のあるキーに変わっているが、
+ * (rowData自体は doc/14 §2の段階1で新形式=意味のあるキーに変わっているが、
  * 「始業・終業が両方揃った枠だけをイベント化する」という判定ロジックは変えていない)。
  */
 describe('buildScheduleEventsFromRowData', () => {

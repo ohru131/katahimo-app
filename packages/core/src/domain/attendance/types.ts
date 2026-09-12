@@ -3,7 +3,7 @@
  * 移植元: gas-childcare-visit-app/AttendanceCalc.js のコメント、
  * PastSchedule.js の PAST_SCHEDULE_INPUT_COLUMNS。
  *
- * 【これは内部表現であり、永続形式(DB・API)ではない】doc/14 B項の段階1で、DB(row_data)・
+ * 【これは内部表現であり、永続形式(DB・API)ではない】doc/14 §2の段階1で、DB(row_data)・
  * APIが持つ形は意味のあるキーの AttendanceRowData(@katahimo/shared、このファイル下部で
  * re-export)に変わった。しかし packages/core/src/domain/attendance/attendanceCalc.ts は
  * GAS版との数値一致を19ケースで検証済みの唯一の資産であり、ここを書き換えるとその保証が

@@ -3,7 +3,7 @@ import { ACCIDENT_REPORT_TYPES, isAccidentReportType, isValidRating } from './re
 
 /**
  * 入口(API)側の値域検証。packages/db/src/schema/accidentReports.ts / dailyReports.ts の
- * CHECK制約と一致させる必要があるため(doc/14 D項)、値そのものと境界値をここで固定する。
+ * CHECK制約と一致させる必要があるため(doc/14 §4)、値そのものと境界値をここで固定する。
  *
  * Honoアプリ全体(認証・Container)を組み立てる既存のテストがこのパッケージには無いため、
  * csrf.test.ts と同じ方針(ルートから切り出した純粋関数を直接テストする)に合わせている。

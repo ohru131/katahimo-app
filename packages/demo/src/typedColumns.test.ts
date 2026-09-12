@@ -7,7 +7,7 @@ import type { DemoMigration } from './database';
 import { applyPendingMigrations } from './database';
 
 /**
- * doc/14 F項・G項: 日付・時刻・緯度経度を型のある列に変えた「目的」そのものが実際に成立する
+ * doc/14 §6・§7: 日付・時刻・緯度経度を型のある列に変えた「目的」そのものが実際に成立する
  * ことを、本番と同じマイグレーションを当てた本物のPostgres(PGlite/WASM)で固定する
  * (checkConstraints.test.tsと同じ方式。CHECK制約の合否だけでなく、型にしたことで可能になった
  * 往復・集計・範囲検索を確認する)。
@@ -71,7 +71,7 @@ describe('型にした列が実際に使える(PGlite)', () => {
     await fixture?.client.close();
   });
 
-  describe('daily_reports.started_at / ended_at(doc/14 F項)', () => {
+  describe('daily_reports.started_at / ended_at(doc/14 §6)', () => {
     it('日跨ぎ勤務(22:00〜翌01:00)を保存して再取得すると、3時間の滞在時間として計算できる', async () => {
       const {
         rows: [inserted],
@@ -116,7 +116,7 @@ describe('型にした列が実際に使える(PGlite)', () => {
     });
   });
 
-  describe('family_members.dob_date(doc/14 F項: 範囲検索)', () => {
+  describe('family_members.dob_date(doc/14 §6: 範囲検索)', () => {
     it('生年月日の範囲でSQLから絞り込める(文字列のままではできなかった集計)', async () => {
       const members: Array<[string, string | null]> = [
         ['2015年生', '2015-04-10'],
@@ -142,7 +142,7 @@ describe('型にした列が実際に使える(PGlite)', () => {
     });
   });
 
-  describe('customers.lat / customers.lng(doc/14 G項)', () => {
+  describe('customers.lat / customers.lng(doc/14 §7)', () => {
     it('numeric(9,6)で保存した値が、丸め誤差なく往復する', async () => {
       const {
         rows: [inserted],

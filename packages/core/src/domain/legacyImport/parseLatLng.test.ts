@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseLatLng } from './parseLatLng';
 
 describe('parseLatLng', () => {
-  it('doc/14 G項の例と同じ"38.26, 140.87"形式(カンマ+空白)を分解する', () => {
+  it('doc/14 §7の例と同じ"38.26, 140.87"形式(カンマ+空白)を分解する', () => {
     expect(parseLatLng('38.26, 140.87')).toEqual({ lat: 38.26, lng: 140.87 });
   });
 

@@ -60,7 +60,7 @@ describe('parseReservaCsv (実サンプルCSVでの検証)', () => {
     expect(first).not.toHaveProperty('password');
   });
 
-  describe('緯度・経度(doc/14 G項)', () => {
+  describe('緯度・経度(doc/14 §7)', () => {
     it('実サンプルCSVの「緯度・経度」列は全行空欄であり、取込入力(latLng)はundefinedになる', () => {
       // このダミーCSVには緯度・経度が入力された行が1件も無い。今後実データが入るように
       // なったときにこの前提が崩れたら気付けるよう、まず現状を固定しておく。

@@ -5,7 +5,7 @@
  * (各フィールドが列と1:1に対応。SQLでの検索・集計・全文検索をそのまま行うため)。
  */
 /**
- * doc/14 F項: 開始/終了時刻はDailyReportRecord/NewDailyReportInputの側(startedAt/endedAt。
+ * doc/14 §6: 開始/終了時刻はDailyReportRecord/NewDailyReportInputの側(startedAt/endedAt。
  * riskRating/esRatingと同じ並び)に持つ。文字列'HH:mm'のまま項目別列にしていた頃はここに
  * あったが、NULLを「未入力」として使える型にするため、自由記述の本文とは別枠にした。
  */
@@ -21,7 +21,7 @@ export interface DailyReportContent {
 export interface AccidentReportContent {
   /** 対象児(世帯構成員)の氏名。GAS版のTargetName列。 */
   targetName: string;
-  /** 対象児の生年月日(parseDateOnlyで解析できた場合のみ。'YYYY-MM-DD')。doc/14 F項。 */
+  /** 対象児の生年月日(parseDateOnlyで解析できた場合のみ。'YYYY-MM-DD')。doc/14 §6。 */
   targetDobDate: string | null;
   /** 対象児の生年月日の元表記('yyyy/MM/dd'。GAS版のTargetDob列)。常に保持する。 */
   targetDobRaw: string;

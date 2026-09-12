@@ -10,7 +10,7 @@ import type { AccidentReportContent, DailyReportContent } from '../domain/report
 import type { TransactionScope } from './unitOfWork';
 
 // CouponDiscountKind(型)とCOUPON_DISCOUNT_KINDS(許可値の配列)は @katahimo/shared が正
-// (doc/14 4.1章。DB・core・APIルート・画面の全てが同じ配列を参照することで許可値のズレを
+// (doc/14 §9。DB・core・APIルート・画面の全てが同じ配列を参照することで許可値のズレを
 // 防ぐ、attendance.tsのMAX_VISITS/MAX_OFFICE_WORKと同じ方針)。ここでは型だけ再exportし、
 // このファイル内の他の型定義から従来通り `CouponDiscountKind` として参照できるようにする。
 export type { CouponDiscountKind } from '@katahimo/shared';
@@ -286,7 +286,7 @@ export interface CustomerProfileFields {
   address2StartDate: string | null;
   address2EndDate: string | null;
   /**
-   * 緯度・経度(doc/14 G項)。DBの型はnumeric(9,6)(drizzle-orm上はstring)だが、
+   * 緯度・経度(doc/14 §7)。DBの型はnumeric(9,6)(drizzle-orm上はstring)だが、
    * ポート層ではnumberにしている。numeric(9,6)の値域(整数部最大3桁+小数第6位)は
    * 倍精度浮動小数点が誤差なく表現できる有効桁数(約15〜17桁)に余裕で収まるため、
    * 金額(整数)のような丸め誤差の心配が無く、呼び出し側(usecase・API・画面)での
@@ -355,7 +355,7 @@ export interface FamilyMemberRecord {
   tenantId: string;
   customerId: string;
   name: string;
-  /** 生年月日(parseDateOnlyで解析できた場合のみ。'YYYY-MM-DD')。doc/14 F項。 */
+  /** 生年月日(parseDateOnlyで解析できた場合のみ。'YYYY-MM-DD')。doc/14 §6。 */
   dobDate: string | null;
   /** 生年月日の元表記('YYYY/M/D'。normalizeDateStrで正規化済み)。dobDateの解析成否によらず
    * 常に保持する(未取得ならnull)。 */
@@ -386,7 +386,7 @@ export interface FamilyMemberRepositoryPort {
 
 /**
  * 勤怠(出勤簿)1日分。rowDataは @katahimo/shared の attendanceRowDataSchema が定める
- * 永続形式(訪問・事務作業の配列 + 日次の距離/件数/備考。doc/14 B項)をそのままJSON(jsonb列)で
+ * 永続形式(訪問・事務作業の配列 + 日次の距離/件数/備考。doc/14 §2)をそのままJSON(jsonb列)で
  * 持つ。労働時間・残業・距離集計等の派生値は保存しない(常にrowDataから都度計算する。
  * packages/db/src/schema/attendanceDays.ts参照。計算自体は列記号形式(AttendanceColumnRow)で
  * 行うため、呼び出し側でtoColumnRow()を通す)。
@@ -444,7 +444,7 @@ export interface DailyReportRecord {
   riskRating: number | null;
   esRating: number | null;
   /**
-   * 開始/終了時刻(doc/14 F項)。未入力はnull。occurredAtとの関係は
+   * 開始/終了時刻(doc/14 §6)。未入力はnull。occurredAtとの関係は
    * packages/db/src/schema/dailyReports.tsのヘッダーコメント参照。
    */
   startedAt: Date | null;
@@ -489,7 +489,7 @@ export interface DailyReportRepositoryPort {
 }
 
 /**
- * 割引クーポンの種別マスタ1件(doc/14 4.1章)。回数券(枚数を発行して減らしていくもの)は
+ * 割引クーポンの種別マスタ1件(doc/14 §9)。回数券(枚数を発行して減らしていくもの)は
  * 運用に無いことを確認済みのため残枚数を持たない(packages/db/src/schema/coupons.ts参照)。
  */
 export interface CouponRecord {
@@ -541,7 +541,7 @@ export interface CouponRepositoryPort {
 }
 
 /**
- * 日報1件への割引クーポン適用記録1件(doc/14 4.1章)。discountKind/discountAmountYen/
+ * 日報1件への割引クーポン適用記録1件(doc/14 §9)。discountKind/discountAmountYen/
  * discountPercentは、適用した瞬間のcouponsマスタの値を複製したスナップショット
  * (あとでマスタの割引額を書き換えても、ここは動かない。packages/db/src/schema/coupons.ts
  * のヘッダーコメント参照)。顧客IDは持たない(日報から引ける。二重に持つと日報側の顧客と
@@ -635,7 +635,7 @@ export interface AccidentReportRepositoryPort {
 
 /**
  * 領収書の請求区分。'customer_billable'=顧客に請求する、'company_expense'=会社が立て替える
- * (doc/14 第4章)。DB(receipts_billing_type_check)と画面の両方でこの配列を使い回すことで、
+ * (doc/14 §10)。DB(receipts_billing_type_check)と画面の両方でこの配列を使い回すことで、
  * 許可値がズレることを防ぐ。
  */
 export const RECEIPT_BILLING_TYPES = ['customer_billable', 'company_expense'] as const;
@@ -658,7 +658,7 @@ export interface ReceiptRecord {
   handoffText: string | null;
   fileKey: string;
   contentType: string;
-  /** 請求区分(doc/14 第4章)。 */
+  /** 請求区分(doc/14 §10)。 */
   billingType: ReceiptBillingType;
   /**
    * ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。
@@ -686,7 +686,7 @@ export interface NewReceiptInput {
   handoffText: string | null;
   fileKey: string;
   contentType: string;
-  /** 請求区分(doc/14 第4章)。customer_billableの場合customerIdがnullだとDB制約で拒否される。 */
+  /** 請求区分(doc/14 §10)。customer_billableの場合customerIdがnullだとDB制約で拒否される。 */
   billingType: ReceiptBillingType;
 }
 

@@ -70,7 +70,7 @@ export async function processOutboxJob(
       await deps.sender.sendDailyReport({
         reportId: record.id,
         timestampJst: formatJstDateTime(record.occurredAt),
-        // doc/14 F項。started_at/ended_atは"HH:mm"では保存していないため、ミラー送信時に
+        // doc/14 §6。started_at/ended_atは"HH:mm"では保存していないため、ミラー送信時に
         // その場で整形する(未入力=nullは空文字にフォールバックし、GAS側の見え方を崩さない)。
         startTime: record.startedAt ? formatJstTimeOnly(record.startedAt) : '',
         endTime: record.endedAt ? formatJstTimeOnly(record.endedAt) : '',
@@ -134,7 +134,7 @@ export async function processOutboxJob(
         customerId: record.customerId ?? '',
         customerName: customerRecord?.name ?? '',
         receiptTimestampJst: formatJstDateTime(record.receiptTimestamp),
-        // doc/14 A項。amountYenが取れればそれを文字列化し、取れなければOCRの生値(amountRaw)、
+        // doc/14 §1。amountYenが取れればそれを文字列化し、取れなければOCRの生値(amountRaw)、
         // それも無ければ空文字にフォールバックする(GAS版の「金額」列の見え方を崩さないため)。
         amount: record.amountYen !== null ? String(record.amountYen) : (record.amountRaw ?? ''),
         storeName: record.storeName ?? '',

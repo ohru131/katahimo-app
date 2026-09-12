@@ -28,7 +28,7 @@ export const familyMembers = pgTable(
     /** 氏名。DEFAULT '' は行が残っているDBでも ADD COLUMN ... NOT NULL が失敗しないようにするため。 */
     name: text().notNull().default(''),
 
-    // doc/14 F項: 生年月日を日付型にする。dob(text)は廃止し、date型のdobDateと元表記のdobRawに分ける。
+    // doc/14 §6: 生年月日を日付型にする。dob(text)は廃止し、date型のdobDateと元表記のdobRawに分ける。
     /**
      * 生年月日(parseDateOnlyで解析できた場合のみ)。'YYYY/M/D'のうち年だけ・年月だけの
      * ような不完全な表記は、1月1日等を勝手に補わずnullのままにする(dobRawにだけ残す)。
@@ -55,7 +55,7 @@ export const familyMembers = pgTable(
       columns: [t.tenantId, t.customerId],
       foreignColumns: [customers.tenantId, customers.id],
     }),
-    // listByCustomer(WHERE tenant_id=? AND customer_id=?)を索引だけで返すため(doc/14 C項)。
+    // listByCustomer(WHERE tenant_id=? AND customer_id=?)を索引だけで返すため(doc/14 §3)。
     index('family_members_tenant_customer_idx').on(t.tenantId, t.customerId),
   ],
 ).enableRLS();
