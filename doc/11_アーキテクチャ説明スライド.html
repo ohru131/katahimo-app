@@ -112,7 +112,7 @@
       <ul>
         <li>マルチテナントSaaS化、将来の訪問看護展開</li>
         <li>PostgreSQL を唯一の正データにし、GAS資産は<b>互換維持のミラー先</b>として残す</li>
-        <li>ビッグバン回避: Phase 0〜8 の段階移行</li>
+        <li>ビッグバン回避: GAS版と併存しながら段階的に移す</li>
       </ul>
     </div>
     <div>
@@ -121,7 +121,8 @@
         <dl class="kv">
           <dt class="ok">実装済み</dt><dd>認証・顧客・日報/事故報告・領収書・勤怠・スタッフ管理・RESERVA取込・公開デモ</dd>
           <dt class="warn">コード有・未検証</dt><dd>Sheetsミラー、メール送信(GASブリッジが<span class="warn">未デプロイ</span>)</dd>
-          <dt class="bad">未着手</dt><dd>本番デプロイ(Cloud Run)、予約・請求・カルテ、Cloud KMS、再暗号化バッチ、並行運用照合</dd>
+          <dt class="warn">スキーマのみ</dt><dd>予約・請求決済・顧客カルテ・訪問割当の最適化・移動手当(表と制約はあるが実装・API・画面は無い)</dd>
+          <dt class="bad">未着手</dt><dd>本番デプロイ(Cloud Run)、Cloud KMS、再暗号化バッチ、実データでの並行運用照合</dd>
         </dl>
       </div>
       <div class="card" style="margin-top:.8em">
@@ -129,15 +130,15 @@
         <dl class="kv">
           <dt>パッケージ</dt><dd>9(pnpm workspace)</dd>
           <dt>TypeScript</dt><dd>205ファイル / 約20,400行(テスト除く)</dd>
-          <dt>テスト</dt><dd>43ファイル / 327件、CIで毎回実行</dd>
-          <dt>DB</dt><dd>13テーブル、マイグレーション8本</dd>
+          <dt>テスト</dt><dd>55ファイル / 692件、CIで毎回実行</dd>
+          <dt>DB</dt><dd>33テーブル、マイグレーション1本</dd>
         </dl>
       </div>
     </div>
   </div>
   <div class="foot"><span>doc/07 技術構成提案書 / doc/10 開発メモ</span><span>katahimo-app</span></div>
   <div class="notes">
-    重要なのは右上のカード。「実装済み」と「コードはあるが未検証」と「未着手」を最初に分けておきます。特に提案書で語っている予約・請求・カルテは、スキーマにもまだ存在しません。今日見ていただくのは「その土台となる基盤部分」です。
+    重要なのは右上のカード。「実装済み」と「コードはあるが未検証」と「未着手」を最初に分けておきます。特に提案書で語っている予約・請求・カルテは、スキーマだけ先に用意してあり、実装・API・画面はこれからです。今日見ていただくのは「その土台となる基盤部分」です。
   </div>
 </section>
 
@@ -174,7 +175,7 @@
     <!-- postgres -->
     <rect class="box" x="600" y="240" width="160" height="140" style="stroke:var(--c-db)"/>
     <text class="h" x="680" y="268" text-anchor="middle">PostgreSQL</text>
-    <text class="sm" x="680" y="290" text-anchor="middle">13テーブル</text>
+    <text class="sm" x="680" y="290" text-anchor="middle">33テーブル</text>
     <text class="sm" x="680" y="307" text-anchor="middle">RLS + FORCE</text>
     <text class="sm" x="680" y="324" text-anchor="middle">資格情報のみ暗号化 / outbox_jobs</text>
     <text class="sm" x="680" y="362" text-anchor="middle" style="fill:var(--c-db)">唯一の正データ</text>
@@ -350,7 +351,7 @@
 </section>
 <!-- 6 data model -->
 <section class="slide">
-  <h2>データモデル全体像 <small>13テーブル / マイグレーション8本</small></h2>
+  <h2>データモデル全体像 <small>33テーブル / マイグレーション1本</small></h2>
   <div class="fig">
   <svg viewBox="0 0 960 420" role="img" aria-label="テーブル関連図">
     <defs>
@@ -400,7 +401,7 @@
     <text class="sm" x="298" y="188" text-anchor="middle">UK(tenant_id, email)</text>
     <rect class="box" x="210" y="250" width="175" height="52" style="stroke:var(--c-core)"/>
     <text class="h mono" x="298" y="270" text-anchor="middle">customers</text>
-    <text class="sm" x="298" y="286" text-anchor="middle">35列・全て平文・ソフトデリート</text>
+    <text class="sm" x="298" y="286" text-anchor="middle">37列・全て平文・ソフトデリート</text>
     <text class="sm" x="298" y="298" text-anchor="middle">UK(tenant_id, 取込元, 外部ID)</text>
     <rect class="box" x="210" y="330" width="175" height="44" style="stroke:var(--c-ext)"/>
     <text class="h mono" x="298" y="349" text-anchor="middle">outbox_jobs</text>
@@ -447,9 +448,9 @@
       <div><b class="muted">例外は3つだけ</b><br><code>tenants</code>=RLS対象外 / <code>receipts.customer_id</code>=nullable / <code>sessions.token_hash</code>=グローバル一意</div>
     </div>
   </div>
-  <div class="foot"><span>packages/db/src/schema/*.ts / drizzle/0000〜0007 / doc/09 2章 ER図</span><span>katahimo-app</span></div>
+  <div class="foot"><span>packages/db/src/schema/*.ts / drizzle/0000_baseline_schema.sql / doc/09 2章 ER図</span><span>katahimo-app</span></div>
   <div class="notes">
-    テーブルは13本だけです。左から読みます。すべてが tenants にぶら下がり、その下に「認証まわり(staff系)」と「業務データ(customers系)」の2系統がある。矢印の色が参照元です。紫が staff を参照するもの、緑が customers を参照するもの。日報・事故報告・領収書は両方を参照します。例外は3つだけで、tenants だけが RLS の対象外、領収書の顧客だけが nullable(経費のみの領収書があるため)、セッションのトークンハッシュだけがテナントをまたいで一意です。暗号化列が残っているのは app_settings だけです(2026-09 の見直し。8枚目で話します)。提案書にある予約・請求・カルテは、まだこの図に存在しません。
+    テーブルは33本です。左から読みます。すべてが tenants にぶら下がり、その下に「認証まわり(staff系)」と「業務データ(customers系)」の2系統がある。矢印の色が参照元です。紫が staff を参照するもの、緑が customers を参照するもの。日報・事故報告・領収書は両方を参照します。例外は3つだけで、tenants だけが RLS の対象外、領収書の顧客だけが nullable(経費のみの領収書があるため)、セッションのトークンハッシュだけがテナントをまたいで一意です。暗号化列が残っているのは app_settings だけです(2026-09 の見直し。8枚目で話します)。提案書にある予約・請求・カルテは、まだこの図に存在しません。
   </div>
 </section>
 
@@ -559,7 +560,7 @@
 </section>
 <!-- 9 schema conventions -->
 <section class="slide mid">
-  <h2>スキーマ設計の共通ルール <small>13テーブルすべてで同じ形を守る</small></h2>
+  <h2>スキーマ設計の共通ルール <small>33テーブルすべてで同じ形を守る</small></h2>
   <div class="cols">
     <div>
       <div class="card">
@@ -593,7 +594,7 @@
         </ul>
       </div>
       <div class="card" style="margin-top:.6em">
-        <h3>マイグレーション運用 <small class="muted">0000〜0007 の8本</small></h3>
+        <h3>マイグレーション運用 <small class="muted">0000_baseline_schema の1本</small></h3>
         <ul style="margin:0">
           <li><code>drizzle-kit generate</code> で生成 → 手で追記 → <code>migrate</code> で適用。前方適用のみで <code>down</code> は持たない</li>
           <li>手を入れるのは2種類だけ: <b><code>FORCE ROW LEVEL SECURITY</code></b>(生成されない)と <code>tenant_keys</code> の主キー張り替え。どちらもSQLに理由をコメントで残している</li>
@@ -614,7 +615,7 @@
   <h2>列をどう分けたか <small>2026-09に業務データを平文化した結果</small></h2>
   <div class="cols w-3-2">
     <div>
-      <h3 class="muted" style="margin:.1em 0 .3em"><code>customers</code> の全35列(RESERVA CSVの全項目に対応・すべて平文)</h3>
+      <h3 class="muted" style="margin:.1em 0 .3em"><code>customers</code> の全37列(RESERVA CSVの全項目に対応・すべて平文)</h3>
       <table>
         <tr><th>カテゴリ</th><th>列</th><th>備考</th></tr>
         <tr><td>識別子 <span class="muted">4</span></td><td><code>id</code> / <code>tenant_id</code> / <code>external_source</code> / <code>external_id</code></td><td class="muted">識別子そのもの</td></tr>
@@ -912,7 +913,7 @@
   <h2>品質の担保 <small>何をテストし、何をしていないか</small></h2>
   <div class="cols">
     <div>
-      <div class="card"><h3>やっていること <span class="tag">43ファイル / 327件</span></h3>
+      <div class="card"><h3>やっていること <span class="tag">55ファイル / 692件</span></h3>
         <ul style="margin:0">
           <li><b>ドメイン純関数の回帰</b>: 勤怠計算は GAS版をNodeで実行した結果を正解に、合成データ19ケース+月次集計で<b>完全一致</b>。CSV解析は実サンプル398行で一致</li>
           <li><b>usecase 単体</b>: インメモリfakeで、失敗すべきときに失敗することを中心に(列挙防止・試行上限・割り込み・部分更新なし)</li>
@@ -928,7 +929,7 @@
         <ul style="margin:0">
           <li><b>E2E / ブラウザテストが無い</b>。React コンポーネントのテストも0本</li>
           <li>API ルート層の統合テストが無い。実PostgreSQL(postgres-js)に対するリポジトリ層テストも無い</li>
-          <li>勤怠は<b>実データでの照合が未実施</b>(Phase 7 予定)。給与直結領域</li>
+          <li>勤怠は<b>実データでの照合が未実施</b>。給与直結領域</li>
           <li>Gemini 実API呼び出し、GASブリッジ経由の全経路が未検証</li>
           <li>負荷試験・障害注入は未実施。outbox の滞留や再試行の挙動を、実運用の量で見たことがない</li>
         </ul>
@@ -940,7 +941,7 @@
   </div>
   <div class="foot"><span>vitest.config.ts / .github/workflows/ci.yml / packages/core/src/usecases/testDoubles.ts</span><span>katahimo-app</span></div>
   <div class="notes">
-    テストは327件。分布は依然として偏っていて、ドメインとusecaseは厚く、画面と実DBは薄いままです。ただしRLSについては、静的検査と実挙動の両方をCIに入れました。右下は自分たちの規約で、判別力を確認しないテストは足さない、としています。
+    テストは692件。分布は依然として偏っていて、ドメインとusecaseは厚く、画面と実DBは薄いままです。ただしRLSについては、静的検査と実挙動の両方をCIに入れました。右下は自分たちの規約で、判別力を確認しないテストは足さない、としています。
   </div>
 </section>
 
@@ -950,14 +951,15 @@
   <table>
     <thead><tr><th style="width:34%">ドキュメントが語っていること</th><th style="width:14%">実装</th><th>実際の状態</th></tr></thead>
     <tbody>
-      <tr><td>PostgreSQL + RLS のマルチテナント</td><td class="ok">実装済み</td><td>13テーブル、複合FK、FORCE。静的検査と実DB検証をCIで実行</td></tr>
+      <tr><td>PostgreSQL + RLS のマルチテナント</td><td class="ok">実装済み</td><td>33テーブル、複合FK、FORCE。静的検査と実DB検証をCIで実行</td></tr>
       <tr><td>Outbox によるスプレッドシートへの書き戻し</td><td class="ok">実装済み</td><td>ドメインの書き込みと同一トランザクション。バックオフ再試行とデッドレターあり</td></tr>
       <tr><td>Cloud Run 本番デプロイ</td><td class="bad">未着手</td><td>Dockerfile / IaC が存在しない。自動化されているのは GitHub Pages のデモだけ</td></tr>
-      <tr><td>予約(EXCLUDE gist)・請求・カルテ・機能フラグ</td><td class="bad">未着手</td><td>提案書の差別化要因。<b>スキーマにテーブルすら無い</b></td></tr>
+      <tr><td>予約・請求・カルテ</td><td class="warn">スキーマのみ</td><td>表・制約・ドキュメントはある。<b>リポジトリ実装・API・画面はこれから</b></td></tr>
+      <tr><td>業種差の吸収(機能フラグ)</td><td class="bad">未着手</td><td><code>tenant_features</code> 等は設計方針のみで、テーブルは無い</td></tr>
       <tr><td>Sheetsミラーの実送信・メール送信</td><td class="warn">未検証</td><td>GAS Bridge が未デプロイのため一度も動いていない。既定 <code>MIRROR_TO_GOOGLE_SHEETS=false</code></td></tr>
       <tr><td>Cloud KMS による鍵管理</td><td class="bad">未着手</td><td>KEK は環境変数。世代管理はできるが、再暗号化バッチは無い</td></tr>
       <tr><td>認証は Firebase Auth / Identity Platform</td><td class="muted">方針変更</td><td>自前 argon2id + Cookie。レガシーパスワードを移行できるようにするため</td></tr>
-      <tr><td>勤怠計算は GAS版と一致</td><td class="warn">合成データ</td><td>実際の出勤簿での照合は Phase 7</td></tr>
+      <tr><td>勤怠計算は GAS版と一致</td><td class="warn">合成データ</td><td>実際の出勤簿での照合はこれから</td></tr>
       <tr><td>公開デモ</td><td class="ok">稼働中</td><td>本番と同一のスキーマ / usecases / ルートがブラウザ内で動く</td></tr>
     </tbody>
   </table>
@@ -980,8 +982,8 @@
       </div>
     </div>
     <div>
-      <div class="card q"><h3 class="warn">3. 予約・請求・カルテをどう積むか</h3>
-        <p>提案書の差別化要因は、まだスキーマにも無い。二重予約防止(<code>EXCLUDE USING gist</code>)や請求の整合性は、後から足すと既存データの移行が要る。<b>いま土台に入れるか、後回しにするか</b>。</p>
+      <div class="card q"><h3 class="warn">3. 先行整備した5ドメインの進め方</h3>
+        <p>予約・請求・カルテ・訪問最適化・移動手当は、表と制約だけ先に用意してある。ただし二重予約防止(<code>EXCLUDE USING gist</code>)だけは、テスト環境に <code>btree_gist</code> が無いためDBで守れていない。<b>どのドメインから実装に進めるか / 二重取り防止をどこで担保するか</b>。</p>
       </div>
       <div class="card q" style="margin-top:.6em"><h3 class="warn">4. テストの薄い層をどこまで埋めるか</h3>
         <p>ドメインとusecaseは厚いが、APIルート・実PostgreSQL・画面は手動確認のまま。<b>どれをローンチ前提条件にするか</b>。特に勤怠は給与に直結する。</p>
@@ -1009,7 +1011,7 @@
         <li>揃って成立すべき書き込みが1つのトランザクションで確定する</li>
         <li>業務データは RLS + IAM で保護し、保存時暗号化は本番配備先(Cloud SQL)に委ねる想定(NDA 第6条の水準。<b>本番は未配備</b>のため配備時の前提条件)。資格情報だけ列暗号化と鍵の世代管理を実装済み</li>
         <li>認証の失敗経路(列挙・総当たり・割り込み・部分更新・クロスサイト)を塞いだ</li>
-        <li>13テーブルすべてで同じスキーマ規約(複合FK・tenant_id先頭のインデックス・平文と暗号化の線引き)</li>
+        <li>33テーブルすべてで同じスキーマ規約(複合FK・tenant_id先頭のインデックス・平文と暗号化の線引き)</li>
       </ul>
     </div>
     <div>
@@ -1017,7 +1019,7 @@
       <ul>
         <li>GAS ブリッジ1本への依存と、その運用設計</li>
         <li>鍵管理を本番相当にする時期</li>
-        <li>予約・請求・カルテを土台に入れる順番</li>
+        <li>先行整備した5ドメインを実装へ進める順番</li>
         <li>テストの薄い層と、運用の受け皿をどこまで作るか</li>
         <li>DB: 匿名化・廃棄の運用、DB側監査を入れる時期、本番配備時のチェックリスト</li>
       </ul>

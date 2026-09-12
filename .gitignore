@@ -13,3 +13,6 @@ packages/api/data/
 
 # Office が開いている間に作る一時ファイル(doc/*.pptx を開くと生成される)
 ~$*
+
+# Python (スライド生成スクリプト)
+__pycache__/

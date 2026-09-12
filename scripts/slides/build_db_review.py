@@ -41,9 +41,9 @@ title_slide(
     prs,
     "DATABASE DESIGN REVIEW",
     "katahimo-app\nデータベース構造レビュー資料",
-    "訪問保育(ベビーシッター法人)向け業務SaaS — PostgreSQL / 13テーブル",
+    "訪問保育(ベビーシッター法人)向け業務SaaS — PostgreSQL / 33テーブル",
     "現状の構成 ・ 設計上の問題点 ・ ご相談したいこと\n"
-    "2026-09 時点 / 実装は packages/db/src/schema/*.ts が正 / 本番未配備・運用開始前",
+    "実装は packages/db/src/schema/*.ts が正 / 本番未配備・運用開始前",
 )
 
 # ══════════════════════════════════════════════════════════════
@@ -66,12 +66,12 @@ card(s, ML + 8.3, 1.25, 4.03, 2.35, "この資料の作り", accent=GREEN, items
     {"t": [("赤い枠", {"color": RED, "bold": True}), ("は自覚している弱点。隠さず並べる", {})]},
 ], body_size=11.5)
 
-text(s, ML, 3.9, CW, 0.3, "資料の構成(全28ページ)", size=13, color=INK, bold=True)
+text(s, ML, 3.9, CW, 0.3, "資料の構成(全29ページ)", size=13, color=INK, bold=True)
 chs = [
     ("第1章", "まず用語から", "表・主キー・外部キー・\nトランザクション・RLS", ACCENT, ACCENT_L, "P4–5"),
-    ("第2章", "現状の構成", "13テーブルの全体像と、\nテナント分離・データ保護", GREEN, GREEN_L, "P6–16"),
-    ("第3章", "設計上の問題点", "customers 35列の肥大化ほか\n6件を自己申告", RED, RED_L, "P17–23"),
-    ("第4章", "相談事項", "これから足す機能と、\n判断いただきたい論点", VIOLET, VIOLET_L, "P24–28"),
+    ("第2章", "現状の構成", "33テーブルの全体像と、\nテナント分離・データ保護", GREEN, GREEN_L, "P6–17"),
+    ("第3章", "設計上の問題点", "customers 37列の肥大化ほか\n6件を自己申告", RED, RED_L, "P18–24"),
+    ("第4章", "相談事項", "先行して用意したスキーマと、\n判断いただきたい論点", VIOLET, VIOLET_L, "P25–29"),
 ]
 cx = ML
 for no, ttl, body, col, fl, pg in chs:
@@ -101,7 +101,7 @@ s = sl_("用語① テーブル・行・列・キー", "データベースは「
         source="実物は packages/db/src/schema/customers.ts, dailyReports.ts")
 bullets(s, ML, 1.25, 5.9, 4.6, [
     {"t": [("テーブル(表)", {"bold": True, "color": ACCENT, "size": 13}),
-           ("  … Excelの1シートに相当。このシステムには13枚ある", {"size": 12})]},
+           ("  … Excelの1シートに相当。このシステムには33枚ある", {"size": 12})]},
     {"t": [("行(レコード)", {"bold": True, "color": ACCENT, "size": 13}),
            ("  … 1件のデータ。「顧客1人」「日報1本」", {"size": 12})]},
     {"t": [("列(カラム)", {"bold": True, "color": ACCENT, "size": 13}),
@@ -150,26 +150,28 @@ note(s, DX, 5.42, 5.85, 1.15, "この2枚を見ながら覚えていただきた
 # ══════════════════════════════════════════════════════════════
 # 5. 用語② 制約・索引・トランザクション・RLS
 # ══════════════════════════════════════════════════════════════
-s = sl_("用語② 制約・索引・トランザクション", "この先の図を読むのに必要な7語",
+s = sl_("用語② 制約・索引・トランザクション", "この先の図を読むのに必要な8語",
         source="RLS・封筒暗号化は第2章で図解します")
 rows = [
     ["UNIQUE(一意制約)", "「この列の組み合わせは重複禁止」というルール",
      "同じメールで2人登録できないようにする"],
+    ["CHECK(検査制約)", "「この列に入ってよい値」をデータベース側で縛るルール",
+     "区分値・1〜5の評価・0以上の金額をDBが拒否する"],
     ["INDEX(索引)", "本の巻末索引。全ページ読まずに目的の行へ飛べる",
      "「姓が佐藤の顧客」を全件走査せず引く"],
     ["トランザクション", "複数の書き込みを「まとめて確定/まとめて取消」する単位",
      "日報の保存と通知予約を、揃って成立させる"],
     ["RLS(行レベルセキュリティ)", "データベース自身が持つ「見える行の絞り込み」機能",
      "他社のデータは、そもそも見えなくする"],
-    ["マイグレーション", "表の設計変更の履歴。SQLのファイルを積み上げていく",
-     "現在0000〜0007の8本。前に進むだけ(戻さない)"],
+    ["マイグレーション", "表の設計変更の手順書。SQLのファイルを積み上げていく",
+     "運用前のいまは 0000_baseline_schema の1本。配備後は積み増す"],
     ["ORM(Drizzle)", "表の定義をTypeScriptで書き、SQLを生成する道具",
      "列の型がプログラム側の型と食い違うのを防ぐ"],
     ["JSONB", "1つの列の中にJSON(入れ子の構造)をまとめて入れる型",
      "勤怠の1日分をまるごと1列に入れている"],
 ]
 table(s, ML, 1.28, 7.75, ["用語", "ふだんの言葉で言うと", "このシステムでの使い所"], rows,
-      col_w=[2.0, 3.3, 3.1], size=10.5, hsize=10.5, row_h=0.62, header_h=0.34, first_bold=True)
+      col_w=[2.0, 3.3, 3.1], size=10.5, hsize=10.5, row_h=0.56, header_h=0.34, first_bold=True)
 
 # 右: 2つのミニ図
 DX = 8.55
@@ -198,7 +200,7 @@ note(s, DX, 4.95, 4.3, 1.15, "なぜ重要か",
 # 6. 第2章 divider
 # ══════════════════════════════════════════════════════════════
 sec_("第 2 章", "現状の構成",
-     "13テーブルの全体像と、テナント分離・データ保護・トランザクションの考え方")
+     "33テーブルの全体像と、テナント分離・データ保護・トランザクションの考え方")
 
 # ══════════════════════════════════════════════════════════════
 # 7. 何を記録しているのか(業務の流れ)
@@ -234,9 +236,9 @@ card(s, ML, 4.15, 6.0, 1.35, "記録は「後から書き換えない」デー�
     {"t": "日報・事故報告・領収書・勤怠は、その日の事実を積み上げる性質。削除は行わず、"
           "顧客の退会も deactivated_at を立てるだけ(ソフトデリート)"},
 ], body_size=11.5)
-card(s, ML + 6.2, 4.15, 6.13, 1.35, "AI(Gemini)と通知が絡む", accent=VIOLET, items=[
-    {"t": "口語メモから社内向け・保護者向けの文章を生成する。生成前の元テキストも列として残す。"
-          "APIキーとWebhook URLは app_settings に暗号化して保存"},
+card(s, ML + 6.2, 4.15, 6.13, 1.35, "この①〜④の外側に、まだ実装の無い5領域がある", accent=ORANGE, items=[
+    {"t": "予約 / 請求・決済 / 顧客カルテ / 訪問割当の最適化 / 移動手段別の手当。"
+          "表と制約だけ先に用意してあり、この資料の第4章で扱う"},
 ], body_size=11.5)
 note(s, ML, 5.72, CW, 1.1, "設計の出発点",
      "現行のGoogle Apps Script版は、データがすべてスプレッドシートとDriveにあり、1法人・1Googleアカウントに強く依存しています。"
@@ -245,124 +247,134 @@ note(s, ML, 5.72, CW, 1.1, "設計の出発点",
      accent=ACCENT, fill=ACCENT_L)
 
 # ══════════════════════════════════════════════════════════════
-# 8. 全体像 13テーブル
+# 8. 全体像 33テーブル
 # ══════════════════════════════════════════════════════════════
-s = sl_("全体像 — 13テーブル", "マイグレーション8本 / tenants以外の12枚はすべて同じ形を守る",
+s = sl_("全体像 — 33テーブル", "業務ドメインごとに10のまとまり。tenants以外の32枚はすべて同じ形を守る",
         source="packages/db/src/schema/*.ts / 詳細なER図は doc/09 第2章")
 
-chip_row(s, ML, 1.15, [("矢印 = 外部キーの参照", MUTED, CARD),
-                       ("紫 = staff を参照", VIOLET, VIOLET_L),
-                       ("緑 = customers を参照", GREEN, GREEN_L),
-                       ("全テーブルが tenant_id を持つ", ACCENT, ACCENT_L)], size=9.5)
+chip_row(s, ML, 1.12, [("全テーブルが tenant_id を持つ", ACCENT, ACCENT_L),
+                       ("紫 = 稼働中", VIOLET, VIOLET_L),
+                       ("橙 = スキーマのみ", ORANGE, ORANGE_L),
+                       ("関係の矢印は doc/09 のER図", MUTED, CARD)], size=9.5)
 
-box(s, 5.35, 1.55, 2.6, 0.44, "tenants(法人マスタ)", fill=NAVY, border=None, color=WHITE,
-    size=11.5, bold=True)
+GW, GG = 2.34, 0.16
 
-# 認証・スタッフ枠
-rect(s, ML, 2.35, 3.5, 2.62, fill=VIOLET_L, border=None)
-text(s, ML + 0.15, 2.42, 3.2, 0.25, "認証・スタッフ・勤怠", size=10.5, color=VIOLET, bold=True)
-box(s, ML + 0.22, 2.72, 3.05, 0.4, "staff(スタッフ)", fill=WHITE, border=VIOLET, size=11,
-    bold=True)
-for i, (nm, sub) in enumerate([("sessions", "ログイン状態"),
-                               ("password_reset_codes", "再設定コード"),
-                               ("attendance_days", "勤怠1日分")]):
-    yy = 3.25 + i * 0.56
-    box(s, ML + 0.22, yy, 3.05, 0.44,
-        [(nm, {"size": 10.5, "bold": True}), ("  " + sub, {"size": 9.5, "color": MUTED})],
-        fill=WHITE, border=LINE, size=10.5)
-hline(s, ML + 0.1, 3.15, ML + 0.4, color=VIOLET, width=1.2)
-vline(s, ML + 0.1, 3.15, 3.25 + 2 * 0.56 + 0.22, color=VIOLET, width=1.2)
-for i in range(3):
-    arrow(s, (ML + 0.1, 3.25 + i * 0.56 + 0.22), (ML + 0.21, 3.25 + i * 0.56 + 0.22),
-          color=VIOLET, width=1.2)
 
-# 訪問記録枠
-rect(s, 4.35, 2.35, 4.55, 2.62, fill=CARD, border=None)
-text(s, 4.5, 2.42, 4.2, 0.25, "訪問の記録(スタッフと顧客の両方を参照)", size=10.5, color=INK,
+def group_box(x, y, title, n, names, col, fl):
+    h = 1.75
+    rect(s, x, y, GW, h, fill=WHITE, border=col, border_w=1.2)
+    fill_text(rect(s, x, y, GW, 0.4, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE),
+              f"{title} ({n})", size=10.5, color=WHITE, bold=True)
+    text(s, x + 0.12, y + 0.48, GW - 0.24, h - 0.56, "\n".join(names), size=8, color=INK,
+         font=MONO, line=1.5)
+
+
+text(s, ML, 1.5, 6.0, 0.26, "稼働中 — アプリが読み書きしている15枚", size=11.5, color=VIOLET,
      bold=True)
-mid = []
-for i, (nm, sub) in enumerate([("daily_reports", "保育日報 / 本文5列"),
-                               ("accident_reports", "事故報告・ヒヤリハット / 本文11列"),
-                               ("receipts", "領収書 / 画像はGCS想定")]):
-    yy = 2.75 + i * 0.72
-    box(s, 4.55, yy, 4.15, 0.6,
-        [(nm, {"size": 11, "bold": True}), ("\n", {}), (sub, {"size": 9.5, "color": MUTED})],
-        fill=WHITE, border=LINE, size=11)
-    mid.append(yy + 0.3)
+live = [
+    ("テナント基盤", 4, ["tenants", "tenant_keys", "app_settings", "outbox_jobs"]),
+    ("認証・スタッフ", 3, ["staff", "sessions", "password_reset_codes"]),
+    ("顧客", 2, ["customers", "family_members"]),
+    ("訪問の記録", 4, ["daily_reports", "accident_reports", "receipts", "attendance_days"]),
+    ("割引クーポン", 2, ["coupons", "coupon_redemptions"]),
+]
+cx = ML
+for ttl, n, names in live:
+    group_box(cx, 1.8, ttl, n, names, VIOLET, VIOLET_L)
+    cx += GW + GG
 
-# 顧客枠
-rect(s, 9.3, 2.35, 3.53, 2.62, fill=GREEN_L, border=None)
-text(s, 9.45, 2.42, 3.2, 0.25, "顧客(利用世帯)", size=10.5, color=GREEN, bold=True)
-box(s, 9.5, 2.72, 3.15, 0.4, "customers(顧客/35列)", fill=WHITE, border=GREEN, size=11, bold=True)
-box(s, 9.5, 3.25, 3.15, 0.44,
-    [("family_members", {"size": 10.5, "bold": True}), ("  世帯構成員", {"size": 9.5, "color": MUTED})],
-    fill=WHITE, border=LINE, size=10.5)
-arrow(s, (9.72, 3.12), (9.72, 3.47), color=GREEN, width=1.2)
-text(s, 9.5, 3.85, 3.15, 0.95,
-     "customers は RESERVA の顧客CSVの全項目を受けるため35列ある(第3章の論点①)",
-     size=10, color=MUTED, line=1.3)
+text(s, ML, 3.78, 8.5, 0.26, "スキーマだけ先に用意 — 表と制約はあるが、実装・API・画面はこれから(18枚)",
+     size=11.5, color=ORANGE, bold=True)
+planned = [
+    ("顧客カルテ", 2, ["customer_notes", "customer_note_photos"]),
+    ("予約", 4, ["service_menus", "reservations", "reservation_assignments", "staff_availabilities"]),
+    ("請求・決済", 5, ["customer_payment_profiles", "invoices", "invoice_lines", "payments",
+                   "stripe_webhook_events"]),
+    ("訪問割当の最適化", 5, ["trait_definitions", "customer_traits", "staff_traits",
+                      "staff_customer_compatibilities", "staff_customer_travel_estimates"]),
+    ("移動手段と手当", 2, ["transport_allowance_rules", "travel_legs"]),
+]
+cx = ML
+for ttl, n, names in planned:
+    group_box(cx, 4.08, ttl, n, names, ORANGE, ORANGE_L)
+    cx += GW + GG
 
-for yy in mid:
-    arrow(s, (3.82, yy), (4.5, yy), color=VIOLET, width=1.3)
-    arrow(s, (9.45, yy), (8.75, yy), color=GREEN, width=1.3)
-
-# tenants から全テーブルへ(幹線1本 + 枝3本)
-vline(s, 6.65, 1.99, 2.14, color=NAVY, width=1.2, dash=True)
-hline(s, 2.1, 2.14, 11.05, color=NAVY, width=1.2, dash=True)
-for bx in (2.1, 6.65, 11.05):
-    arrow(s, (bx, 2.14), (bx, 2.32), color=NAVY, width=1.2, dash=True)
-
-# 基盤枠
-rect(s, ML, 5.15, CW, 0.92, fill=CARD2, border=None)
-text(s, ML + 0.15, 5.22, 4.0, 0.25, "テナント基盤・外部連携(tenant_id のみを持つ)", size=10.5,
-     color=INK, bold=True)
-for i, (nm, sub, col) in enumerate([
-        ("tenant_keys", "テナントごとの暗号鍵(世代あり)", ACCENT),
-        ("app_settings", "APIキー・Webhook URL(暗号化)", ACCENT),
-        ("outbox_jobs", "スプレッドシートへの書き戻し待ち行列", ORANGE)]):
-    box(s, ML + 0.2 + i * 4.02, 5.52, 3.85, 0.45,
-        [(nm, {"size": 10.5, "bold": True, "color": col}), ("  " + sub, {"size": 9.5, "color": MUTED})],
-        fill=WHITE, border=LINE, size=10.5)
-
-note(s, ML, 6.1, CW, 0.82, "例外は3つだけ",
+note(s, ML, 6.02, CW, 0.78, "例外は3つだけ",
      "① tenants だけRLSの対象外(ログイン前に法人を特定するため)  "
      "② receipts.customer_id だけ空を許す(顧客に紐付かない経費)  "
      "③ sessions.token_hash だけ法人を越えて一意",
-     accent=AMBER, fill=AMBER_L, size=11)
+     accent=AMBER, fill=AMBER_L, size=10.5, lsize=10)
 
 # ══════════════════════════════════════════════════════════════
-# 9. テーブル一覧
+# 9. テーブル一覧① 稼働中の15枚
 # ══════════════════════════════════════════════════════════════
-s = sl_("テーブル一覧", "13枚の役割と、鍵になる制約",
+s = sl_("テーブル一覧① — 稼働中の15枚", "アプリが実際に読み書きしている表と、鍵になる制約",
         source="RLS = 行レベルセキュリティ(そのテナントの行しか見えなくするDB側の仕組み)")
 rows = [
     ["tenants", "法人(テナント)マスタ", "slug で一意。ログイン前に法人を特定する", "対象外"],
     ["tenant_keys", "テナントごとの暗号鍵(ラップ済み)", "PK=(tenant_id, dek_version) 世代が並存", "○"],
+    ["app_settings", "テナント単位の管理者設定", "1テナント1行。資格情報3列だけ暗号化", "○"],
+    ["outbox_jobs", "スプレッドシート書き戻しの待ち行列", "UNIQUE(tenant_id, idempotency_key)", "○"],
     ["staff", "スタッフ。認証情報も兼ねる", "UNIQUE(tenant_id, email) / (tenant_id, id)", "○"],
-    ["customers", "顧客(利用世帯の代表者)。35列", "UNIQUE(tenant_id, external_source, external_id)", "○"],
-    ["family_members", "世帯構成員(子ども等)", "customers への複合FK", "○"],
-    ["daily_reports", "保育日報。本文は項目ごとの5列", "staff と customers 双方への複合FK", "○"],
-    ["accident_reports", "事故報告 / ヒヤリハット。本文11列", "同上", "○"],
-    ["receipts", "領収書。画像はオブジェクトストレージ", "customer_id は空可。dedupe_key で重複検出", "○"],
-    ["attendance_days", "勤怠(出勤簿)1日分", "UNIQUE(tenant_id, staff_id, business_date)", "○"],
     ["sessions", "ログインセッション", "生トークンは保存せずSHA-256のみ", "○"],
     ["password_reset_codes", "パスワード再設定の6桁コード", "HMACの検証子のみ保存。30分・5回で無効", "○"],
-    ["outbox_jobs", "スプレッドシート書き戻しの待ち行列", "UNIQUE(tenant_id, idempotency_key)", "○"],
-    ["app_settings", "テナント単位の管理者設定", "1テナント1行。資格情報3列だけ暗号化", "○"],
+    ["customers", "顧客(利用世帯の代表者)。37列", "UNIQUE(tenant_id, external_source, external_id)", "○"],
+    ["family_members", "世帯構成員(子ども等)", "customers への複合FK。生年月日は date + 元表記", "○"],
+    ["daily_reports", "保育日報。本文は項目ごとの5列", "staff と customers 双方への複合FK", "○"],
+    ["accident_reports", "事故報告 / ヒヤリハット。本文11列", "同上。report_type は CHECK で2値に限定", "○"],
+    ["receipts", "領収書。画像はオブジェクトストレージ", "金額は整数の円。billing_type で顧客請求/会社経費", "○"],
+    ["attendance_days", "勤怠(出勤簿)1日分", "UNIQUE(tenant_id, staff_id, business_date)", "○"],
+    ["coupons", "割引クーポンの種別マスタ", "UNIQUE(tenant_id, code)。廃止は active=false", "○"],
+    ["coupon_redemptions", "日報1件への割引クーポン適用記録", "UNIQUE(tenant_id, daily_report_id, coupon_id)", "○"],
 ]
 cc = {(0, 3): MUTED}
 table(s, ML, 1.25, CW, ["テーブル", "役割", "鍵になる制約・特徴", "RLS"], rows,
-      col_w=[2.2, 3.9, 5.4, 0.75], size=10.5, hsize=10.5, row_h=0.315, header_h=0.33,
+      col_w=[2.2, 3.9, 5.4, 0.75], size=10, hsize=10.5, row_h=0.29, header_h=0.33,
       first_bold=True, cell_colors=cc,
       aligns=[PP_ALIGN.LEFT, PP_ALIGN.LEFT, PP_ALIGN.LEFT, PP_ALIGN.CENTER])
-note(s, ML, 5.72, 6.0, 1.15, "「複合FK」とは(第2章で図解します)",
+note(s, ML, 6.0, 6.0, 1.0, "「複合FK」とは(次章で図解します)",
      "外部キーを (tenant_id, customer_id) の2列セットにしたもの。「そのIDが本当に同じ法人の行か」を"
      "データベース自身に確かめさせるための工夫です。",
      accent=ACCENT, fill=ACCENT_L, size=11)
-note(s, ML + 6.33, 5.72, 6.0, 1.15, "この一覧に無いもの",
-     "予約・請求・カルテのテーブルはまだ存在しません(第4章)。提案書では中心的な機能として"
-     "書いていますが、スキーマには未着手です。",
-     accent=RED, fill=RED_L, size=11)
+note(s, ML + 6.33, 6.0, 6.0, 1.0, "この15枚が「土台」です",
+     "提案書の差別化要因(予約・請求・カルテ)は、次ページの18枚としてスキーマだけ先に用意してあります。",
+     accent=ORANGE, fill=ORANGE_L, size=11)
+
+# ══════════════════════════════════════════════════════════════
+# 9b. テーブル一覧② 先行整備の18枚
+# ══════════════════════════════════════════════════════════════
+s = sl_("テーブル一覧② — スキーマだけ先に用意した18枚", "実装・API・画面はこれから",
+        source="doc/15_追加ドメインの設計とレビュー論点.md", accent=ORANGE)
+rows2 = [
+    ["customer_notes", "カルテ", "カルテ・申し送り・鍵の位置・ガレージ・引継ぎ・注意点を区分で持つ1枚"],
+    ["customer_note_photos", "カルテ", "上の子。写真は実体を持たず保存キーのみ。10MB・10枚をCHECKで制限"],
+    ["service_menus", "予約", "提供メニュー。RESERVA由来は external_source + external_id で突合"],
+    ["reservations", "予約", "予約(約束)。日報(実施記録)とは別。end_at > start_at をCHECK"],
+    ["reservation_assignments", "予約", "予約へのスタッフ割当。主担当は1予約1人までを部分一意索引で保証"],
+    ["staff_availabilities", "予約", "スタッフの稼働可能枠。曜日指定か特定日かの排他をCHECK"],
+    ["customer_payment_profiles", "決済", "Stripeの顧客ID・支払方法ID・ブランド・下4桁。カード番号は持たない"],
+    ["invoices", "決済", "請求書。total = subtotal − discount + tax をCHECKで強制"],
+    ["invoice_lines", "決済", "明細。同じ領収書・同じクーポンが2行に載らないよう部分一意索引"],
+    ["payments", "決済", "入金。状態の語はStripeのPaymentIntent statusに合わせ、対応表を持たない"],
+    ["stripe_webhook_events", "決済", "Webhookの冪等化。UNIQUE(tenant_id, stripe_event_id)"],
+    ["trait_definitions", "最適化", "特性の項目マスタ。顧客用/スタッフ用を subject_kind で区別"],
+    ["customer_traits", "最適化", "顧客の特性値。型ごとに列を分け「ちょうど1つだけ非NULL」をCHECK"],
+    ["staff_traits", "最適化", "スタッフの特性値。同上"],
+    ["staff_customer_compatibilities", "最適化", "相性。スコア(1〜5)と「絶対に組ませない」を別の列にしている"],
+    ["staff_customer_travel_estimates", "最適化", "自宅・訪問先間の所要時間と距離。移動手段ごとに1行"],
+    ["transport_allowance_rules", "手当", "移動手段別の手当。距離比例/1移動定額/1日定額/実費の4通り"],
+    ["travel_legs", "手当", "移動1区間の実績。手段・距離・時間・運賃・手当額"],
+]
+domcol = {"カルテ": PINK, "予約": ACCENT, "決済": GREEN, "最適化": VIOLET, "手当": ORANGE}
+cc2 = {(i, 1): domcol[r[1]] for i, r in enumerate(rows2)}
+table(s, ML, 1.22, CW, ["テーブル", "領域", "役割と、鍵になる制約"], rows2,
+      col_w=[3.3, 1.1, 7.85], size=10, hsize=10.5, row_h=0.275, header_h=0.30,
+      first_bold=True, cell_colors=cc2,
+      aligns=[PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.LEFT])
+text(s, ML, 6.52, CW, 0.4,
+     "この18枚も既存15枚と同じ規約(tenant_id + RLS + 複合外部キー + CHECK + updated_at トリガー)に載せてあります。"
+     "先に作った理由と、そこで迷った判断は第4章(P26・P27)で扱います。",
+     size=10.5, color=MUTED, line=1.3)
 
 # ══════════════════════════════════════════════════════════════
 # 10. マルチテナント方式の比較
@@ -462,7 +474,7 @@ text(s, ML, y2 + 1.88, 6.0, 0.5,
      size=10.5, color=MUTED, line=1.3)
 
 card(s, ML + 6.33, 2.95, 6.0, 1.45, "効いていることをCIで毎回確かめている", accent=GREEN, items=[
-    {"t": "静的検査:全13テーブル分のSQLに ENABLE と FORCE、ポリシーの条件が揃っているかを機械的に検査。"
+    {"t": "静的検査:全33テーブル分のSQLに ENABLE と FORCE、ポリシーの条件が揃っているかを機械的に検査。"
           "新しい表を足して書き忘れると落ちる"},
     {"t": "実DB検証:権限を落としたロールを作り、実際に他社の行が見えないことを確認"},
 ], body_size=10.5)
@@ -534,14 +546,14 @@ for r_i, row in enumerate(rows):
         box(s, ML + c_i * 4.13, 5.04 + r_i * 0.5, 3.95, 0.42, cell, fill=WHITE, border=LINE,
             size=10.5, align=PP_ALIGN.LEFT)
 note(s, ML, 6.05, CW, 0.85, "補足",
-     "この落とし穴は 2026-08 のレビューでご指摘いただいて塞いだものです。参照先には UNIQUE(tenant_id, id) を追加してあります。"
+     "この落とし穴は過去のレビューでご指摘いただいて塞いだものです。参照先には UNIQUE(tenant_id, id) を張ってあります。"
      "ON DELETE は全て no action(親を消せない)にしており、廃棄はテナント単位の物理削除で行う方針です。",
      accent=ACCENT, fill=ACCENT_L, size=11)
 
 # ══════════════════════════════════════════════════════════════
 # 13. データ保護の線引き
 # ══════════════════════════════════════════════════════════════
-s = sl_("データ保護の線引き", "2026-09に方針変更:アプリ側で暗号化するのは資格情報だけにした",
+s = sl_("データ保護の線引き", "アプリ側で暗号化するのは資格情報だけ。業務データは平文列で持つ",
         source="doc/09 1.3節 / packages/db/src/schema/appSettings.ts")
 rect(s, ML, 1.25, 6.0, 2.5, fill=WHITE, border=RED, border_w=1.5)
 text(s, ML + 0.2, 1.33, 5.6, 0.28, "アプリで暗号化する(3列だけ)", size=12, color=RED, bold=True)
@@ -631,10 +643,10 @@ bullets(s, ML, 4.25, 6.0, 1.3, [
     {"t": "解約時はこの行を無効化すれば、バックアップに残った暗号文も復号できなくなる(暗号学的削除)"},
 ], size=10.5, line=1.3, gap=5)
 
-card(s, ML + 6.33, 2.95, 6.0, 1.6, "この形にした理由(2026-08のレビュー反映)", accent=ACCENT, items=[
-    {"t": "以前は「マスター鍵 + 法人ID」から鍵を計算する方式だった。これはマスター鍵が漏れれば"
-          "全法人の鍵を誰でも再現できるため、実質1本の鍵と同じだった"},
-    {"t": "法人ごとに独立生成した鍵を包んで保存する形に変更した"},
+card(s, ML + 6.33, 2.95, 6.0, 1.6, "法人ごとに独立生成する理由", accent=ACCENT, items=[
+    {"t": "「マスター鍵 + 法人ID」から鍵を計算する方式にすると、マスター鍵が漏れれば"
+          "全法人の鍵を誰でも再現できる。それは実質、鍵を1本共有しているのと変わらない"},
+    {"t": "そのため法人ごとにランダム生成した鍵を、包んだ状態で保存している"},
 ], body_size=10.5)
 note(s, ML + 6.33, 4.7, 6.0, 0.85, "本番のKEKは未実装(論点⑥)",
      "Cloud KMSへの差し替え口は用意してあるが、中身は環境変数のまま。"
@@ -705,36 +717,37 @@ note(s, ML, 5.9, CW, 1.0, "なぜ「Outbox」という形にするのか",
 # ══════════════════════════════════════════════════════════════
 # 16. スキーマ共通ルール
 # ══════════════════════════════════════════════════════════════
-s = sl_("13テーブルで守っている共通ルール", "表ごとに判断がぶれないよう、形を決めてある",
+s = sl_("33テーブルで守っている共通ルール", "表ごとに判断がぶれないよう、形を決めてある",
         source="doc/09 / packages/db/src/schema/*.ts のコメントに理由を記載")
 left = [
     ("主キーは必ず uuid のランダム値", "連番にしない。件数が外から推測できず、採番の集中点も作らない"),
     ("日時は必ず timestamptz", "タイムゾーン付き。業務上の「日」だけ date(勤怠の business_date)"),
     ("派生値は保存しない", "残業時間・移動距離などは入力値から毎回計算する。二重管理を作らない"),
     ("削除しない", "顧客の退会は deactivated_at を立てるだけ。物理削除の経路を持たない"),
+    ("updated_at はDBのトリガーが更新", "アプリのコードでは書かない。書き忘れを構造的に起こせなくする"),
 ]
 right = [
     ("参照はすべて2列セットの外部キー", "(tenant_id, xxx_id) → (tenant_id, id)。法人跨ぎを構造的に防ぐ"),
     ("索引・一意制約は tenant_id を先頭に", "staff(tenant_id, email) / customers(tenant_id, family_name)"),
     ("外部システム由来の値は隔離する", "external_source + external_id にまとめ、その組で一意にする"),
-    ("マイグレーションは前に進むだけ", "0000〜0007の8本。戻す手順(down)は持たない"),
+    ("区分値はDBのCHECK制約で縛る", "許可値の配列は contracts/ の1か所に置き、そこからDDLを組み立てる"),
 ]
 for col_i, group in enumerate([left, right]):
     x = ML + col_i * 6.33
     for i, (ttl, body) in enumerate(group):
-        y = 1.28 + i * 1.0
-        rect(s, x, y, 6.0, 0.88, fill=WHITE, border=LINE)
-        rect(s, x, y, 0.075, 0.88, fill=ACCENT if col_i == 0 else GREEN, border=None,
+        y = 1.26 + i * 0.85
+        rect(s, x, y, 6.0, 0.75, fill=WHITE, border=LINE)
+        rect(s, x, y, 0.075, 0.75, fill=ACCENT if col_i == 0 else GREEN, border=None,
              shape=MSO_SHAPE.RECTANGLE)
-        text(s, x + 0.22, y + 0.11, 5.6, 0.26, ttl, size=11.5,
+        text(s, x + 0.22, y + 0.07, 5.6, 0.26, ttl, size=11,
              color=ACCENT if col_i == 0 else GREEN, bold=True)
-        text(s, x + 0.22, y + 0.41, 5.65, 0.44, body, size=10.5, color=INK, line=1.3)
+        text(s, x + 0.22, y + 0.34, 5.65, 0.4, body, size=10, color=INK, line=1.28)
 
-note(s, ML, 5.42, 6.0, 1.4, "この規約のおかげで楽になっていること",
+note(s, ML, 5.6, 6.0, 1.3, "この規約のおかげで楽になっていること",
      "新しい表を足すときに考えることが少ない(同じ形をコピーすればよい)。"
-     "RLSの張り忘れはCIが機械的に検出する。第4章で足す予定の予約・請求も、この形に載せる想定です。",
+     "RLSとupdated_atトリガーの張り忘れはCIが機械的に検出する。第4章の18枚も、この形にそのまま載せてあります。",
      accent=GREEN, fill=GREEN_L)
-note(s, ML + 6.33, 5.42, 6.0, 1.4, "規約の副作用も出ている(第3章)",
+note(s, ML + 6.33, 5.6, 6.0, 1.3, "規約の副作用も出ている(第3章)",
      "「派生値を保存しない」は二重管理を防ぐ一方、月次集計を毎回全件計算することになります。"
      "「削除しない」は事故を防ぐ一方、廃棄の手順を別に整備しないと契約上の返還・削除義務を果たせません。",
      accent=AMBER, fill=AMBER_L)
@@ -746,9 +759,9 @@ sec_("第 3 章", "設計上の問題点(自己申告)",
      "気づいている弱点を6件並べます。ここが今回いちばんご意見をいただきたい部分です")
 
 # ══════════════════════════════════════════════════════════════
-# 18. 問題① customers 35列
+# 18. 問題① customers 37列
 # ══════════════════════════════════════════════════════════════
-s = sl_("問題① customers が35列に肥大化している", "外部CSVの全項目を1枚の表で受けた結果",
+s = sl_("問題① customers が37列に肥大化している", "外部CSVの全項目を1枚の表で受けた結果",
         source="packages/db/src/schema/customers.ts / doc/09 4.1節", accent=RED)
 text(s, ML, 1.2, CW, 0.3,
      "外部予約システム(RESERVA)の顧客CSVを「1項目も落とさず取り込む」方針にしたため、CSVの列がほぼそのまま列になっている。",
@@ -757,22 +770,23 @@ cats = [
     ("識別子", 4, "id / tenant_id / 取込元 / 取込元ID", ACCENT),
     ("氏名", 5, "表示名 / 姓 / 名 / かな2種", ACCENT),
     ("連絡先・住所", 7, "メール / 電話 / 市区 / 住所 / 駐車場2種 / 第2住所", VIOLET),
-    ("第三者情報・位置・自由記述", 5, "緊急連絡先 / 続柄 / 避難場所 / メモ / 緯度経度", PINK),
+    ("第三者情報・自由記述", 4, "緊急連絡先 / 続柄 / 避難場所 / メモ", PINK),
+    ("位置情報", 3, "緯度 / 経度 / 取込元の生表記", PINK),
     ("他システムの会員証", 1, "Benefit会員ID", PINK),
     ("運用区分", 6, "会員種別 / 状態 / 支払方法 / 支払状況 / 性別 / 年代", GREEN),
     ("日時", 7, "登録日 / 外部更新日 / 第2住所の期間2列 / 退会日 / 作成・更新", MUTED),
 ]
-text(s, ML, 1.58, 5.9, 0.28, "現状:1枚に7カテゴリが同居している", size=12, color=RED, bold=True)
+text(s, ML, 1.58, 5.9, 0.28, "現状:1枚に8カテゴリが同居している", size=12, color=RED, bold=True)
 yy = 1.9
 for nm, n, cols, col in cats:
-    rect(s, ML, yy, 5.9, 0.42, fill=WHITE, border=LINE)
-    rect(s, ML, yy, 0.06, 0.42, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE)
-    text(s, ML + 0.16, yy + 0.06, 2.1, 0.3, nm, size=10.5, color=col, bold=True)
-    text(s, ML + 2.28, yy + 0.06, 0.55, 0.3, f"{n}列", size=10.5, color=INK, bold=True,
+    rect(s, ML, yy, 5.9, 0.38, fill=WHITE, border=LINE)
+    rect(s, ML, yy, 0.06, 0.38, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE)
+    text(s, ML + 0.16, yy + 0.04, 2.1, 0.3, nm, size=10.5, color=col, bold=True)
+    text(s, ML + 2.28, yy + 0.04, 0.55, 0.3, f"{n}列", size=10.5, color=INK, bold=True,
          align=PP_ALIGN.RIGHT)
-    text(s, ML + 2.95, yy + 0.09, 2.9, 0.3, cols, size=9, color=MUTED)
-    yy += 0.5
-box(s, ML, yy, 5.9, 0.36, "合計 35列(1テーブル)", fill=RED_L, border=None, color=RED, size=11.5,
+    text(s, ML + 2.95, yy + 0.07, 2.9, 0.3, cols, size=9, color=MUTED)
+    yy += 0.44
+box(s, ML, yy, 5.9, 0.36, "合計 37列(1テーブル)", fill=RED_L, border=None, color=RED, size=11.5,
     bold=True)
 
 text(s, ML + 6.33, 1.58, 6.0, 0.28, "分けるとしたらこうなる(案)", size=12, color=GREEN, bold=True)
@@ -794,7 +808,7 @@ card(s, ML + 6.33, yy2 + 0.06, 6.0, 1.35, "分けた場合に払う代償", acce
     {"t": "分ける単位を間違えると、後から直すコストは今より高くなる"},
 ], body_size=10.5)
 note(s, ML, 6.13, CW, 0.8, "ご相談したいこと(相談①)",
-     "「35列は多すぎるので分けるべき」か、「顧客マスタなら35列は普通で分けるほうが害」か。判断の基準"
+     "「37列は多すぎるので分けるべき」か、「顧客マスタなら37列は普通で分けるほうが害」か。判断の基準"
      "(何列を超えたら、どういう単位で分けるか)をご教示いただきたいです。運用前なので、分けるなら今が最も安いタイミングです。",
      accent=RED, fill=RED_L, size=11)
 
@@ -845,124 +859,152 @@ table(s, ML, 5.75, CW, ["環境", "データベース", "保存時の暗号化",
       cell_colors={(2, 3): RED, (0, 2): AMBER, (1, 2): AMBER, (2, 2): MUTED}, first_bold=True)
 
 # ══════════════════════════════════════════════════════════════
-# 20. 問題③ 勤怠 jsonb
+# 20. 問題③ 予約の二重取りをDBで止められていない
 # ══════════════════════════════════════════════════════════════
-s = sl_("問題③ 勤怠だけJSONを1列に押し込んでいる", "給与に直結する領域なのに、構造がデータベースから読めない",
-        source="packages/db/src/schema/attendanceDays.ts", accent=RED)
+s = sl_("問題③ 予約の二重取りをDBで止められていない",
+        "同じスタッフに時間の重なる予約を2件入れられる",
+        source="packages/db/src/schema/reservations.ts / doc/15 §2", accent=RED)
 text(s, ML, 1.2, CW, 0.3,
-     "日報・事故報告は項目ごとの列に分けたが、勤怠は1日分をJSONのまま1列(row_data)に入れている。",
+     "「同じスタッフ・時間帯が重なる予約は1件まで」は、本来 PostgreSQL の除外制約(EXCLUDE)で"
+     "データベース自身に守らせられる。それが使えていない。",
      size=12, color=INK)
-text(s, ML, 1.58, 6.0, 0.28, "現状 attendance_days.row_data(jsonb)", size=12, color=RED, bold=True)
-rect(s, ML, 1.9, 6.0, 1.35, fill=CARD, border=LINE)
-text(s, ML + 0.2, 2.0, 5.6, 1.15,
-     '{ "C": "9:00", "D": "18:00", "E": "60",\n  "F": "訪問", "G": "12.4", … }',
-     size=11.5, color=INK, font=MONO, line=1.4)
-text(s, ML + 0.2, 2.72, 5.6, 0.45,
-     "キーはスプレッドシートの列記号。意味はアプリ側のコードにしか書かれていない。",
-     size=10, color=MUTED, line=1.3)
-bullets(s, ML, 3.35, 6.0, 1.9, [
-    {"t": "そうした理由:キーが動的で、常に「1日分をまるごと読み書き」する用途しかなく、"
-          "分解する利点が無かった"},
-    {"t": "残業時間・移動距離などの計算結果は保存せず、毎回このJSONから計算している"},
-    {"t": "jsonb なので、必要になればSQLから個別キーを参照することもできる"},
-], size=11, line=1.32, gap=6)
 
-text(s, ML + 6.33, 1.58, 6.0, 0.28, "この形の弱点", size=12, color=RED, bold=True)
-weak = [
-    ("型のチェックがデータベース側で効かない", '"9:00" のところに文字化けや空文字が入っても、DBは受け入れる'),
-    ("列の意味がDBから読めない", '"C" が何かを知るにはアプリのコードを読むしかない。社労士への説明もしづらい'),
-    ("集計がしにくい", "「残業が多い月」を出すには全行のJSONを読んで計算する必要がある"),
-    ("スプレッドシートの列構成に縛られる", "元のテンプレートの列記号に依存しており、様式変更に弱い"),
+text(s, ML, 1.58, 6.0, 0.28, "本来書きたかった制約", size=12, color=GREEN, bold=True)
+rect(s, ML, 1.88, 6.0, 1.0, fill=CARD, border=LINE)
+text(s, ML + 0.18, 1.98, 5.65, 0.85,
+     'EXCLUDE USING gist (\n'
+     '  tenant_id WITH =, staff_id WITH =,\n'
+     '  tstzrange(start_at, end_at) WITH &&)',
+     size=10.5, color=INK, font=MONO, line=1.35)
+text(s, ML, 2.96, 6.0, 0.5,
+     "「同じ法人・同じスタッフで、時間の範囲が重なる行は入れさせない」を1行で表せる。"
+     "アプリが何度呼ばれても、同時に呼ばれても、破れない。",
+     size=10.5, color=MUTED, line=1.3)
+
+text(s, ML, 3.52, 6.0, 0.28, "使えない理由", size=12, color=RED, bold=True)
+bullets(s, ML, 3.82, 6.0, 1.4, [
+    {"t": [("EXCLUDE には btree_gist 拡張が要る", {"bold": True}),
+           ("。公開デモとテストで使っているブラウザ内PostgreSQL(PGlite)には、この拡張が存在しない"
+            "(実機で確認済み)", {})]},
+    {"t": "本番だけで有効にすると、テストが通っているのに本番だけ制約があるという「環境で形が違う」"
+          "状態になり、いちばん危ない"},
+], size=10.5, line=1.3, gap=6)
+
+text(s, ML + 6.33, 1.58, 6.0, 0.28, "考えられる4案(どれを採るべきかご相談したい)", size=12,
+     color=VIOLET, bold=True)
+opts = [
+    ("A 本番だけ EXCLUDE を張る", "守りは最強。ただしテスト環境と本番でスキーマが分岐する", AMBER),
+    ("B アプリ側で直列化して確認する", "予約作成時にスタッフ行をロックして重なりを検査。"
+     "実装の書き忘れが即バグになる", AMBER),
+    ("C 時間枠を固定スロットにする", "開始時刻を30分刻みに丸め、(staff_id, slot) を一意にする。"
+     "自由な時間帯が表せなくなる", MUTED),
+    ("D 重なりを許し、運用で気づかせる", "検知クエリを定期実行して警告する。事故は起きうる", RED),
 ]
-yy = 1.88
-for ttl, body in weak:
-    rect(s, ML + 6.33, yy, 6.0, 0.74, fill=WHITE, border=RED, border_w=1.1)
-    text(s, ML + 6.5, yy + 0.05, 5.65, 0.26, ttl, size=11, color=RED, bold=True)
-    text(s, ML + 6.5, yy + 0.32, 5.7, 0.38, body, size=10, color=INK, line=1.28)
-    yy += 0.82
-note(s, ML, 5.24, CW, 0.8, "とくに気になっている点",
-     "勤怠は給与計算に直結します。現在は旧システム(Google Apps Script版)と同じ計算結果になることを"
-     "合成データ19ケースで確認していますが、実際の出勤簿での照合はまだ行っていません。",
-     accent=AMBER, fill=AMBER_L, size=11)
-note(s, ML, 6.12, CW, 0.8, "ご相談したいこと(相談③)",
-     "給与直結の勤怠を、日報と同じように項目ごとの列へ分解すべきでしょうか。"
-     "1日分をまるごと扱う使い方ならJSONのままで足りるでしょうか。判断の分かれ目をご教示ください。",
+yy = 1.90
+for ttl, body, col in opts:
+    rect(s, ML + 6.33, yy, 6.0, 0.86, fill=WHITE, border=col, border_w=1.2)
+    text(s, ML + 6.5, yy + 0.07, 5.65, 0.26, ttl, size=11, color=col, bold=True)
+    text(s, ML + 6.5, yy + 0.34, 5.7, 0.46, body, size=10, color=INK, line=1.28)
+    yy += 0.94
+text(s, ML + 6.33, 5.64, 6.0, 0.5,
+     "現状は制約を張らず、予約の作成処理が重なりを検査する前提にしてあります"
+     "(その処理もまだ実装していません)。",
+     size=10, color=MUTED, line=1.3)
+
+note(s, ML, 5.30, 6.0, 1.0, "同じ形の穴が他にもある",
+     "「同じ顧客に同時刻の予約を2件入れない」なども、範囲の重なりで表す種類の制約です。"
+     "1つ方針を決めれば、まとめて同じやり方に揃えられます。",
+     accent=AMBER, fill=AMBER_L, size=10.5)
+note(s, ML, 6.22, CW, 0.6, "ご相談したいこと(相談③)",
+     "A〜Dのどれを採るべきでしょうか。テスト環境と本番でスキーマが違うことを許容してでも、"
+     "DB側で守るべき種類の制約でしょうか。",
      accent=RED, fill=RED_L, size=11)
 
 # ══════════════════════════════════════════════════════════════
-# 21. 問題④ 金額が文字列
+# 21. 問題④ 勤怠は正規化の途中
 # ══════════════════════════════════════════════════════════════
-s = sl_("問題④ 金額を文字列型で持っている", "領収書の金額が text。請求機能を載せる前に直すべきか",
-        source="packages/db/src/schema/receipts.ts / doc/07 第6章は「金額は整数」と書いている",
-        accent=RED)
+s = sl_("問題④ 勤怠だけJSONを1列に入れている",
+        "キーと型は直したが、明細テーブルへの分解はまだ",
+        source="packages/db/src/schema/attendanceDays.ts / doc/14 §2", accent=RED)
 text(s, ML, 1.2, CW, 0.3,
-     "領収書の金額は、OCRで読み取った文字列をそのまま text 列に入れている。集計や請求の計算には使えない形。",
+     "日報・事故報告は項目ごとの列に分けたが、勤怠は1日分をJSONのまま1列(row_data)に入れている。",
      size=12, color=INK)
-text(s, ML, 1.6, 6.0, 0.28, "現状 receipts の主な列", size=12, color=RED, bold=True)
-table(s, ML, 1.9, 6.0, ["列", "型", "中身"],
-      [["amount", "text", '"1,000" や "1000円" のような文字列'],
-       ["store_name", "text", "店舗名(正規化済み)"],
-       ["dedupe_key", "text", "重複検出用の正規化文字列"],
-       ["customer_id", "uuid(空可)", "顧客に紐付かない経費もあるため"],
-       ["file_key", "text", "画像の保存キー(実体はGCS想定)"]],
-      col_w=[1.6, 1.5, 3.4], size=10.5, hsize=10.5, row_h=0.3, header_h=0.32,
-      cell_colors={(0, 1): RED, (0, 2): RED}, first_bold=True)
-bullets(s, ML, 3.75, 6.0, 1.5, [
-    {"t": "「1,000」と「1000」が別の値になり、合計が出せない"},
-    {"t": "「1000円」のような値が入っても、データベースは受け入れてしまう"},
-    {"t": "請求書を作る段階では必ず数値が必要になる"},
-], size=11, line=1.32, gap=6)
 
-card(s, ML + 6.33, 1.6, 6.0, 2.0, "提案書(doc/07 第6章)に書いていること", accent=ACCENT, items=[
-    {"t": [("「金額は常に整数(銭単位)で保持し、浮動小数は使わない」", {"bold": True})]},
-    {"t": "請求明細の金額は生成列(データベースが計算して保証する列)にし、"
-          "合計値との不整合はコミット時に検証する、とも書いている"},
-    {"t": "つまり請求機能を作る段階の方針は決めてあるのに、いま入っている領収書の金額はその方針に合っていない"},
+text(s, ML, 1.58, 6.0, 0.28, "いまの形 attendance_days.row_data(jsonb)", size=12, color=GREEN,
+     bold=True)
+rect(s, ML, 1.88, 6.0, 1.5, fill=CARD, border=LINE)
+text(s, ML + 0.18, 1.98, 5.65, 1.35,
+     '{ "visits": [\n'
+     '    { "place": "○○邸", "startTime": "9:00",\n'
+     '      "endTime": "12:00", "distanceKm": 12.4 }, … ],\n'
+     '  "officeWork": [ … ] }',
+     size=10, color=INK, font=MONO, line=1.35)
+bullets(s, ML, 3.48, 6.0, 1.6, [
+    {"t": [("キーは意味のある名前にしてある", {"bold": True, "color": GREEN}),
+           ("。以前はスプレッドシートの列記号(C / D / AG …)だった。"
+            "何を指す値かがデータベースから読めるようになり、訪問件数の上限も外れた", {})]},
+    {"t": [("時刻・距離も型のある値にしてある", {"bold": True, "color": GREEN}),
+           ("。形は contracts/attendance.ts のスキーマが正で、保存前にアプリ境界で検証する", {})]},
+    {"t": "jsonb 1列のままなのは、常に「1日分をまるごと読み書き」する用途しかないため"},
+], size=10.5, line=1.3, gap=6)
+
+text(s, ML + 6.33, 1.58, 6.0, 0.28, "それでも残っている弱点", size=12, color=RED, bold=True)
+weak = [
+    ("型のチェックがデータベース側で効かない", "JSONの中身は jsonb_typeof='object' しか見ていない。"
+     "数値のはずの場所に文字列が入ってもDBは受け入れる"),
+    ("集計がしにくい", "「残業が多い月」「訪問距離の合計」を出すには、全行のJSONを読んで計算する必要がある"),
+    ("社労士・監査への説明がしづらい", "列の一覧がスキーマに現れないため、何を保存しているかを"
+     "データベースの定義だけでは示せない"),
+]
+yy = 1.9
+for ttl, body in weak:
+    rect(s, ML + 6.33, yy, 6.0, 0.78, fill=WHITE, border=RED, border_w=1.1)
+    text(s, ML + 6.5, yy + 0.05, 5.65, 0.26, ttl, size=11, color=RED, bold=True)
+    text(s, ML + 6.5, yy + 0.31, 5.7, 0.42, body, size=10, color=INK, line=1.28)
+    yy += 0.85
+card(s, ML + 6.33, 4.46, 6.0, 0.98, "分解する場合の行き先(設計済み・未実施)", accent=ACCENT,
+     items=[
+    {"t": [("attendance_segments", {"font": MONO, "bold": True}),
+           ("(訪問・事務作業の1区間 = 1行)に分け、日次の値だけ attendance_days に数値列として残す", {})]},
 ], body_size=10.5)
-card(s, ML + 6.33, 3.75, 6.0, 1.5, "直すなら(運用前なので破壊的変更が可能)", accent=GREEN, items=[
-    {"t": [("amount_yen integer", {"font": MONO, "bold": True}), (" に変更し、OCRの生文字列は "
-                                                                  "別列(", {}),
-           ("amount_raw text", {"font": MONO}), (")に残す", {})]},
-    {"t": "読み取れなかった場合は空(null)を許し、あとから人が直せるようにする"},
-], body_size=10.5)
-note(s, ML, 5.32, CW, 0.8, "同じ問題が他にもある可能性",
-     "勤怠の row_data も時刻・距離を文字列で持っています(\"9:00\" / \"12.4\")。"
-     "「外部システムから来た文字列をそのまま入れる」という判断が、あとから型を必要とする場所で"
-     "詰まる可能性があります。",
+
+note(s, ML, 5.48, CW, 0.66, "いま分解していない理由",
+     "給与計算はGAS版と1円もずれてはいけないため、実際の出勤簿での照合が済むまで保存形式を動かしません。",
      accent=AMBER, fill=AMBER_L, size=11)
-note(s, ML, 6.16, CW, 0.8, "ご相談したいこと(相談④)",
-     "金額・時刻・距離のような「計算に使う値」は、取り込み時点で数値へ正規化すべきでしょうか。"
-     "変換できなかった値の扱い(取り込みを止める / 空にして人が直す / 生文字列を併存)の定石もご教示ください。",
+note(s, ML, 6.22, CW, 0.66, "ご相談したいこと(相談④)",
+     "照合の前に分解すべきでしょうか。1日分をまるごと扱う使い方でも明細テーブルに分けるべきでしょうか。",
      accent=RED, fill=RED_L, size=11)
 
 # ══════════════════════════════════════════════════════════════
 # 22. 問題⑤ 小さな設計負債
 # ══════════════════════════════════════════════════════════════
 s = sl_("問題⑤ 小さな設計負債", "気づいているが、まだ手を付けていないもの",
-        source="doc/09 3.4節 / README「フェーズ状況」", accent=RED)
+        source="doc/09 3.4節 / doc/15 §6 / README「実装状況」", accent=RED)
 rows = [
-    ["updated_at をアプリが更新している", "更新日時の列は、アプリのコードが毎回セットしている。"
-     "データベースのトリガーは無い",
-     "管理ツールから直接UPDATEすると、更新日時が古いまま残る。"
-     "スプレッドシートへの同期キーにも使っているため、取り残しの原因になりうる", "中"],
-    ["tenants だけRLSの対象外", "ログイン前に法人を特定する必要があるため、この表だけ絞り込みを外している",
-     "アプリのロールが全法人の一覧を読める。法人名は個人情報ではないが、"
-     "顧客リストの規模感は推測できてしまう", "低"],
     ["ON DELETE がすべて no action", "親(顧客・スタッフ)を消せない。廃棄はテナント単位の物理削除で行う方針",
      "契約上の返還・廃棄義務(秘密保持契約 第7条)に対する具体的な手順とバックアップ保持期間が未整備", "高"],
-    ["派生値を持たない方針の裏返し", "残業時間・月次集計などを毎回全件計算している",
-     "件数が増えたときの性能を実運用の量で確認していない。負荷試験・障害注入は未実施", "中"],
+    ["索引の効き方を実機で確認していない", "主要な検索経路に複合索引を張っているが、"
+     "EXPLAIN で Seq Scan → Index Scan を確認できていない",
+     "本番相当のPostgreSQLもDockerも用意できておらず、索引が実際に使われているかは机上の判断のまま", "中"],
     ["実PostgreSQLに対する検証が薄い", "リポジトリ層のテストはブラウザ内DB(PGlite)で行っている",
      "本番ドライバ(postgres-js)固有の挙動差、コネクションプールと SET LOCAL の組み合わせを"
      "実環境で確認していない", "中"],
+    ["使うクエリが決まる前に索引を張った表がある", "予約・請求・最適化の索引は、想定した検索経路から起こしている",
+     "画面もAPIもまだ無いため、過剰な索引・足りない索引のどちらもありうる。書き込みの負担だけが先に増える", "中"],
+    ["派生値を持たない方針の裏返し", "残業時間・月次集計などを毎回全件計算している",
+     "件数が増えたときの性能を実運用の量で確認していない。負荷試験・障害注入は未実施", "中"],
+    ["tenants だけRLSの対象外", "ログイン前に法人を特定する必要があるため、この表だけ絞り込みを外している",
+     "アプリのロールが全法人の一覧を読める。法人名は個人情報ではないが、"
+     "顧客リストの規模感は推測できてしまう", "低"],
 ]
 table(s, ML, 1.28, CW, ["項目", "現状", "何が困るか", "重さ"], rows,
-      col_w=[2.6, 3.5, 5.4, 0.75], size=10, hsize=10.5, row_h=0.86, header_h=0.33,
+      col_w=[2.6, 3.5, 5.4, 0.75], size=10, hsize=10.5, row_h=0.72, header_h=0.33,
       first_bold=True,
-      cell_colors={(2, 3): RED, (0, 3): AMBER, (3, 3): AMBER, (4, 3): AMBER, (1, 3): MUTED},
+      cell_colors={(0, 3): RED, (1, 3): AMBER, (2, 3): AMBER, (3, 3): AMBER, (4, 3): AMBER,
+                   (5, 3): MUTED},
       aligns=[PP_ALIGN.LEFT, PP_ALIGN.LEFT, PP_ALIGN.LEFT, PP_ALIGN.CENTER])
 note(s, ML, 6.0, CW, 0.9, "ご相談したいこと(相談⑤)",
-     "この5件の優先順位付けが妥当かをご確認いただきたいです。特に「ON DELETE と廃棄手順」を最優先に置いていますが、"
+     "この6件の優先順位付けが妥当かをご確認いただきたいです。特に「ON DELETE と廃棄手順」を最優先に置いていますが、"
      "運用開始前に必ず整備すべきものと、動かしながら直せるものの線引きをご教示いただけると助かります。",
      accent=RED, fill=RED_L)
 
@@ -1010,134 +1052,128 @@ note(s, ML, 5.65, CW, 1.2, "ご相談したいこと(相談⑥)",
 # ══════════════════════════════════════════════════════════════
 # 24. 第4章 divider
 # ══════════════════════════════════════════════════════════════
-sec_("第 4 章", "これから足すもの・相談事項",
-     "拡張のしやすさをどう作ってあるか、そして直近で決めたいこと")
+sec_("第 4 章", "先行して用意したスキーマと、相談事項",
+     "実装より先にDBの形だけ固めた5領域。そこで迷った判断と、まとめての相談事項")
 
 # ══════════════════════════════════════════════════════════════
-# 25. 未着手の機能
+# 25. 先行整備した5領域
 # ══════════════════════════════════════════════════════════════
-s = sl_("まだ存在しない機能", "提案書の中心的な機能が、スキーマには無い",
-        source="doc/07_技術構成提案書.md 第4〜7章")
-text(s, ML, 1.2, CW, 0.3,
-     "13テーブルは「土台」にあたる部分です。差別化要因として提案書に書いた機能は、まだテーブルすら作っていません。",
+s = sl_("実装より先に、DBの形だけ固めた5領域", "18テーブル。リポジトリ実装・API・画面はまだ無い",
+        source="doc/15_追加ドメインの設計とレビュー論点.md", accent=ORANGE)
+text(s, ML, 1.16, CW, 0.3,
+     "あとから足すと既存データの移行が伴うため、運用前のいまのうちに表と制約だけ作ってあります。",
      size=12, color=INK)
 plans = [
-    ("予約・スケジュール", RED, ["reservations(スタッフ・顧客・時間帯)",
-                          "二重予約の防止は EXCLUDE USING gist 制約で\nデータベース側に強制させる想定",
-                          "初期化SQLで btree_gist 拡張は有効化済み(仕込み)"], "未着手"),
-    ("請求・決済", RED, ["invoices / invoice_lines / payments /\npayment_allocations",
-                    "金額は整数(銭単位)。明細の金額は生成列にし、\n合計との不整合をコミット時に検証",
-                    "レセプト請求(保険)はスコープ外"], "未着手"),
-    ("カルテ・記録", RED, ["care_records(共通)+ 訪問看護向けの\nnursing_vitals / physician_instructions",
-                     "改訂履歴と保存年限の管理が要件になる", "法定保存年数は要確認事項として残っている"], "未着手"),
-    ("業種差の吸収", AMBER, ["tenant_features(機能フラグ)で法人ごとに\n使う機能を切り替える",
-                        "表示・検索用途に限ったJSONB列(custom_fields)",
-                        "請求・カルテの本体データはJSONBに置かない方針"], "設計のみ"),
+    ("顧客カルテ", PINK, [["customer_notes", "customer_note_photos"],
+                     "カルテ・申し送り・鍵の位置・ガレージ場所・引継ぎ事項・注意点を区分で1枚に持つ",
+                     "写真は子テーブル。実体は持たず保存キーのみ",
+                     "customers の列にしないのは、上書きだと「いつ誰がその情報にしたか」が残らないため"]),
+    ("予約(RESERVA移植版)", ACCENT, [["service_menus", "reservations",
+                                "reservation_assignments", "staff_availabilities"],
+                            "予約(約束)と日報(実施記録)は別の表。片方だけ存在する状態が正常にあり得るため",
+                            "主担当は1予約1人までを部分一意索引で保証",
+                            "二重取りの防止だけはDBで守れていない(第3章③)"]),
+    ("請求・決済(Stripe)", GREEN, [["customer_payment_profiles", "invoices", "invoice_lines",
+                              "payments", "stripe_webhook_events"],
+                           "カード番号は受け取らず保存しない。Stripeの識別子とブランド・下4桁だけ",
+                           "total = subtotal − discount + tax をCHECKで強制",
+                           "Webhookは (tenant_id, event_id) の一意制約で冪等化"]),
+    ("訪問割当の最適化", VIOLET, [["trait_definitions", "customer_traits", "staff_traits",
+                           "staff_customer_compatibilities", "staff_customer_travel_estimates"],
+                        "何を見て最適化するかが未確定のため、特性の項目そのものをデータにしてある",
+                        "値はjsonbの塊にせず型ごとに列を分け、「ちょうど1つだけ非NULL」をCHECKで縛る",
+                        "相性は「スコア」と「絶対に組ませない」を別の列に"]),
+    ("移動手段と手当", ORANGE, [["transport_allowance_rules", "travel_legs"],
+                        "自動車・公共交通機関・自転車・徒歩を選べる",
+                        "手段ごとに計算方法(距離比例/1移動定額/1日定額/実費精算)と単価を持つ",
+                        "金額への換算ロジックはGAS版にも無く、新規追加"]),
 ]
+GW2, GG2 = 2.34, 0.16
 cx = ML
-for ttl, col, items, st in plans:
-    w = 2.98
-    rect(s, cx, 1.62, w, 3.15, fill=WHITE, border=col, border_w=1.3, dash=True)
-    rect(s, cx, 1.62, w, 0.42, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE)
-    fill_text(rect(s, cx, 1.62, w, 0.42, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE),
-              ttl, size=12, color=WHITE, bold=True)
-    badge(s, cx + 0.18, 2.14, 1.1, 0.26, st, color=col, fill=WHITE, size=9.5)
-    bullets(s, cx + 0.18, 2.5, w - 0.36, 2.2,
-            [{"t": it, "s": 10} for it in items], size=10, line=1.28, gap=7)
-    cx += w + 0.14
+for ttl, col, items in plans:
+    rect(s, cx, 1.62, GW2, 4.0, fill=WHITE, border=col, border_w=1.3)
+    fill_text(rect(s, cx, 1.62, GW2, 0.44, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE),
+              ttl, size=10.5, color=WHITE, bold=True)
+    text(s, cx + 0.13, 2.12, GW2 - 0.26, 0.82, "\n".join(items[0]), size=7.5, color=col,
+         font=MONO, line=1.45)
+    bullets(s, cx + 0.13, 3.02, GW2 - 0.26, 2.5,
+            [{"t": it, "s": 9} for it in items[1:]], size=9, line=1.3, gap=6, marker_color=col)
+    cx += GW2 + GG2
 
-card(s, ML, 5.0, 6.0, 1.25, "「拡張しやすい形」にはしてあると考えている", accent=GREEN, items=[
-    {"t": "表を1枚足す手順が決まっている(同じ規約をコピーし、RLSの張り忘れはCIが検出)"},
-    {"t": "業務ロジックはデータベースの実装から切り離してあるため、表の追加が画面まで波及しにくい"},
+card(s, ML, 5.78, 6.0, 1.12, "既存15枚と同じ規約に載せてある", accent=GREEN, items=[
+    {"t": "tenant_id + RLS(FORCE)・(tenant_id, 参照先ID) の複合外部キー・金額は円の整数・"
+          "updated_at はトリガー。張り忘れはCIが機械的に検出する"},
 ], body_size=10.5)
-note(s, ML + 6.33, 5.0, 6.0, 1.25, "ただし後から足すのが高いものがある",
-     "予約の二重登録防止と請求の金額整合は、あとから入れると既存データの移行が伴います。"
-     "「土台のうちに入れるべきか、後回しでよいか」を判断いただきたい部分です。",
-     accent=AMBER, fill=AMBER_L)
-note(s, ML, 6.33, CW, 0.62, "ご相談したいこと(相談⑦)",
-     "予約・請求のスキーマを、運用開始前のいま入れておくべきでしょうか。"
-     "それとも実際の運用で要件が固まってから作るほうが結果的に安いでしょうか。",
-     accent=VIOLET, fill=VIOLET_L, size=11)
+note(s, ML + 6.33, 5.78, 6.0, 1.12, "ご相談したいこと(相談⑦)",
+     "実装より先にスキーマを置いたこの進め方は妥当でしょうか。"
+     "要件が固まる前に作った表は、結局作り直しになるものでしょうか。",
+     accent=VIOLET, fill=VIOLET_L, size=10.5)
 
 # ══════════════════════════════════════════════════════════════
-# 26. 直近の拡張検討(領収書の請求区分・クーポン)
+# 26. 追加した5領域で迷った判断
 # ══════════════════════════════════════════════════════════════
-s = sl_("直近で決めたい拡張", "領収書の「顧客請求 / 会社立替」の区別と、クーポンの記録",
-        source="現場からの要望。現状は表現できていない")
-rect(s, ML, 1.22, 6.0, 2.05, fill=RED_L, border=None)
-text(s, ML + 0.2, 1.3, 5.6, 0.28, "現状:表現できていない2つのこと", size=12, color=RED, bold=True)
-bullets(s, ML + 0.2, 1.65, 5.6, 2.0, [
-    {"t": [("① 領収書の負担者", {"bold": True}),
-           ("  顧客に紐付くか否か(customer_id が空か)でしか区別できない。"
-            "ガレージ代のように「顧客の訪問に紐付くが会社が負担する」経費を表せない", {})]},
-    {"t": [("② クーポンの適用", {"bold": True}),
-           ("  顧客メモの自由記述に「クーポン利用 25枚利用」などと書かれているだけ。"
-            "残枚数も使用履歴も集計できない", {})]},
-], size=11, line=1.32, gap=8)
-rect(s, ML, 3.45, 6.0, 1.1, fill=CARD, border=LINE)
-text(s, ML + 0.15, 3.55, 5.7, 0.95,
-     'customers.memo(自由記述)の実例:\n'
-     '  「月末払い承諾済 / クーポン利用 25枚利用 / 駐車場代 600円」',
-     size=10.5, color=INK, font=MONO, line=1.4)
-
-text(s, ML + 6.33, 1.22, 6.0, 0.28, "拡張案", size=12, color=GREEN, bold=True)
-rect(s, ML + 6.33, 1.52, 6.0, 1.05, fill=WHITE, border=GREEN, border_w=1.3)
-text(s, ML + 6.5, 1.6, 5.65, 0.26, "receipts に列を1つ足す", size=11, color=GREEN, bold=True)
-text(s, ML + 6.5, 1.88, 5.7, 0.6,
-     "billing_type:顧客請求 / 会社負担 の2値。顧客に紐付かない領収書は必ず会社負担になるよう"
-     "データベース側で制約する",
-     size=10, color=INK, line=1.28)
-for i, (nm, body) in enumerate([
-        ("coupons", "クーポンの定義(名称・種別・割引額または枚数)"),
-        ("customer_coupon_balances", "顧客ごとの残枚数・残額"),
-        ("coupon_usages", "使用履歴。いつ・誰が・どの訪問(日報)で使ったか")]):
-    yy = 2.72 + i * 0.72
-    rect(s, ML + 6.33, yy, 6.0, 0.64, fill=WHITE, border=ACCENT, border_w=1.2)
-    text(s, ML + 6.5, yy + 0.07, 5.65, 0.24, nm, size=10.5, color=ACCENT, bold=True, font=MONO)
-    text(s, ML + 6.5, yy + 0.32, 5.7, 0.28, body, size=10, color=INK)
-text(s, ML + 6.33, 4.92, 6.0, 0.3, "3枚とも既存の規約(tenant_id + 複合外部キー + RLS)に載せる",
-     size=10, color=MUTED)
-
-card(s, ML, 5.25, 6.0, 1.05, "この2件は将来の請求機能の入力になる", accent=VIOLET, items=[
-    {"t": "billing_type は請求明細の分類、coupon_usages は値引き行として使える。"
-          "先に区分だけ持っておけば、請求機能を作るときに過去分も請求できる"},
-], body_size=10.5)
-note(s, ML + 6.33, 5.25, 6.0, 1.05, "気になっている点",
-     "問題④(金額が文字列)と同じ話が絡みます。クーポンの割引額を持つなら、"
-     "金額の型を先に決める必要があります。",
-     accent=AMBER, fill=AMBER_L, size=10.5)
-note(s, ML, 6.35, CW, 0.68, "ご相談したいこと(相談⑧)",
-     "請求機能とまとめて設計すべきか、いま区分とクーポンだけ先に入れてよいか。「先に小さく入れる」場合の注意点をご教示ください。",
+s = sl_("追加した5領域で迷った判断", "どれも「こちらが正しい」と言い切れず、選んで実装しています",
+        source="doc/15_追加ドメインの設計とレビュー論点.md 各章「レビューで確認いただきたい点」")
+rows = [
+    ["特性を項目マスタ+値テーブル(EAV)にした", "訪問最適化",
+     "何を見て最適化するかが今後のヒアリングで決まるため、項目自体をデータにした",
+     "項目が固まった後もこの形を維持すべきか、列に移すべきか"],
+    ["請求書を void して作り直せるようにした", "請求",
+     "明細に superseded_at を足し、部分一意索引の条件に含めた"
+     "(1つの領収書は「有効な」明細1つにしか載らない)",
+     "無効化を別テーブルに分ける・請求書ごと複製する等の定石があるか"],
+    ["状態の語をStripeにそのまま合わせた", "決済",
+     "PaymentIntent の7状態・Invoice の5状態をそのまま持ち、自前の対応表を作らない",
+     "外部サービスの語彙を自分のDBに持ち込むことの是非(乗り換え時の影響)"],
+    ["写真の並び順に一意制約を張らなかった", "カルテ",
+     "一意制約は行ごとに即時判定され、2枚の順番を入れ替えるUPDATEが必ず衝突するため。"
+     "並びは ORDER BY sort_order, id で決めている",
+     "遅延評価(DEFERRABLE)を使うべきか、この割り切りでよいか"],
+    ["1日あたり定額の手当を、移動1区間の表で扱う", "手当",
+     "手当の計算方法に「1日あたり定額」があるが、実績は移動1区間ごとに記録している",
+     "日次の粒度を別に持つべきか、集計時に日でまとめれば足りるか"],
+    ["取込元キーの対をCHECKで縛った", "予約",
+     "部分一意索引はNULL同士を別物として扱い、取込元が空の行は重複を防げないため",
+     "同じ形の customers の索引にも同じCHECKを足すべきか"],
+]
+dom_colors = [VIOLET, GREEN, GREEN, PINK, ORANGE, ACCENT]
+table(s, ML, 1.25, CW, ["選んだ判断", "領域", "そうした理由", "ご意見をいただきたい点"], rows,
+      col_w=[3.3, 1.1, 4.6, 3.33], size=9.5, hsize=10, row_h=0.70, header_h=0.33,
+      first_bold=True, cell_colors={(i, 1): c for i, c in enumerate(dom_colors)},
+      aligns=[PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.LEFT, PP_ALIGN.LEFT])
+note(s, ML, 6.06, CW, 0.8, "ご相談したいこと(相談⑧)",
+     "この6件について、より一般的な作り方があればご教示ください。"
+     "とくにEAVは「項目が決まっていないから」という理由で選びましたが、後戻りしにくい選択だと考えています。",
      accent=VIOLET, fill=VIOLET_L, size=11)
 
 # ══════════════════════════════════════════════════════════════
 # 27. 相談事項まとめ
 # ══════════════════════════════════════════════════════════════
-s = sl_("ご相談したいこと(まとめ)", "優先度順。特に伺いたいのは ①②⑤",
-        source="doc/09 第5章「レビュー観点」に対応")
+s = sl_("ご相談したいこと(まとめ)", "優先度順。特に伺いたいのは ①②③⑨",
+        source="doc/09 第5章「レビュー観点」/ doc/15 §6 に対応")
 rows = [
-    ["①", "customers 35列を分けるべきか", "18",
+    ["①", "customers 37列を分けるべきか", "19",
      "顧客マスタとして何列までが常識的か、分ける単位の基準。運用前の今が最も安く直せる"],
-    ["②", "業務データ平文化の前提が妥当か", "13・19",
+    ["②", "業務データ平文化の前提が妥当か", "14・20",
      "「保存時暗号化は本番基盤に任せる」という前提の置き方。本番未配備のまま進めてよいか"],
-    ["③", "勤怠のJSON 1列を分解すべきか", "20",
-     "給与直結の領域。項目ごとの列にすべきか、1日単位で扱うならJSONで足りるか"],
-    ["④", "計算に使う値の型をどこで決めるか", "21",
-     "金額・時刻・距離を文字列のまま持つか、取り込み時に数値へ正規化するか"],
-    ["⑤", "廃棄・返還の手順と、その他の負債の優先順位", "22",
+    ["③", "予約の二重取りをどこで止めるか", "21",
+     "EXCLUDE制約が使えない(テスト環境に拡張が無い)。本番だけ張る / アプリで直列化 / 固定スロット / 運用で検知"],
+    ["④", "勤怠のJSONをいつ分解するか", "22",
+     "給与直結。実データ照合の前に分解すべきか、照合の基準を動かさないため後にすべきか"],
+    ["⑤", "廃棄・返還の手順と、その他の負債の優先順位", "23",
      "ON DELETE と物理削除手順、バックアップ保持期間。運用前に必須のものはどれか"],
-    ["⑥", "監査と鍵管理を本番相当にする時期", "23",
+    ["⑥", "監査と鍵管理を本番相当にする時期", "24",
      "pgaudit等を入れる時期と粒度。Cloud KMS 前に本番データを溜め始めてよいか"],
-    ["⑦", "予約・請求を土台に入れる順番", "25",
-     "あとから足すとデータ移行が伴う。今スキーマに入れるべきか"],
-    ["⑧", "領収書の請求区分とクーポンの入れ方", "26",
-     "請求機能とまとめて設計するか、区分だけ先に入れるか"],
-    ["⑨", "見落としているPostgreSQLの落とし穴", "11・12",
+    ["⑦", "実装より先にスキーマを置く進め方の是非", "26",
+     "要件が固まる前に作った18テーブルは、結局作り直しになるか"],
+    ["⑧", "追加5領域で迷った6つの判断", "27",
+     "EAV・請求書のvoid・Stripeの語彙・並び順・手当の粒度・取込元キー"],
+    ["⑨", "見落としているPostgreSQLの落とし穴", "12・13",
      "複合外部キー + RLS の二重防御で塞いだつもりだが、他に仕様上の抜け道はないか"],
 ]
 table(s, ML, 1.28, CW, ["", "論点", "頁", "何を判断いただきたいか"], rows,
-      col_w=[0.45, 3.9, 0.55, 7.4], size=10.5, hsize=10.5, row_h=0.48, header_h=0.32,
-      cell_colors={(i, 0): (RED if i in (0, 1, 4) else ACCENT) for i in range(9)},
+      col_w=[0.45, 3.9, 0.75, 7.2], size=10.5, hsize=10.5, row_h=0.48, header_h=0.32,
+      cell_colors={(i, 0): (RED if i in (0, 1, 2, 8) else ACCENT) for i in range(9)},
       aligns=[PP_ALIGN.CENTER, PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.LEFT])
 note(s, ML, 6.05, CW, 0.85, "いちばん困っていること",
      "⑨のような「自分では気づきようがない落とし穴」が、他にもあるかどうかを知りたいです。"
@@ -1150,21 +1186,21 @@ note(s, ML, 6.05, CW, 0.85, "いちばん困っていること",
 s = sl_("付録 — 一次情報の在り処と、用語の対応", "この資料は要約なので、判断に必要な詳細はこちらを")
 card(s, ML, 1.28, 6.0, 2.6, "コード(こちらが正)", accent=ACCENT, items=[
     {"t": [("packages/db/src/schema/*.ts", {"font": MONO, "bold": True}),
-           ("  13テーブルの定義。列ごとに「なぜこの形か」をコメントで書いてある", {})]},
-    {"t": [("packages/db/drizzle/*.sql", {"font": MONO, "bold": True}),
-           ("  マイグレーション8本。RLSの FORCE はここに手で追記", {})]},
-    {"t": [("packages/db/src/tenantScope.ts", {"font": MONO, "bold": True}),
-           ("  テナントを指定してトランザクションを開く入口", {})]},
+           ("  33テーブルの定義。列ごとに「なぜこの形か」をコメントで書いてある", {})]},
+    {"t": [("packages/db/drizzle/0000_baseline_schema.sql", {"font": MONO, "bold": True}),
+           ("  適用されるDDL。RLSの FORCE と updated_at トリガーはここに手で追記", {})]},
+    {"t": [("packages/shared/src/contracts/", {"font": MONO, "bold": True}),
+           ("  区分値(CHECK制約の許可値)の定義。DDLはここから組み立てる", {})]},
     {"t": [("packages/core/src/ports/", {"font": MONO, "bold": True}),
-           ("  業務ロジックが外部に求める窓口の定義(26本)", {})]},
+           ("  業務ロジックが外部に求める窓口の定義(28本)", {})]},
 ], body_size=10.5)
 card(s, ML + 6.33, 1.28, 6.0, 2.6, "ドキュメント", accent=GREEN, items=[
     {"t": [("doc/09_データベース構造解説.md", {"bold": True}),
            ("  本資料の詳細版。ER図・全列一覧・レビュー観点", {})]},
-    {"t": [("doc/07_技術構成提案書.md", {"bold": True}),
-           ("  予約・請求・カルテの設計方針(第4〜7章)", {})]},
-    {"t": [("doc/11_アーキテクチャ説明スライド.html", {"bold": True}),
-           ("  発表用スライド(ブラウザで開く)", {})]},
+    {"t": [("doc/15_追加ドメインの設計とレビュー論点.md", {"bold": True}),
+           ("  第4章の18テーブルの設計理由と、未決の論点", {})]},
+    {"t": [("doc/14_データベース設計の指針と落とし穴.md", {"bold": True}),
+           ("  DBを触るときの決めごとと、実際に踏んだ落とし穴", {})]},
     {"t": [("doc/13_アーキテクチャ説明資料.pptx", {"bold": True}),
            ("  本資料の対になるアプリ構成の説明資料", {})]},
 ], body_size=10.5)
@@ -1175,8 +1211,9 @@ table(s, ML, 4.35, CW, ["この資料での言い方", "正式な用語", "実�
        ["データベース自身に絞り込ませる", "行レベルセキュリティ(RLS)", "pgPolicy('tenant_isolation') / FORCE ROW LEVEL SECURITY"],
        ["まとめて確定させる", "トランザクション / UnitOfWork", "UnitOfWorkPort / withTenant()"],
        ["送信待ち行列", "Outbox パターン", "outbox_jobs テーブル / MirrorPort"],
-       ["鍵を鍵で包む", "封筒暗号化(envelope encryption)", "tenant_keys.wrapped_dek / KeyManagementPort"]],
-      col_w=[3.2, 3.6, 5.5], size=10, hsize=10.5, row_h=0.33, header_h=0.32, first_bold=True)
+       ["鍵を鍵で包む", "封筒暗号化(envelope encryption)", "tenant_keys.wrapped_dek / KeyManagementPort"],
+       ["入ってよい値を縛る", "CHECK 制約", "check('xxx_check', sql`...`) / contracts の zod enum"]],
+      col_w=[3.2, 3.6, 5.5], size=10, hsize=10.5, row_h=0.32, header_h=0.32, first_bold=True)
 text(s, ML, 6.78, CW, 0.3,
      "本資料の図はすべてPowerPointの図形で作ってあるため、コメントの書き込み・修正がそのままできます。",
      size=10.5, color=MUTED)
