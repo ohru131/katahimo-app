@@ -2,24 +2,26 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { HistoryItem } from '../api';
 import { fetchCustomerHistory } from '../api';
+import { Button, EmptyState, ErrorNotice, LoadingBlock, toFriendlyMessage } from '../ui';
 
 /** 記録1件が持つ3つの本文。GAS版のタブ(原本/社内向け/保護者向け)と同じ区分。 */
 type ReportView = 'original' | 'internal' | 'customer';
 
+/** 誰に届く文かが分かる言い方にする(言いかえ表「原本」「社内向け/保護者向け」の行)。 */
 const VIEW_LABEL: Record<ReportView, string> = {
-  original: '原本',
-  internal: '社内向け',
-  customer: '保護者向け',
+  original: '書いたメモ',
+  internal: '事務局に送る文',
+  customer: '保護者に送る文',
 };
 
 /**
- * 記録1件のカード。同じ訪問について3つの本文(入力した原本・社内向け・保護者向け)を
- * 持っているので、GAS版と同じくタブで切り替えられるようにする。
+ * 記録1件のカード。同じ訪問について3つの本文(自分で書いたメモ・事務局に送る文・
+ * 保護者に送る文)を持っているので、GAS版と同じくタブで切り替えられるようにする。
  *
  * タブの状態はカードごとに独立させたいので、一覧側ではなくこのコンポーネントが持つ。
  */
 function HistoryCard({ item }: { item: HistoryItem }) {
-  // 既定は社内向け(GAS版と同じ)。訪問の振り返りで最初に見たいのはこれ。
+  // 既定は事務局に送る文(GAS版の「社内向け」と同じ)。訪問の振り返りで最初に見たいのはこれ。
   const [view, setView] = useState<ReportView>('internal');
   // 事故報告の customer は「保護者への対応」で、保護者に見せる文章ではない。
   // GAS版がこのタブを出していないのと同じく、日報のときだけ出す。
@@ -28,69 +30,62 @@ function HistoryCard({ item }: { item: HistoryItem }) {
   const body = item[view];
 
   return (
-    <div className="relative pl-4">
-      <span
-        className={`absolute -left-[9px] top-1 w-3 h-3 rounded-full ${
-          item.type === 'accident' ? 'bg-red-500' : 'bg-blue-500'
-        }`}
-      />
-      <div className="bg-gray-50 rounded-lg p-3 text-sm">
-        <div className="flex justify-between items-baseline mb-1">
-          <span className="font-bold text-gray-700">
-            {item.type === 'accident' ? `⚠️ ${item.subtype ?? '事故報告'}` : '📝 保育日報'}
-          </span>
-          <span className="text-xs text-gray-400">{item.timestamp}</span>
-        </div>
-        <p className="text-xs text-gray-500 mb-1">担当: {item.staff}</p>
-        {(item.risk || item.es) && (
-          <div className="flex flex-wrap gap-1 mb-1">
-            {item.risk ? (
-              <span className="text-xs font-bold bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded border border-yellow-200 whitespace-nowrap">
-                PSI:{'★'.repeat(item.risk)}
-                {'☆'.repeat(5 - item.risk)}
-              </span>
-            ) : null}
-            {item.es ? (
-              <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 whitespace-nowrap">
-                ES:{'★'.repeat(item.es)}
-                {'☆'.repeat(5 - item.es)}
-              </span>
-            ) : null}
-          </div>
-        )}
-
-        <div className="flex gap-1 mt-2 mb-2 border-b border-gray-200 text-xs">
-          {views.map((candidate) => (
-            <button
-              key={candidate}
-              type="button"
-              aria-pressed={view === candidate}
-              onClick={() => setView(candidate)}
-              className={`px-2 py-1 rounded-t transition-colors ${
-                view === candidate
-                  ? 'font-bold bg-white border-x border-t border-gray-200 text-blue-600'
-                  : 'text-gray-500 hover:bg-gray-200'
-              }`}
-            >
-              {VIEW_LABEL[candidate]}
-            </button>
-          ))}
-        </div>
-
-        {body ? (
-          <p className="whitespace-pre-wrap text-gray-800">{body}</p>
-        ) : (
-          <p className="text-gray-400">記録がありません</p>
-        )}
+    <div className="rounded-card border border-gray-200 bg-white p-3.5">
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-base font-bold text-app-text">
+          {item.type === 'accident' ? `⚠️ ${item.subtype ?? '事故・ヒヤリ'}` : '📝 日報'}
+        </span>
+        <span className="text-sm text-app-muted">{item.timestamp}</span>
       </div>
+      <p className="mb-2 text-sm text-app-muted">担当: {item.staff}</p>
+      {(item.risk || item.es) && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {item.risk ? (
+            <span className="whitespace-nowrap rounded-btn border border-gray-200 bg-gray-50 px-2 py-1 text-sm font-bold text-app-text">
+              ⚠️ ヒヤッとした度合い {'★'.repeat(item.risk)}
+              {'☆'.repeat(5 - item.risk)}
+            </span>
+          ) : null}
+          {item.es ? (
+            <span className="whitespace-nowrap rounded-btn border border-gray-200 bg-gray-50 px-2 py-1 text-sm font-bold text-app-text">
+              😊 働きやすさ {'★'.repeat(item.es)}
+              {'☆'.repeat(5 - item.es)}
+            </span>
+          ) : null}
+        </div>
+      )}
+
+      <div className="mb-2 mt-2 flex flex-wrap gap-2 border-b border-gray-200 pb-2">
+        {views.map((candidate) => (
+          <button
+            key={candidate}
+            type="button"
+            aria-pressed={view === candidate}
+            onClick={() => setView(candidate)}
+            className={`min-h-[44px] rounded-btn border px-3 text-base font-bold transition-colors ${
+              view === candidate
+                ? 'border-app-primary bg-app-primary-bg text-app-primary'
+                : 'border-gray-300 bg-white text-app-muted active:bg-gray-100'
+            }`}
+          >
+            {VIEW_LABEL[candidate]}
+          </button>
+        ))}
+      </div>
+
+      {body ? (
+        <p className="whitespace-pre-wrap text-base leading-relaxed text-app-text">{body}</p>
+      ) : (
+        <p className="text-base text-app-muted">この文は書かれていません</p>
+      )}
     </div>
   );
 }
 
 /**
- * 顧客の活動記録(過去の日報+事故報告)タイムライン。GAS版index.htmlのcustomerHistoryModal
+ * お客様の「これまでの記録」(過去の日報+事故報告)。GAS版index.htmlのcustomerHistoryModal
  * (「活動記録」ボタンで開く別モーダル)に対応。GAS版と同じくカーソルページネーション
- * (「もっと見る」ボタンでoccurredAtより古いものを追加取得)にしている。
+ * (「さらに前の記録を見る」ボタンでoccurredAtより古いものを追加取得)にしている。
  */
 export function HistoryModal({
   customerId,
@@ -128,61 +123,64 @@ export function HistoryModal({
       setItems((prev) => [...prev, ...more]);
       setHasMore(more.length >= 5);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(
+        toFriendlyMessage(
+          e,
+          'HistoryModal.loadMore',
+          '前の記録を読み込めませんでした。電波を確認して、もう一度押してください',
+        ),
+      );
     } finally {
       setLoadingMore(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center justify-center">
-      <div className="bg-white w-full max-w-md h-[90vh] sm:h-auto sm:max-h-[85vh] sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col">
-        <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl">
-          <div>
-            <h2 className="font-bold text-lg text-gray-800">過去の活動記録</h2>
-            <p className="text-xs text-gray-500">{customerName}</p>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black bg-opacity-50 sm:items-center">
+      <div className="flex h-[90vh] w-full max-w-md flex-col rounded-t-card border border-gray-200 bg-white sm:h-auto sm:max-h-[85vh] sm:rounded-card">
+        <div className="flex items-center justify-between gap-3 rounded-t-card border-b border-gray-200 bg-gray-50 p-4">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-app-text">これまでの記録</h2>
+            <p className="break-words text-sm text-app-muted">{customerName}</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-gray-200 rounded-full text-gray-500 text-xl leading-none"
-          >
-            &times;
-          </button>
+          <Button variant="subtle" size="sub" onClick={onClose} className="flex-shrink-0">
+            ✕ 閉じる
+          </Button>
         </div>
 
         <div className="flex-grow overflow-y-auto p-4">
-          {initialQuery.isPending && (
-            <div className="flex justify-center py-8">
-              <div className="w-8 h-8 rounded-full border-4 border-gray-200 loading-spinner" />
-            </div>
-          )}
+          {initialQuery.isPending && <LoadingBlock text="読み込んでいます…" />}
           {initialQuery.isError && (
-            <p className="text-red-500 text-sm">{(initialQuery.error as Error).message}</p>
+            <ErrorNotice
+              text={toFriendlyMessage(
+                initialQuery.error,
+                'HistoryModal.fetchCustomerHistory',
+                '記録を読み込めませんでした。電波を確認して、もう一度開いてください',
+              )}
+            />
           )}
 
           {loadedOnce && items.length === 0 && (
-            <p className="text-center text-gray-400 py-8">活動記録はまだありません</p>
+            <EmptyState icon="📓" title="まだ記録がありません" nextStep="日報を保存するとここに並びます" />
           )}
 
-          <div className="space-y-4 pl-2 border-l-2 border-gray-200 ml-2 relative">
+          <div className="space-y-3">
             {items.map((item) => (
               <HistoryCard key={item.id} item={item} />
             ))}
           </div>
 
-          {error && <p className="text-red-500 text-sm mt-3">{error}</p>}
+          {error && (
+            <div className="mt-3">
+              <ErrorNotice text={error} />
+            </div>
+          )}
 
           {loadedOnce && hasMore && items.length > 0 && (
-            <div className="text-center mt-4">
-              <button
-                type="button"
-                onClick={loadMore}
-                disabled={loadingMore}
-                className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-60"
-              >
-                {loadingMore ? '読み込み中…' : 'もっと見る'}
-              </button>
+            <div className="mt-4">
+              <Button variant="subtle" fullWidth onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? '読み込んでいます…' : 'さらに前の記録を見る'}
+              </Button>
             </div>
           )}
         </div>

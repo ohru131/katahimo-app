@@ -2,8 +2,8 @@ const STORAGE_KEY = 'recent_customers';
 const MAX_ENTRIES = 50;
 
 /**
- * 「最近使った顧客」のID一覧(新しい順)。GAS版index.htmlのlocalStorage 'recent_customers'と
- * 同じキー・同じ配列形式(先頭が最新)。訪問先一覧の既定表示(検索/地区絞り込み無し時)の
+ * 「最近使ったお客様」のID一覧(新しい順)。GAS版index.htmlのlocalStorage 'recent_customers'と
+ * 同じキー・同じ配列形式(先頭が最新)。お客様一覧の既定表示(検索/地区絞り込み無し時)の
  * 並び替えに使う。
  */
 export function getRecentCustomerIds(): string[] {
@@ -17,7 +17,7 @@ export function getRecentCustomerIds(): string[] {
 }
 
 /**
- * 顧客IDを「最近使った」の先頭に記録する。GAS版のsaveReport/saveAccidentReport/
+ * お客様のIDを「最近使った」の先頭に記録する。GAS版のsaveReport/saveAccidentReport/
  * uploadReceiptsOnly成功時の更新ロジック(既存エントリを除去してから先頭に追加、50件で打ち切り)
  * と同じ。
  */

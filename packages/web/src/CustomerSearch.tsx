@@ -5,23 +5,26 @@ import { CustomerDetail } from './CustomerDetail';
 import { getRecentCustomerIds } from './recentCustomers';
 import { HistoryModal } from './reports/HistoryModal';
 import { ReportModal } from './reports/ReportModal';
+import { Button, EmptyState, ErrorNotice, LoadingBlock, toFriendlyMessage } from './ui';
 
 /**
- * 「訪問先一覧」タブ。GAS版のtabVisitors(index.html)と同じく、有効な顧客を一度に全件取得して
+ * 「お客様」タブ。GAS版のtabVisitors(index.html)と同じく、有効なお客様を一度に全件取得して
  * ブラウザ側で絞り込む方式にしている(GAS版のallCustomers/filterCustomers()と同じ設計)。
- * - 顧客名は部分一致・as-you-typeで絞り込む(GAS版のsearchInput/oninput="filterCustomers()"と同じ)。
+ * - お客様の名前は部分一致・打ちながら絞り込む(GAS版のsearchInput/oninput="filterCustomers()"と同じ)。
  * - 地区(市区町村)セレクトで絞り込める(GAS版のcityFilter/onchange="filterCustomers()"と同じ)。
- * - 検索・地区絞り込みのどちらも指定していない既定表示は、直近保存/領収書登録した顧客が
+ * - 名前・地区のどちらも指定していない既定表示は、直近保存/領収書登録したお客様が
  *   先頭にくる「最近使った順」にする(GAS版filterCustomers()の`if (!search && !city)`分岐と同じ。
  *   recentCustomers.tsのlocalStorage 'recent_customers'を参照)。
  *
- * カードタップ時の挙動もGAS版のopenModal(customer)と同じにしている: カード本体のタップは
- * 日報/事故報告作成モーダル(ReportModal)を開き、「顧客情報」「活動記録」は別ボタンから
- * それぞれ別モーダル(CustomerDetail/HistoryModal)を開く(この3つを混同しないこと)。
+ * カード内の押し場所は3つのボタンだけにしている(提案書「訪問先一覧の各カード」):
+ * 本命の「✏️ 日報を書く」を青の大ボタンにして日報/事故報告モーダル(ReportModal)を開き、
+ * 「👤 お客様の情報」「📖 これまでの記録」は灰色の補助ボタンで別モーダル
+ * (CustomerDetail/HistoryModal)を開く。カード全体のタップと矢印だけのボタンは、
+ * 何が起きるか分からないので置かない。
  *
- * initialSearchText/onInitialSearchConsumedは、予定タブの予定カードタップ
- * (jumpToCustomerFromSchedule)からこのタブへ切り替わった際に検索欄へ顧客名を
- * 反映するためのもの(App.tsxが管理する一度きりの値、消費したら親側でnullに戻す)。
+ * initialSearchText/onInitialSearchConsumedは、きょうの予定タブで名前の一致するお客様が
+ * 見つからなかった予定から切り替わった際に、名前を検索欄へ入れておくためのもの
+ * (App.tsxが管理する一度きりの値、消費したら親側でnullに戻す)。
  */
 export function CustomerSearch({
   initialSearchText,
@@ -43,7 +46,7 @@ export function CustomerSearch({
   const [reportCustomerId, setReportCustomerId] = useState<string | null>(null);
   const [detailCustomerId, setDetailCustomerId] = useState<string | null>(null);
   const [historyCustomer, setHistoryCustomer] = useState<{ id: string; name: string } | null>(null);
-  // 報告作成モーダルを閉じるたびに1増やし、useMemoに「最近使った顧客」の並びを再評価させる
+  // 報告作成モーダルを閉じるたびに1増やし、useMemoに「最近使ったお客様」の並びを再評価させる
   // (保存直後にlocalStorageの'recent_customers'が更新されている可能性があるため)。
   const [recentTick, setRecentTick] = useState(0);
 
@@ -74,119 +77,87 @@ export function CustomerSearch({
 
   return (
     <div>
-      <div className="mb-6 space-y-3">
-        <div className="relative flex-grow">
+      <div className="mb-4 space-y-3">
+        <div className="relative">
+          <span
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-base"
+            aria-hidden="true"
+          >
+            🔍
+          </span>
           <input
             type="text"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            placeholder="顧客名で検索..."
-            className="w-full pl-10 pr-4 py-3 rounded-xl border-none ring-1 ring-gray-200 focus:ring-2 focus:ring-blue-500 bg-gray-50 text-base shadow-sm transition-all"
+            placeholder="お客様の名前で探す"
+            className="min-h-[48px] w-full rounded-btn border border-gray-300 bg-white py-3 pl-10 pr-4 text-base text-app-text"
           />
-          <svg
-            className="w-5 h-5 absolute left-3 top-3.5 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
         </div>
 
         <div className="relative">
           <select
             value={cityFilter}
             onChange={(e) => setCityFilter(e.target.value)}
-            className="w-full appearance-none pl-4 pr-10 py-3 rounded-xl border-none ring-1 ring-gray-200 focus:ring-2 focus:ring-blue-500 bg-gray-50 text-base shadow-sm transition-all"
+            aria-label="地域でしぼる"
+            className="min-h-[48px] w-full appearance-none rounded-btn border border-gray-300 bg-white py-3 pl-4 pr-10 text-base text-app-text"
           >
-            <option value="">全ての地域</option>
+            <option value="">すべての地域</option>
             {(query.data?.cities ?? []).map((city) => (
               <option key={city} value={city}>
                 {city}
               </option>
             ))}
           </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-            <svg className="fill-current h-4 w-4" viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-            </svg>
-          </div>
+          <span
+            className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-base text-app-muted"
+            aria-hidden="true"
+          >
+            ▼
+          </span>
         </div>
       </div>
 
-      {query.isError && <p className="text-red-500 text-sm mb-3">{(query.error as Error).message}</p>}
-
-      {query.isPending && (
-        <div className="flex justify-center py-8">
-          <div className="w-8 h-8 rounded-full border-4 border-gray-200 loading-spinner" />
+      {query.isError && (
+        <div className="mb-3">
+          <ErrorNotice
+            text={toFriendlyMessage(
+              query.error,
+              'CustomerSearch.fetchAllCustomers',
+              'お客様の一覧を読み込めませんでした。電波を確認して、もう一度開いてください',
+            )}
+          />
         </div>
       )}
+
+      {query.isPending && <LoadingBlock text="読み込んでいます…" />}
 
       {query.isSuccess && (
         <div className="space-y-3">
           {filteredCustomers.length === 0 && (
-            <div className="text-center text-gray-400 py-8">該当する顧客がいません</div>
+            <EmptyState icon="🔍" title="見つかりませんでした" nextStep="名前の一部だけで探せます" />
           )}
           {filteredCustomers.map((c) => (
-            // biome-ignore lint/a11y/useSemanticElements: 内部に顧客情報/活動記録ボタンをネストするため<button>不可(GAS版と同じ構造)
-            <div
-              key={c.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => setReportCustomerId(c.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') setReportCustomerId(c.id);
-              }}
-              className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center cursor-pointer hover:shadow-md transition-shadow active:bg-gray-50"
-            >
-              <div className="flex-grow">
-                <h3 className="font-bold text-gray-800 text-lg">{c.name}</h3>
-                {c.city && (
-                  <p className="text-sm text-gray-500 flex items-center gap-1">
-                    <span className="inline-block px-2 py-0.5 bg-gray-100 rounded text-xs">{c.city}</span>
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="flex flex-col gap-2 items-end z-10 relative">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDetailCustomerId(c.id);
-                    }}
-                    className="px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors"
-                  >
-                    顧客情報
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setHistoryCustomer({ id: c.id, name: c.name });
-                    }}
-                    className="px-3 py-1.5 text-xs font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg border border-orange-200 transition-colors"
-                  >
-                    活動記録
-                  </button>
-                </div>
-                <div className="text-blue-500">
-                  <svg
-                    className="w-6 h-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
+            <div key={c.id} className="rounded-card border border-gray-200 bg-white p-3.5">
+              <h3 className="break-words text-lg font-bold text-app-text">{c.name}</h3>
+              {c.city && <p className="mt-1 text-sm text-app-muted">{c.city}</p>}
+
+              <div className="mt-3 space-y-3">
+                <Button variant="primary" fullWidth onClick={() => setReportCustomerId(c.id)}>
+                  ✏️ 日報を書く
+                </Button>
+                {/* 補助の2つは横に並べず縦に積む。横並びにすると狭い端末で
+                    「お客様の情 報」のように折り返して読めなくなる。 */}
+                <Button variant="subtle" size="sub" fullWidth onClick={() => setDetailCustomerId(c.id)}>
+                  👤 お客様の情報
+                </Button>
+                <Button
+                  variant="subtle"
+                  size="sub"
+                  fullWidth
+                  onClick={() => setHistoryCustomer({ id: c.id, name: c.name })}
+                >
+                  📖 これまでの記録
+                </Button>
               </div>
             </div>
           ))}
