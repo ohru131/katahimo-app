@@ -45,13 +45,6 @@ export interface MirrorJob {
    * `buildMirrorIdempotencyKey`(domain/mirror)で「レコードIDとその版」から組み立てる。
    */
   idempotencyKey: string;
-  /**
-   * この時刻まで送信を始めない(outbox_jobs.next_attempt_at)。省略すると即座に対象になる。
-   *
-   * 領収書がこれを使う(doc/14 §10)。スプレッドシートへの追記は送ってしまうと取り消せないため、
-   * 取り消せる期間が終わるまで送信を遅らせて、「送ったあとに取り消された」状態そのものを作らない。
-   */
-  notBefore?: Date;
 }
 
 export interface MirrorPort {
@@ -101,8 +94,8 @@ export interface OutboxRepositoryPort extends MirrorPort {
   /**
    * 指定した種別・対象IDのジョブの状態を返す(画面に「まだ外部へ送っていない」を出すため)。
    *
-   * 領収書はミラー送信を取り消し期限まで遅らせるので、管理者が「いつ送られるのか」「送信に
-   * 失敗して止まっていないか」を見られないと、締めのときに気付けない(doc/14 §10)。
+   * 送信は登録と同時に始まるが、送信に失敗して止まった分は放っておくといつまでも出ない。
+   * 管理者がそれを見られないと、締めのときに取り残しに気付けない(doc/14 §10)。
    */
   listStatusByTargets(tenantId: string, kind: MirrorKind, targetIds: string[]): Promise<MirrorJobStatus[]>;
 }

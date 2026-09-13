@@ -609,7 +609,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
 
     const [job] = mirror.listAllForTest();
     if (!job) throw new Error('ミラージョブが積まれていません');
-    // notBefore を付けないので、積んだ時点で送信対象になる(doc/14 §10)。
+    // 送信開始を遅らせる手段そのものを持たないので、積んだ時点で送信対象になる(doc/14 §10)。
     // 実DBの next_attempt_at は NOT NULL DEFAULT now() なので「今」が入り、
     // フェイクは同じ意味を null で表す(claimPending はどちらも即座に拾う)。
     // 取り消し済みを送らない守りは claimForMirror が担うので、遅延は要らない。

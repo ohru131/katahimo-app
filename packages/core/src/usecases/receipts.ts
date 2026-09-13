@@ -133,7 +133,7 @@ export async function uploadReceipts(
   }
 
   // 締め日設定は1回だけ読む。画像ごとに読み直すと、同じバッチの中で設定変更をまたいだ場合に
-  // 送信開始時刻が枚によって変わる(doc/14 §10)。
+  // 取り消し期限が枚によって変わる(doc/14 §10)。
   const policy = await resolveReceiptDeadlinePolicy(deps, tenantId);
 
   // DB制約(receipts_billable_requires_customer)に落として23514で失敗させるより先に、
@@ -357,9 +357,9 @@ export interface ReceiptListView {
   /**
    * まだスプレッドシートへ送っていない件数(pending/processing)。
    *
-   * 領収書のミラー送信は取り消し期限まで遅らせてあるので、「登録したのにまだ外部に出ていない」
-   * 期間が必ずある。締めのときに何件残っているかが分からないと、送信が止まっていることに
-   * 気付けない(doc/14 §10)。
+   * 送信は登録と同時に始まるが、ワーカーが拾うまでの間と、送信に失敗して再試行待ち・打ち切りに
+   * なっている分は「登録したのにまだ外部に出ていない」状態になる。締めのときに何件残っているかが
+   * 分からないと、送信が止まっていることに気付けない(doc/14 §10)。
    */
   pendingMirrorCount: number;
   /** 送信に失敗して止まっている件数。0でなければ管理者の対応が要る。 */

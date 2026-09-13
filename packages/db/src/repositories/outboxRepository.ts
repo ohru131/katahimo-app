@@ -52,8 +52,7 @@ export class DrizzleOutboxRepository implements OutboxRepositoryPort {
             kind: job.kind,
             targetId: job.targetId,
             idempotencyKey: job.idempotencyKey,
-            // 指定が無ければ列の既定(now())のまま=すぐ送信対象になる。
-            ...(job.notBefore ? { nextAttemptAt: job.notBefore } : {}),
+            // next_attempt_at は列の既定(now())のまま=積んだ時点で送信対象になる。
           })
           .onConflictDoNothing({ target: [outboxJobs.tenantId, outboxJobs.idempotencyKey] });
       },

@@ -425,7 +425,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
                     />
                     <p className="text-[10px] text-gray-400 mt-1">
                       ※
-                      暦日で数えます(訪問保育は土日祝日も訪問があるため)。送信日の前日が先に来る場合はそちらが優先され、締め間際の領収書は取り消せる期間が短くなります。
+                      暦日で数えます(訪問保育は土日祝日も訪問があるため)。締め日が先に来る場合は締め日が優先され、締め間際の領収書は取り消せる期間が短くなります。
                     </p>
                   </div>
                 </>

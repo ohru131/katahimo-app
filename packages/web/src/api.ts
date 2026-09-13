@@ -904,7 +904,7 @@ export interface ReceiptListView {
   unreadableAmountCount: number;
   /** 取り消し済みの件数(一覧には残るが集計には入らない)。 */
   cancelledCount: number;
-  /** まだスプレッドシートへ送っていない件数(取り消し期限まで送信を待つため必ず発生する)。 */
+  /** まだスプレッドシートへ送っていない件数(ワーカー待ち・再試行待ち)。 */
   pendingMirrorCount: number;
   /** 送信に失敗して止まっている件数。0でなければ管理者の対応が要る。 */
   failedMirrorCount: number;
