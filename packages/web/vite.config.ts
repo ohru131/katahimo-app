@@ -66,16 +66,16 @@ export default defineConfig({
           VitePWA({
             registerType: 'autoUpdate',
             workbox: {
-              // 既定のglobPatternsはフォントを含まない。Tailwind同様フォントも自前配信に
-              // 変えたので、オフラインでも本来の書体で表示できるようwoff2を先読みに含める。
-              globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+              // 既定のglobPatternsはフォントを含まないが、このアプリはwebフォントを同梱せず
+              // 端末の書体を使う(src/index.css参照)ので、先読み対象にフォントは出てこない。
+              globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
             },
             manifest: {
               name: 'katahimo 訪問管理',
               short_name: 'katahimo',
               description: '保育訪問業務の予定・訪問先・勤怠を管理するアプリ',
               lang: 'ja',
-              theme_color: '#2563eb',
+              theme_color: '#2F6FE4',
               background_color: '#ffffff',
               display: 'standalone',
               start_url: '/',

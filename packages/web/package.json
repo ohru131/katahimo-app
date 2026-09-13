@@ -18,7 +18,6 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@fontsource/outfit": "^5.3.0",
     "@katahimo/demo": "workspace:*",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",

@@ -8,26 +8,39 @@
  * ここで取り込む。index.html に直接書いていた独自CSSも、読み込み順を確実にするためここへ移した。
  */
 
-/* フォントはGoogle Fontsからの外部読み込みをやめ、npmパッケージ(@fontsource)で同梱する。
-   CDN版と同じ Outfit の 300/400/500/600 のみを入れる(日本語はOutfitに含まれないため、
-   従来どおり body の font-family の sans-serif にフォールバックする)。 */
-@import "@fontsource/outfit/300.css";
-@import "@fontsource/outfit/400.css";
-@import "@fontsource/outfit/500.css";
-@import "@fontsource/outfit/600.css";
+/* フォントは同梱しない(webフォントを読み込まない)。
+ *
+ * 提案書は BIZ UDPGothic(本文)と Zen Maru Gothic(見出し)の読み込みを求めているが、日本語の
+ * webフォントは1書体あたり約1.3MBあり、3書体でアプリの配信物が約4MB増える。現場はモバイル回線で、
+ * オフライン前提のPWAとして全部を端末に持たせる作りなので、その増分は割に合わない。
+ *
+ * 代わりに font-family の先頭にUD書体を並べ、端末に入っていればそれを使う
+ * (BIZ UDPGothic は Windows 10 以降に標準で入っている)。入っていない端末(iOS/Android)は
+ * OS標準の日本語書体(Hiragino Sans / Noto Sans JP 系)になり、いずれも読みやすさは十分ある。
+ *
+ * 読みやすさの改善は、書体そのものより「本文16px・行間1.6・コントラスト」で効いている
+ * (下の font-size / line-height と、tailwind.config.js の app-text / app-muted)。
+ * 英数字専用だった Outfit は日本語を端末まかせにして細く見せていたので外した。 */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 body {
-  font-family: "Outfit", sans-serif;
+  /* 端末にUD書体が入っていればそれを使い、無ければOS標準の日本語書体へ。 */
+  font-family:
+    "BIZ UDPGothic", "UD デジタル 教科書体 NP-R", "Hiragino Sans", "Noto Sans JP", "Yu Gothic", "Meiryo",
+    sans-serif;
   background-color: #f3f4f6;
+  color: #1f2933;
+  /* 本文は16px・行間1.6が基準(これ未満の文字は画面に出さない)。 */
+  font-size: 16px;
+  line-height: 1.6;
 }
 
 .loading-spinner {
-  border-top-color: #3b82f6;
-  border-left-color: #3b82f6;
+  border-top-color: #2f6fe4;
+  border-left-color: #2f6fe4;
   animation: spin 1s infinite linear;
 }
 
@@ -40,31 +53,67 @@ body {
   }
 }
 
-/* 文字サイズ設定(GAS版index.htmlの同名ルールと同じ)。 */
-html[data-text-size="medium"] .text-xs {
+/*
+ * 文字サイズ設定。3段階とも「本文の基準」を上げ下げする。
+ *   small  = ふつう      本文16px(既定のTailwindそのまま。上書き不要)
+ *   medium = 大きい      本文18px ← 初期値
+ *   large  = とても大きい 本文20px
+ *
+ * localStorage のキー('app_text_size')と値('small'/'medium'/'large')はGAS版から変えていない
+ * (既に設定しているスタッフの選択を引き継ぐため)。画面に出す呼び名だけを変えている。
+ *
+ * text-xs(12px)は使わない方針だが、取りこぼしが画面に出ても読めないままにならないよう、
+ * どの段階でも14px以上に持ち上げておく。
+ */
+.text-xs {
   font-size: 0.875rem !important;
-  line-height: 1.4 !important;
+  line-height: 1.5 !important;
 }
+
+html[data-text-size="medium"] .text-xs,
 html[data-text-size="medium"] .text-sm {
   font-size: 1rem !important;
-  line-height: 1.5 !important;
+  line-height: 1.6 !important;
 }
 html[data-text-size="medium"] .text-base {
-  font-size: 1.05rem !important;
+  font-size: 1.125rem !important;
 }
-html[data-text-size="large"] .text-xs {
-  font-size: 1rem !important;
-  line-height: 1.5 !important;
+html[data-text-size="medium"] .text-lg {
+  font-size: 1.25rem !important;
 }
+html[data-text-size="medium"] .text-xl {
+  font-size: 1.375rem !important;
+}
+
+html[data-text-size="large"] .text-xs,
 html[data-text-size="large"] .text-sm {
   font-size: 1.125rem !important;
   line-height: 1.6 !important;
 }
 html[data-text-size="large"] .text-base {
-  font-size: 1.2rem !important;
+  font-size: 1.25rem !important;
+}
+html[data-text-size="large"] .text-lg {
+  font-size: 1.375rem !important;
+}
+html[data-text-size="large"] .text-xl {
+  font-size: 1.5rem !important;
+}
+
+/* 入力欄の文字は16px未満にしない。iOSは16px未満の入力欄をタップすると画面を自動で拡大し、
+   そのまま戻らないため「画面が崩れた」と受け取られる。 */
+input,
+textarea,
+select {
+  font-size: 1rem !important;
+}
+html[data-text-size="medium"] input,
+html[data-text-size="medium"] textarea,
+html[data-text-size="medium"] select {
+  font-size: 1.125rem !important;
 }
 html[data-text-size="large"] input,
 html[data-text-size="large"] textarea,
-html[data-text-size="large"] button {
-  font-size: 1.1rem !important;
+html[data-text-size="large"] select {
+  font-size: 1.25rem !important;
 }

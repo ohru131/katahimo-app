@@ -7,6 +7,7 @@ import { DemoBanner } from './demo/DemoBanner';
 import { IS_DEMO_MODE } from './demo/demoRuntime';
 import { createProgressOverlay } from './demo/progressOverlay';
 import { applyTextSize, getStoredTextSize } from './settings/textSize';
+import { FeedbackProvider } from './ui';
 
 applyTextSize(getStoredTextSize());
 
@@ -40,8 +41,11 @@ async function main() {
   createRoot(root).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        {IS_DEMO_MODE && <DemoBanner />}
-        <App />
+        {/* お知らせ(トースト)と確認ダイアログはアプリ全体で1組だけ持つ。 */}
+        <FeedbackProvider>
+          {IS_DEMO_MODE && <DemoBanner />}
+          <App />
+        </FeedbackProvider>
       </QueryClientProvider>
     </StrictMode>,
   );

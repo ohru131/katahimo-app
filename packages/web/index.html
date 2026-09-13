@@ -3,14 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#2563eb" />
+    <meta name="theme-color" content="#2F6FE4" />
     <title>katahimo 訪問管理</title>
-    <!-- GAS版(gas-childcare-visit-app/index.html)と同じ見た目・操作感にするため、同じCSSフレームワーク
-         (Tailwind)とフォント(Outfit)を使う(移行時の混乱を減らすため)。
-         現場スタッフ向けPWA(オフライン前提)なので、CDNからの読み込みではなくビルド時に生成し、
-         フォントも同梱する。実体は src/index.css(main.tsxから読み込む)。 -->
+    <!-- CSSフレームワーク(Tailwind)は、オフライン前提のPWAなのでCDNから読み込まずビルド時に
+         生成する。実体は src/index.css(main.tsxから読み込む)。webフォントは同梱せず、
+         端末に入っているUD書体を優先して使う(同ファイルのfont-family参照)。 -->
   </head>
-  <body class="bg-gray-100 min-h-screen text-gray-800 flex justify-center">
+  <body class="bg-gray-100 min-h-screen text-app-text flex justify-center">
     <div id="root" style="width: 100%; max-width: 480px"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
