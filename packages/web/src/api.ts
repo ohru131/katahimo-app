@@ -888,7 +888,7 @@ export interface ReceiptListItemView {
   cancelledAt: string | null;
   cancellationReason: string | null;
   cancelledByStaffName: string | null;
-  /** いま取り消せるか(領収書の日付+2日・月末まで。管理者は期限後も真)。falseなら取消ボタンを出さない。 */
+  /** いま取り消せるか(期限はテナントごとの締め日設定で決まる。管理者は期限後も真)。falseなら取消ボタンを出さない。 */
   canCancel: boolean;
   /** ミラー送信(スプレッドシートへの書き出し)の状態。ミラーを使っていないテナントはnull。 */
   mirrorStatus: 'pending' | 'processing' | 'done' | 'failed' | null;

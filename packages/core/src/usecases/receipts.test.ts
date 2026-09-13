@@ -536,6 +536,42 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     });
   });
 
+  it('2つの取り消しがユースケース経由で競合しても、負けたほうは already_cancelled', async () => {
+    await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
+    const receiptId = latestReceiptId();
+    const options = {
+      requesterStaffId: staffId,
+      allowOtherStaff: true,
+      ignoreDeadline: true,
+      reason: '負けるほう',
+      today: AFTER_DEADLINE,
+    };
+
+    // 二重取り消しチェック(findById)を抜けたあと、自分のUPDATEが走る直前に
+    // もう一方の取り消しが確定する、という割り込みを作る。実DBなら行ロックが決める順序を、
+    // 単一スレッドのフェイクでは明示的に差し込むしかない。
+    const original = receiptRepository.cancel.bind(receiptRepository);
+    let interleaved = false;
+    receiptRepository.cancel = async (t, id, input) => {
+      if (!interleaved) {
+        interleaved = true;
+        const winner = await original(t, id, { cancelledByStaffId: staffId, reason: '勝つほう' });
+        expect(winner).not.toBeNull();
+      }
+      return original(t, id, input);
+    };
+
+    // 負けたほうのUPDATEは0行になる。行は存在するので、404ではなく400を返す。
+    expect(await cancelReceipt(deps, tenantId, receiptId, options)).toEqual({
+      ok: false,
+      reason: 'already_cancelled',
+    });
+    expect(interleaved).toBe(true);
+    // 勝ったほうの理由が残っていること(負けたほうに上書きされていない)。
+    const stored = receiptRepository.listAllForTest().find((r) => r.id === receiptId);
+    expect(stored?.cancellationReason).toBe('勝つほう');
+  });
+
   it('存在しない領収書は取り消し済みと区別して not_found を返す', async () => {
     expect(
       await cancelReceipt(deps, tenantId, '00000000-0000-4000-8000-000000000000', {

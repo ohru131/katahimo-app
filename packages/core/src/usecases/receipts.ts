@@ -322,7 +322,7 @@ export interface ReceiptListItemView {
   /** 取り消した人の氏名。 */
   cancelledByStaffName: string | null;
   /**
-   * いま取り消せるか。取り消せるのは有効な行のうち、領収書の日付+2日(月末まで)の分
+   * いま取り消せるか。取り消せるのは有効な行のうち、登録時に確定した取り消し期限内の分
    * (canCancelReceiptOn)。画面はこれがfalseなら取消ボタンを出さない。
    */
   canCancel: boolean;
@@ -408,7 +408,7 @@ export interface ReceiptListOptions {
   /** 期限判定の「今日」。テストから固定するためだけに受け取る。 */
   today?: Date;
   /**
-   * 期限(領収書の日付+2日)を無視して取消ボタンを出す。管理者向け。
+   * 取り消し期限を無視して取消ボタンを出す。管理者向け。
    * 経理が締め処理で戻すことがあるため、管理者だけは期限後も取り消せる(doc/14 §10)。
    */
   ignoreDeadline?: boolean;
@@ -564,7 +564,7 @@ export async function cancelReceipt(
   options: {
     requesterStaffId: string;
     allowOtherStaff: boolean;
-    /** 期限(領収書の日付+2日)を無視して取り消す。管理者向け。 */
+    /** 取り消し期限を無視して取り消す。管理者向け。 */
     ignoreDeadline?: boolean;
     /** 任意の1行。未入力はnull。 */
     reason: string | null;
