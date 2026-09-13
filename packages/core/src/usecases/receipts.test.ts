@@ -510,6 +510,43 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     expect(await receiptRepository.claimForMirror(tenantId, receiptId)).toBeNull();
   });
 
+  it('同時に2つの取り消しが走っても、負けたほうは404ではなく「取り消し済み」を返す', async () => {
+    await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
+    const receiptId = latestReceiptId();
+    const options = {
+      requesterStaffId: staffId,
+      allowOtherStaff: true,
+      ignoreDeadline: true,
+      reason: null,
+      today: AFTER_DEADLINE,
+    };
+
+    // 二重取り消しチェックを両方が抜けた状態を作る(先に取り消しを確定させてから、
+    // 取り消し前のレコードを読んだ体で cancel だけを呼ぶのと同じ状況)。
+    await receiptRepository.cancel(tenantId, receiptId, {
+      cancelledByStaffId: staffId,
+      reason: '先に確定したほう',
+    });
+
+    // cancel の UPDATE は0行になるが、行自体は存在する。存在しないのと同じ404にしない。
+    expect(await cancelReceipt(deps, tenantId, receiptId, options)).toEqual({
+      ok: false,
+      reason: 'already_cancelled',
+    });
+  });
+
+  it('存在しない領収書は取り消し済みと区別して not_found を返す', async () => {
+    expect(
+      await cancelReceipt(deps, tenantId, '00000000-0000-4000-8000-000000000000', {
+        requesterStaffId: staffId,
+        allowOtherStaff: true,
+        ignoreDeadline: true,
+        reason: null,
+        today: AFTER_DEADLINE,
+      }),
+    ).toEqual({ ok: false, reason: 'not_found' });
+  });
+
   it('管理者でも、取り消し済みの行は二重に取り消せない', async () => {
     await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
     const receiptId = latestReceiptId();

@@ -283,13 +283,17 @@ export function ReceiptListModal({ staffId, onClose }: { staffId?: string; onClo
             <p className="text-red-500 text-sm">{(receiptsQuery.error as Error).message}</p>
           )}
           {errorMessage && <p className="text-red-500 text-xs">{errorMessage}</p>}
-          {/* 送信済みの行はこちらからは消せない(Bridge.jsに取り消し用のactionが無い)。
-              黙って成功にすると、シート側に有効な行が残ったままになる。 */}
+          {/* 送信に取りかかった後の行はこちらからは消せない(Bridge.jsに取り消し用のactionが無い)。
+              黙って成功にすると、シート側に有効な行が残ったままになる。
+              mirror_claimed_at が表すのは「送信を開始した」ことで、HTTP送信の成否までは
+              分からない。断定すると管理者がシート側の状態を誤認するので、両方の可能性を出す。 */}
           {mirrorSentWarning && (
             <div className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded-lg p-2 flex items-start gap-2">
               <span className="flex-grow">
-                取り消しましたが、この領収書は<strong>既にスプレッドシートへ送信済み</strong>でした。
-                シート側の行は自動では消えません。手で取り消してください。
+                取り消しましたが、この領収書は
+                <strong>スプレッドシートへ送信済み、または送信中</strong>でした。
+                シート側の行は自動では消えません。
+                <strong>シートを確認し、行があれば手で取り消してください。</strong>
               </span>
               <button
                 type="button"

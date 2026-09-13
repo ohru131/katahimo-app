@@ -569,7 +569,19 @@ export async function cancelReceipt(
     cancelledByStaffId: options.requesterStaffId,
     reason: options.reason?.trim() ? options.reason.trim() : null,
   });
-  if (!cancelled) return { ok: false, reason: 'not_found' };
+  if (!cancelled) {
+    // ここに来るのは「行が無い」か「同時にもう一方の取り消しが確定した」のどちらか。
+    // cancel の UPDATE は `cancelled_at IS NULL` の行しか更新しないので、上の二重取り消し
+    // チェックを2つのリクエストが同時に抜けると、負けたほうが0行になる。
+    // 取り消し済みの行は findById では引けるため、読み直して区別する
+    // (`current?.cancelledAt !== null` だと、行が無い場合に undefined !== null で
+    // 「取り消し済み」になってしまうので、存在を明示的に見る)。
+    const current = await deps.receipts.findById(tenantId, receiptId);
+    if (current !== null && current.cancelledAt !== null) {
+      return { ok: false, reason: 'already_cancelled' };
+    }
+    return { ok: false, reason: 'not_found' };
+  }
 
   // 取り消しのUPDATEが返した行そのものを見る。outboxの状態を別途引き直すと、引くまでの間に
   // 送信が始まった場合を取りこぼす。この列は claimForMirror が同じ行のUPDATEで立てるので、
