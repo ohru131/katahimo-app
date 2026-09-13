@@ -26,9 +26,8 @@ describe('管理者設定(app_settings)', () => {
       geminiOcrModel: 'gemini-2.5-flash-lite',
       gchatReportWebhookUrl: '',
       gchatReceiptWebhookUrl: '',
-      // 締め日まわりの既定値(doc/14 §10)。月末締め・締め日の1日前までに送信・取り消し2日間。
+      // 締め日まわりの既定値(doc/14 §10)。月末締め・取り消し2日間。
       receiptClosingDay: null,
-      receiptMirrorLeadDays: 1,
       receiptCancellableDays: 2,
     });
   });

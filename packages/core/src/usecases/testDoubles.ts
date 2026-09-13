@@ -584,7 +584,6 @@ export class FakeAppSettingsRepository implements AppSettingsRepositoryPort {
       gchatReceiptWebhookUrl: null,
       // DBのDEFAULTと同じ既定値(doc/14 §10)。
       receiptClosingDay: null,
-      receiptMirrorLeadDays: 1,
       receiptCancellableDays: 2,
     };
     const updated: AppSettingsRecord = { ...existing, ...patch };
@@ -882,8 +881,9 @@ export class FakeOutboxRepository implements OutboxRepositoryPort, FakeTransacti
       idempotencyKey: job.idempotencyKey,
       attempts: 0,
       status: 'pending',
-      // DrizzleOutboxRepositoryと同じ扱い。notBeforeが無ければ即座に対象になる。
-      nextAttemptAt: job.notBefore ?? null,
+      // 積んだ時点で送信対象になる。実DBの next_attempt_at は NOT NULL DEFAULT now() で、
+      // フェイクは同じ意味を null で表す(claimPending はどちらも即座に拾う)。
+      nextAttemptAt: null,
       lastError: null,
     });
   }

@@ -264,8 +264,6 @@ export interface AdminSettingsView {
   gchatReceiptWebhookUrl: string;
   /** 会計の締め日(1〜28)。nullは月末(doc/14 §10)。 */
   receiptClosingDay: number | null;
-  /** ミラー送信を締め日の何日前までに終えるか。 */
-  receiptMirrorLeadDays: number;
   /** 領収書を取り消せる日数(暦日)。 */
   receiptCancellableDays: number;
 }
@@ -308,11 +306,10 @@ export function saveGoogleChatWebhookSettings(
 
 /**
  * 領収書の締め日設定を保存する(doc/14 §10)。
- * 取り消し期限とミラー送信の開始時刻の両方がこの3つから決まる。
+ * 領収書を取り消せる期限がこの2つから決まる。
  */
 export function saveReceiptDeadlineSettings(input: {
   closingDay: number | null;
-  mirrorLeadDays: number;
   cancellableDays: number;
 }): Promise<SaveSettingsResult> {
   return postSettings('/api/settings/admin/receipt-deadline', input);
@@ -892,9 +889,9 @@ export interface ReceiptListItemView {
   canCancel: boolean;
   /** ミラー送信(スプレッドシートへの書き出し)の状態。ミラーを使っていないテナントはnull。 */
   mirrorStatus: 'pending' | 'processing' | 'done' | 'failed' | null;
-  /** pendingのとき、この時刻以降に送信される。 */
+  /** pendingのとき、次に送信を試みる時刻。再試行待ちのときだけ意味を持つ(登録直後は「今」)。 */
   mirrorScheduledAt: string | null;
-  /** 送信に失敗して止まっているときの理由。 */
+  /** 直近の送信失敗の理由。pendingのまま残っていれば再試行待ち、failedなら打ち切り。 */
   mirrorError: string | null;
 }
 
@@ -907,7 +904,7 @@ export interface ReceiptListView {
   unreadableAmountCount: number;
   /** 取り消し済みの件数(一覧には残るが集計には入らない)。 */
   cancelledCount: number;
-  /** まだスプレッドシートへ送っていない件数(取り消し期限まで送信を待つため必ず発生する)。 */
+  /** まだスプレッドシートへ送っていない件数(ワーカー待ち・再試行待ち)。 */
   pendingMirrorCount: number;
   /** 送信に失敗して止まっている件数。0でなければ管理者の対応が要る。 */
   failedMirrorCount: number;
