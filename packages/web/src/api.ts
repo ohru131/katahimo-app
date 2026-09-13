@@ -89,9 +89,20 @@ export interface CustomerDetailView {
   familyMembers: FamilyMemberView[];
 }
 
+/**
+ * ログインしていない/セッションが切れたときに画面へ出す文。
+ *
+ * 「セッション」はスタッフに通じない言葉なので、何が起きたかではなく次にすることを書く
+ * (doc/16_UIUX改善提案_2026-09-03.html の言いかえ表「ログイン」)。
+ */
+const SESSION_EXPIRED_MESSAGE = 'しばらく使っていなかったので、もう一度ログインしてください';
+
 async function parseJsonOrThrow<T>(res: Response): Promise<T> {
   const body = await res.json().catch(() => null);
   if (!res.ok) {
+    // 「APIエラー: 500」のようなシステム語を画面に出さない。想定外の失敗は、呼び出し側が
+    // ui/errors.ts の toFriendlyMessage でまとめて「うまくいきませんでした。…」に言いかえる。
+    if (res.status === 401) throw new Error(SESSION_EXPIRED_MESSAGE);
     const message = body && typeof body.message === 'string' ? body.message : `APIエラー: ${res.status}`;
     throw new Error(message);
   }

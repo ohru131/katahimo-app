@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { StaffAdminView } from '../api';
 import { createStaff, fetchStaffForAdmin, resetStaffPassword, updateStaff } from '../api';
+import { Button, EmptyState, LoadingBlock, toFriendlyMessage, useFeedback } from '../ui';
 
 /** 今日の 'YYYY-MM-DD'(退職日の既定値)。 */
 function todayIso(): string {
@@ -18,6 +19,7 @@ function todayIso(): string {
  */
 export function StaffAdminModal({ selfStaffId, onClose }: { selfStaffId: string; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const { confirm } = useFeedback();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
@@ -69,8 +71,13 @@ export function StaffAdminModal({ selfStaffId, onClose }: { selfStaffId: string;
     },
   });
 
-  const errorMessage =
-    createMutation.error?.message ?? updateMutation.error?.message ?? resetMutation.error?.message ?? null;
+  const errorMessage = createMutation.isError
+    ? toFriendlyMessage(createMutation.error, 'スタッフの登録', createMutation.error.message)
+    : updateMutation.isError
+      ? toFriendlyMessage(updateMutation.error, 'スタッフの更新', updateMutation.error.message)
+      : resetMutation.isError
+        ? toFriendlyMessage(resetMutation.error, '初期パスワードの再発行', resetMutation.error.message)
+        : null;
   const busy = createMutation.isPending || updateMutation.isPending || resetMutation.isPending;
 
   return (
@@ -78,13 +85,9 @@ export function StaffAdminModal({ selfStaffId, onClose }: { selfStaffId: string;
       <div className="bg-white w-full max-w-lg rounded-xl shadow-xl flex flex-col max-h-[90vh]">
         <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
           <h3 className="font-bold text-gray-800 text-sm">👥 スタッフ管理</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-gray-200 rounded-full text-gray-500"
-          >
-            &times;
-          </button>
+          <Button variant="subtle" size="sub" onClick={onClose}>
+            ✕ 閉じる
+          </Button>
         </div>
 
         <div className="p-4 space-y-4 overflow-y-auto">
@@ -95,7 +98,7 @@ export function StaffAdminModal({ selfStaffId, onClose }: { selfStaffId: string;
             }}
             className="space-y-2 bg-gray-50 rounded-lg p-3"
           >
-            <h4 className="text-xs font-bold text-gray-600">スタッフを追加</h4>
+            <h4 className="text-sm font-bold text-gray-600">スタッフを追加</h4>
             <div className="flex gap-2">
               <input
                 value={name}
@@ -115,7 +118,7 @@ export function StaffAdminModal({ selfStaffId, onClose }: { selfStaffId: string;
                 className="flex-1 min-w-0 p-2 border border-gray-300 rounded text-sm"
               />
             </div>
-            <label className="flex items-center gap-2 text-xs text-gray-700">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
                 checked={isAdmin}
@@ -124,124 +127,120 @@ export function StaffAdminModal({ selfStaffId, onClose }: { selfStaffId: string;
               />
               管理者にする
             </label>
-            <p className="text-xs text-gray-500">
+            <p className="text-sm text-gray-500">
               初期パスワードを自動で作り、本人のメールアドレスへ送ります。本人がパスワードを
               変更するまで、他の画面は使えません。
             </p>
-            <button
-              type="submit"
-              disabled={busy}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-bold rounded"
-            >
+            <Button variant="primary" fullWidth type="submit" disabled={busy}>
               {createMutation.isPending ? '登録中…' : '登録して初期パスワードを送る'}
-            </button>
+            </Button>
           </form>
 
-          {notice && <p className="text-green-600 text-xs">{notice}</p>}
-          {errorMessage && <p className="text-red-500 text-xs">{errorMessage}</p>}
+          {notice && <p className="text-sm text-app-done">{notice}</p>}
+          {errorMessage && <p className="text-sm text-app-danger">{errorMessage}</p>}
 
-          {staffQuery.isPending && (
-            <div className="flex justify-center py-6">
-              <div className="w-6 h-6 rounded-full border-4 border-gray-200 loading-spinner" />
-            </div>
-          )}
+          {staffQuery.isPending && <LoadingBlock />}
           {staffQuery.isError && (
-            <p className="text-red-500 text-sm">{(staffQuery.error as Error).message}</p>
+            <p className="text-sm text-app-danger">
+              {toFriendlyMessage(staffQuery.error, 'スタッフ一覧の読み込み')}
+            </p>
           )}
 
-          <ul className="space-y-2">
-            {(staffQuery.data ?? []).map((member) => (
-              <li
-                key={member.id}
-                className={`rounded-lg border p-3 text-sm ${
-                  member.retired ? 'bg-gray-50 border-gray-200 text-gray-500' : 'border-gray-200'
-                }`}
-              >
-                <div className="flex justify-between items-start gap-2">
-                  <div className="min-w-0">
-                    <p className="font-bold break-words">{member.name}</p>
-                    <p className="text-xs text-gray-500 break-words">{member.email}</p>
+          {staffQuery.data && staffQuery.data.length === 0 ? (
+            <EmptyState
+              icon="👥"
+              title="スタッフがまだ登録されていません"
+              nextStep="上のフォームから追加してください"
+            />
+          ) : (
+            <ul className="space-y-2">
+              {(staffQuery.data ?? []).map((member) => (
+                <li
+                  key={member.id}
+                  className={`rounded-lg border p-3 text-sm ${
+                    member.retired ? 'bg-gray-50 border-gray-200 text-gray-500' : 'border-gray-200'
+                  }`}
+                >
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="min-w-0">
+                      <p className="font-bold break-words">{member.name}</p>
+                      <p className="text-sm text-gray-500 break-words">{member.email}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      {member.isAdmin && (
+                        <span className="text-sm bg-red-100 text-red-700 rounded px-1.5 py-0.5">管理者</span>
+                      )}
+                      {member.retired && (
+                        <span className="text-sm bg-gray-200 text-gray-600 rounded px-1.5 py-0.5">
+                          退職済み
+                        </span>
+                      )}
+                      {member.mustChangePassword && (
+                        <span className="text-sm bg-amber-100 text-amber-700 rounded px-1.5 py-0.5">
+                          初期パスワード
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    {member.isAdmin && (
-                      <span className="text-xs bg-red-100 text-red-700 rounded px-1.5 py-0.5">管理者</span>
-                    )}
-                    {member.retired && (
-                      <span className="text-xs bg-gray-200 text-gray-600 rounded px-1.5 py-0.5">
-                        退職済み
-                      </span>
-                    )}
-                    {member.mustChangePassword && (
-                      <span className="text-xs bg-amber-100 text-amber-700 rounded px-1.5 py-0.5">
-                        初期パスワード
-                      </span>
-                    )}
-                  </div>
-                </div>
 
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {/* 自分自身の権限を外す・自分を退職扱いにするのはサーバー側でも拒否される
-                      (管理者が1人の事業所で誰も管理者設定に入れなくなるため)。 */}
-                  {member.id !== selfStaffId && (
-                    <>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() =>
-                          updateMutation.mutate({
-                            staffId: member.id,
-                            patch: { isAdmin: !member.isAdmin },
-                          })
-                        }
-                        className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-60"
-                      >
-                        {member.isAdmin ? '管理者を外す' : '管理者にする'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() =>
-                          updateMutation.mutate({
-                            staffId: member.id,
-                            patch: { retirementDate: member.retired ? null : todayIso() },
-                          })
-                        }
-                        className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-60"
-                      >
-                        {member.retired ? '在籍中に戻す' : '退職にする'}
-                      </button>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `${member.name} さんの初期パスワードを再発行します。\n現在ログイン中の場合はログアウトされます。よろしいですか?`,
-                        )
-                      ) {
-                        resetMutation.mutate(member);
-                      }
-                    }}
-                    className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-60"
-                  >
-                    初期パスワードを再発行
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+                  <div className="flex flex-wrap gap-3 mt-2">
+                    {/* 自分自身の権限を外す・自分を退職扱いにするのはサーバー側でも拒否される
+                        (管理者が1人の事業所で誰も管理者設定に入れなくなるため)。 */}
+                    {member.id !== selfStaffId && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sub"
+                          disabled={busy}
+                          onClick={() =>
+                            updateMutation.mutate({
+                              staffId: member.id,
+                              patch: { isAdmin: !member.isAdmin },
+                            })
+                          }
+                        >
+                          {member.isAdmin ? '管理者を外す' : '管理者にする'}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sub"
+                          disabled={busy}
+                          onClick={() =>
+                            updateMutation.mutate({
+                              staffId: member.id,
+                              patch: { retirementDate: member.retired ? null : todayIso() },
+                            })
+                          }
+                        >
+                          {member.retired ? '在籍中に戻す' : '退職にする'}
+                        </Button>
+                      </>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sub"
+                      disabled={busy}
+                      onClick={async () => {
+                        const ok = await confirm({
+                          message: `${member.name} さんの初期パスワードを再発行します。\n現在ログイン中の場合はログアウトされます。よろしいですか?`,
+                          confirmLabel: '再発行する',
+                        });
+                        if (ok) resetMutation.mutate(member);
+                      }}
+                    >
+                      初期パスワードを再発行
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div className="p-4 border-t bg-gray-50 rounded-b-xl text-right">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700"
-          >
+          <Button variant="subtle" onClick={onClose}>
             閉じる
-          </button>
+          </Button>
         </div>
       </div>
     </div>

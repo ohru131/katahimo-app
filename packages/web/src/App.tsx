@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { AdminTargetStaffProvider } from './AdminTargetStaffContext';
 import { AttendanceTab } from './AttendanceTab';
@@ -10,14 +11,42 @@ import { CustomerSearch } from './CustomerSearch';
 import { LoginForm } from './LoginForm';
 import { ScheduleTab } from './ScheduleTab';
 import { SettingsModal } from './settings/SettingsModal';
+import { applyTextSize, getStoredTextSize, nextTextSize, TEXT_SIZE_LABEL } from './settings/textSize';
+import { LoadingBlock, useFeedback } from './ui';
 
 type HomeTab = 'schedule' | 'visitors' | 'attendance';
 
 const TABS: { key: HomeTab; icon: string; label: string }[] = [
-  { key: 'schedule', icon: '📅', label: '予定' },
-  { key: 'visitors', icon: '🏠', label: '訪問先一覧' },
-  { key: 'attendance', icon: '🕒', label: '勤怠' },
+  { key: 'schedule', icon: '📅', label: 'きょうの予定' },
+  { key: 'visitors', icon: '👪', label: 'お客様' },
+  { key: 'attendance', icon: '🕒', label: '出勤簿' },
 ];
+
+/**
+ * ヘッダー専用の文字つきボタン。青いヘッダーの上に置く前提の見た目(白半透明の背景)なので、
+ * `ui/Button` の役割別バリアント(進む・戻る等)には合わず、ここだけローカルに用意している
+ * (SPEC.md「足りない部品は担当ファイル内にローカルで作る」)。高さ44px以上・`active:`のみ。
+ */
+function HeaderButton({
+  onClick,
+  children,
+  title,
+}: {
+  onClick: () => void;
+  children: ReactNode;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="flex min-h-[44px] items-center gap-1 rounded-btn bg-white/20 px-3 text-sm font-bold text-white active:bg-white/30"
+    >
+      {children}
+    </button>
+  );
+}
 
 /**
  * アプリ全体の骨格。GAS版(gas-childcare-visit-app/index.html)と同じ、ヘッダー+3タブ構成の
@@ -37,52 +66,32 @@ function AppShell({ staff, onLogout }: { staff: StaffView; onLogout: () => void 
   // 予定タブの予定カードタップで訪問先一覧タブへ切り替え、検索欄にその顧客名を入れる
   // (GAS版jumpToCustomerFromScheduleと同じ動作)。
   const [jumpSearchText, setJumpSearchText] = useState<string | null>(null);
+  const { showSuccess } = useFeedback();
+
+  // ヘッダーの「Aa」ボタン。押すたびに文字の大きさを順送りし、今どの段階かをお知らせで伝える
+  // (提案書「文字サイズの切りかえをヘッダーに常設」)。
+  const handleCycleTextSize = () => {
+    const next = nextTextSize(getStoredTextSize());
+    applyTextSize(next);
+    showSuccess(`文字の大きさ:${TEXT_SIZE_LABEL[next]}`);
+  };
 
   return (
     <div className="min-h-screen flex flex-col relative bg-white shadow-xl overflow-hidden">
-      <header className="bg-blue-600 text-white p-4 shadow-md z-10 sticky top-0 flex items-center justify-between">
-        <div className="flex flex-col">
-          <h1 className="text-xl font-bold tracking-wider">katahimo 訪問管理</h1>
-          <span className="text-[10px] opacity-70 font-mono">Ver. 0.1 (katahimo-app)</span>
+      {/* 「とても大きい」の文字サイズでも横に溢れないよう、名前は縮めてよい場所(truncate)にし、
+          押す場所(Aa・設定)は縮めない(flex-shrink-0)。 */}
+      <header className="bg-app-primary text-white px-4 py-3 shadow-md z-10 sticky top-0 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-col">
+          <h1 className="truncate text-lg font-bold">katahimo 訪問管理</h1>
+          <span className="truncate text-sm opacity-90">{staff.name} さん</span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium opacity-90">{staff.name}</span>
-          <button
-            type="button"
-            onClick={() => setShowSettings(true)}
-            className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
-            title="設定"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={onLogout}
-            className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
-            title="ログアウト"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-              />
-            </svg>
-          </button>
+        <div className="flex flex-shrink-0 items-center gap-2">
+          <HeaderButton onClick={handleCycleTextSize} title="文字の大きさを変える">
+            Aa
+          </HeaderButton>
+          <HeaderButton onClick={() => setShowSettings(true)} title="設定">
+            ⚙️ 設定
+          </HeaderButton>
         </div>
       </header>
 
@@ -107,7 +116,7 @@ function AppShell({ staff, onLogout }: { staff: StaffView; onLogout: () => void 
       </main>
 
       <nav
-        className="fixed bottom-0 left-1/2 -translate-x-1/2 z-20 flex bg-white border-t border-gray-200"
+        className="fixed bottom-0 left-1/2 -translate-x-1/2 z-20 flex h-16 bg-white border-t border-gray-200"
         style={{ width: '100%', maxWidth: '480px' }}
       >
         {TABS.map((tab) => (
@@ -115,17 +124,21 @@ function AppShell({ staff, onLogout }: { staff: StaffView; onLogout: () => void 
             key={tab.key}
             type="button"
             onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 py-2 flex flex-col items-center gap-0.5 text-xs font-bold border-t-2 transition-colors ${
-              activeTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400'
+            className={`flex-1 h-full flex flex-col items-center justify-center gap-0.5 text-sm font-bold border-t-2 transition-colors ${
+              activeTab === tab.key
+                ? 'border-app-primary text-app-primary'
+                : 'border-transparent text-app-muted'
             }`}
           >
-            <span className="text-lg leading-none">{tab.icon}</span>
+            <span className="text-2xl leading-none">{tab.icon}</span>
             <span>{tab.label}</span>
           </button>
         ))}
       </nav>
 
-      {showSettings && <SettingsModal staff={staff} onClose={() => setShowSettings(false)} />}
+      {showSettings && (
+        <SettingsModal staff={staff} onClose={() => setShowSettings(false)} onLogout={onLogout} />
+      )}
     </div>
   );
 }
@@ -151,7 +164,7 @@ export function App() {
   if (staff === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-4 border-gray-200 loading-spinner" />
+        <LoadingBlock />
       </div>
     );
   }

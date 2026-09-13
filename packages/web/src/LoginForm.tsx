@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { StaffView } from './api';
 import { login } from './api';
 import { getDemoRuntime, IS_DEMO_MODE } from './demo/demoRuntime';
+import { Button, toFriendlyMessage } from './ui';
 
 /**
  * GAS版(gas-childcare-visit-app/index.html)のログインモーダルと同じ見た目・文言にしている
@@ -23,6 +24,7 @@ export function LoginForm({
   const [tenantSlug, setTenantSlug] = useState(demoRuntime?.tenantSlug ?? 'demo');
   const [email, setEmail] = useState(defaultAccount?.email ?? 'admin@example.com');
   const [password, setPassword] = useState(defaultAccount?.password ?? '');
+  const [showPassword, setShowPassword] = useState(false);
 
   const mutation = useMutation({
     mutationFn: () => login(tenantSlug, email, password),
@@ -66,29 +68,34 @@ export function LoginForm({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              placeholder="ex: staff@example.com"
-              className="w-full p-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              placeholder="例)staff@example.com"
+              className="w-full p-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-app-primary focus:outline-none"
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="loginPassword">
               パスワード
             </label>
-            <input
-              id="loginPassword"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="••••••••"
-              className="w-full p-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            />
+            <div className="flex gap-2">
+              <input
+                id="loginPassword"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="••••••••"
+                className="flex-1 min-w-0 p-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-app-primary focus:outline-none"
+              />
+              <Button variant="outline" size="sub" onClick={() => setShowPassword((v) => !v)}>
+                {showPassword ? '隠す' : '👁 見る'}
+              </Button>
+            </div>
           </div>
         </div>
 
         {demoRuntime && demoRuntime.credentials.length > 0 && (
           <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 space-y-2">
-            <p className="text-xs text-amber-900 font-medium">デモ用アカウント(タップで入力)</p>
+            <p className="text-sm text-amber-900 font-medium">デモ用アカウント(タップで入力)</p>
             {demoRuntime.credentials.map((account) => (
               <button
                 key={account.email}
@@ -98,7 +105,7 @@ export function LoginForm({
                   setEmail(account.email);
                   setPassword(account.password);
                 }}
-                className="w-full text-left text-xs bg-white hover:bg-amber-100 border border-amber-200 rounded-lg px-2 py-1.5"
+                className="w-full text-left text-sm bg-white active:bg-amber-100 border border-amber-200 rounded-lg px-2 py-1.5"
               >
                 <span className="font-bold">{account.label}</span> {account.name} / {account.email} /{' '}
                 {account.password}
@@ -107,25 +114,17 @@ export function LoginForm({
           </div>
         )}
 
-        <div className="text-red-500 text-sm text-center min-h-[1.25rem]">
-          {mutation.isError ? mutation.error.message : ''}
+        <div className="text-app-danger text-sm text-center min-h-[1.25rem]">
+          {mutation.isError ? toFriendlyMessage(mutation.error, 'ログイン', mutation.error.message) : ''}
         </div>
 
-        <button
-          type="submit"
-          disabled={mutation.isPending}
-          className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl transition-colors"
-        >
+        <Button variant="primary" fullWidth type="submit" disabled={mutation.isPending}>
           {mutation.isPending ? 'ログイン中…' : 'ログイン'}
-        </button>
+        </Button>
 
-        <button
-          type="button"
-          onClick={() => onForgotPassword({ tenantSlug, email })}
-          className="w-full text-sm text-gray-500 hover:text-gray-700 underline"
-        >
-          パスワードをお忘れですか?
-        </button>
+        <Button variant="subtle" fullWidth onClick={() => onForgotPassword({ tenantSlug, email })}>
+          パスワードを忘れたときはこちら
+        </Button>
       </form>
     </div>
   );

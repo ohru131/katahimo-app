@@ -22,7 +22,7 @@ interface AdminTargetStaffContextValue {
 const AdminTargetStaffContext = createContext<AdminTargetStaffContextValue | null>(null);
 
 /**
- * 管理者向け「対象スタッフ」選択を予定タブ・勤怠タブで共有する。GAS版index.htmlの
+ * 管理者向け「対象スタッフ」選択をきょうの予定タブ・出勤簿タブで共有する。GAS版index.htmlの
  * sharedAdminTargetStaffName/loadSharedAdminStaffList_/onAdminTargetStaffChange_と同じ設計
  * (どちらのタブを先に開いても一覧取得は1回だけ、選択もタブをまたいで保持される)。
  */
@@ -58,7 +58,7 @@ export function useAdminTargetStaff(): AdminTargetStaffContextValue {
 }
 
 /**
- * 「対象スタッフ(管理者用)」セレクタ。予定タブ・勤怠タブの両方から使う共通部品
+ * 「表示するスタッフ」セレクタ。きょうの予定タブ・出勤簿タブの両方から使う共通部品
  * (GAS版のscheduleStaffSelect/pastScheduleStaffSelectと同じ、選択はタブをまたいで共有される)。
  * 管理者以外には何も表示しない。
  */
@@ -68,17 +68,17 @@ export function AdminTargetStaffSelector() {
 
   return (
     <div className="mb-3">
-      <label className="block text-xs font-bold text-gray-600 mb-1" htmlFor="adminTargetStaffSelect">
-        対象スタッフ(管理者用)
+      <label className="block text-sm font-bold text-app-text mb-1" htmlFor="adminTargetStaffSelect">
+        表示するスタッフ
       </label>
       <select
         id="adminTargetStaffSelect"
         value={targetStaffId}
         onChange={(e) => setTargetStaffId(e.target.value)}
-        className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+        className="w-full min-h-[48px] px-3 border border-gray-300 rounded-btn text-base text-app-text focus:ring-2 focus:ring-app-primary"
       >
         {!staffList.some((s) => s.id === targetStaffId) && (
-          <option value={targetStaffId}>読み込み中...</option>
+          <option value={targetStaffId}>読み込んでいます…</option>
         )}
         {staffList.map((s) => (
           <option key={s.id} value={s.id}>

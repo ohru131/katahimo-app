@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { requestPasswordReset, resetPasswordWithCode } from '../api';
+import { Button, toFriendlyMessage } from '../ui';
 
 /**
  * パスワード再設定。GAS版 Auth.js の requestPasswordReset / resetPasswordWithCode に対応する画面。
@@ -25,6 +26,7 @@ export function ForgotPasswordForm({
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [mismatch, setMismatch] = useState(false);
   // 「コードを送った」画面へ進んだか。送信済みでもメールが届かない場合に備え、戻れるようにする。
   const [codeSent, setCodeSent] = useState(false);
@@ -49,7 +51,7 @@ export function ForgotPasswordForm({
   };
 
   const inputClass =
-    'w-full p-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:outline-none';
+    'w-full p-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-app-primary focus:outline-none';
 
   return (
     <div className="fixed inset-0 bg-gray-900 z-50 flex items-center justify-center p-4">
@@ -65,8 +67,8 @@ export function ForgotPasswordForm({
           <h2 className="text-2xl font-bold text-gray-800">パスワードの再設定</h2>
           <p className="text-sm text-gray-500 mt-1">
             {codeSent
-              ? 'メールに記載された認証コードを入力してください'
-              : '登録済みのメールアドレスに認証コードを送ります'}
+              ? 'メールに届いた6けたの番号を入力してください'
+              : '登録済みのメールアドレスに6けたの番号を送ります'}
           </p>
         </div>
 
@@ -103,7 +105,7 @@ export function ForgotPasswordForm({
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="resetCode">
-                  認証コード(6桁)
+                  メールに届いた6けたの番号
                 </label>
                 <input
                   id="resetCode"
@@ -120,15 +122,20 @@ export function ForgotPasswordForm({
                 <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="resetNewPassword">
                   新しいパスワード
                 </label>
-                <input
-                  id="resetNewPassword"
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                  autoComplete="new-password"
-                  className={inputClass}
-                />
+                <div className="flex gap-2">
+                  <input
+                    id="resetNewPassword"
+                    type={showPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    autoComplete="new-password"
+                    className={`flex-1 min-w-0 ${inputClass}`}
+                  />
+                  <Button variant="outline" size="sub" onClick={() => setShowPassword((v) => !v)}>
+                    {showPassword ? '隠す' : '👁 見る'}
+                  </Button>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="resetConfirm">
@@ -136,7 +143,7 @@ export function ForgotPasswordForm({
                 </label>
                 <input
                   id="resetConfirm"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
@@ -149,38 +156,40 @@ export function ForgotPasswordForm({
         </div>
 
         {codeSent && !resetMutation.isError && !mismatch && (
-          <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-2 leading-relaxed">
-            登録済みのメールアドレスであれば、認証コードを送信しました(有効期限30分)。
+          <p className="text-sm text-gray-500 bg-gray-50 rounded-lg p-2 leading-relaxed">
+            登録済みのメールアドレスであれば、6けたの番号をメールで送りました(有効期限30分)。
             届かない場合は、迷惑メールフォルダと入力したメールアドレスをご確認ください。
           </p>
         )}
 
-        <div className="text-red-500 text-sm text-center min-h-[1.25rem]">
+        <div className="text-app-danger text-sm text-center min-h-[1.25rem]">
           {mismatch
             ? '新しいパスワードが一致しません'
             : resetMutation.isError
-              ? resetMutation.error.message
+              ? toFriendlyMessage(resetMutation.error, 'パスワードの再設定', resetMutation.error.message)
               : requestMutation.isError
-                ? requestMutation.error.message
+                ? toFriendlyMessage(requestMutation.error, '番号の送信', requestMutation.error.message)
                 : ''}
         </div>
 
-        <button
+        <Button
+          variant="primary"
+          fullWidth
           type="submit"
           disabled={requestMutation.isPending || resetMutation.isPending}
-          className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl transition-colors"
         >
           {codeSent
             ? resetMutation.isPending
-              ? '再設定中…'
-              : 'パスワードを再設定'
+              ? 'このパスワードにしています…'
+              : 'このパスワードにする'
             : requestMutation.isPending
               ? '送信中…'
-              : '認証コードを送る'}
-        </button>
+              : '番号をメールで受け取る'}
+        </Button>
 
-        <button
-          type="button"
+        <Button
+          variant="subtle"
+          fullWidth
           // メールアドレスを入れ直すときは、前のコードと「コードが違います」の表示も消す。
           // 残しておくと、コードを再送した直後に古いエラーが出たままになる。
           onClick={
@@ -195,10 +204,9 @@ export function ForgotPasswordForm({
                 }
               : onCancel
           }
-          className="w-full text-sm text-gray-500 hover:text-gray-700 underline"
         >
           {codeSent ? 'メールアドレスを入力し直す' : 'ログイン画面に戻る'}
-        </button>
+        </Button>
       </form>
     </div>
   );

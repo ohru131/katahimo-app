@@ -9,16 +9,17 @@ import {
   saveGoogleChatWebhookSettings,
   saveReceiptDeadlineSettings,
 } from '../api';
+import { Button, ButtonRow, LoadingBlock, toFriendlyMessage, useFeedback } from '../ui';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { CouponAdminModal } from './CouponAdminModal';
 import { StaffAdminModal } from './StaffAdminModal';
-import { applyTextSize, getStoredTextSize, type TextSize } from './textSize';
-
-const TEXT_SIZE_OPTIONS: { value: TextSize; label: string }[] = [
-  { value: 'small', label: '小 (標準)' },
-  { value: 'medium', label: '中 (少し大きく)' },
-  { value: 'large', label: '大 (大きく)' },
-];
+import {
+  applyTextSize,
+  getStoredTextSize,
+  TEXT_SIZE_LABEL,
+  TEXT_SIZE_ORDER,
+  type TextSize,
+} from './textSize';
 
 /**
  * Gemini APIキー入力欄のプレースホルダ。平文は読み戻せないので、
@@ -63,11 +64,20 @@ function ModelOptions({ current, fetched }: { current: string; fetched: GeminiMo
  * 日報AI生成/OCR/通知の実処理(reportAi.ts usecases・container.tsのnotifier)が
  * この値を優先して使う(未設定なら.envのデフォルトにフォールバックする)。
  */
-export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: () => void }) {
+export function SettingsModal({
+  staff,
+  onClose,
+  onLogout,
+}: {
+  staff: StaffView;
+  onClose: () => void;
+  onLogout: () => void;
+}) {
   const [textSize, setTextSize] = useState<TextSize>(() => getStoredTextSize());
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showStaffAdmin, setShowStaffAdmin] = useState(false);
   const [showCouponAdmin, setShowCouponAdmin] = useState(false);
+  const { confirm } = useFeedback();
 
   const settingsQuery = useQuery({
     queryKey: ['admin-settings'],
@@ -127,7 +137,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
       const models = await listAvailableGeminiModels(typedKey || undefined);
       setModelOptions(models);
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e));
+      setSaveError(toFriendlyMessage(e, 'モデル一覧の取得', e instanceof Error ? e.message : undefined));
     } finally {
       setRefreshingModels(false);
     }
@@ -184,10 +194,15 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
       }
       onClose();
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e));
+      setSaveError(toFriendlyMessage(e, '設定の保存', e instanceof Error ? e.message : undefined));
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleLogout = async () => {
+    const ok = await confirm({ message: 'ログアウトしますか?', confirmLabel: 'ログアウトする' });
+    if (ok) onLogout();
   };
 
   return (
@@ -195,265 +210,270 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
       <div className="bg-white w-full max-w-sm rounded-xl shadow-xl flex flex-col max-h-[85vh]">
         <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
           <h3 className="font-bold text-gray-800">設定</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-gray-200 rounded-full text-gray-500"
-          >
-            &times;
-          </button>
+          <Button variant="subtle" size="sub" onClick={onClose}>
+            ✕ 閉じる
+          </Button>
         </div>
 
         <div className="p-6 space-y-6 overflow-y-auto">
           <div>
-            <h4 className="font-bold text-gray-700 mb-3">文字サイズ設定</h4>
+            <h4 className="font-bold text-gray-700 mb-3">文字の大きさ</h4>
             <div className="space-y-3">
-              {TEXT_SIZE_OPTIONS.map((opt) => (
+              {TEXT_SIZE_ORDER.map((size) => (
                 <label
-                  key={opt.value}
-                  className={`flex items-center space-x-3 p-3 rounded-lg border cursor-pointer hover:bg-gray-50 ${
-                    textSize === opt.value ? 'bg-blue-50 border-blue-200' : 'border-gray-200'
+                  key={size}
+                  className={`flex items-center space-x-3 p-3 rounded-lg border cursor-pointer active:bg-gray-50 ${
+                    textSize === size ? 'bg-app-primary-bg border-app-primary' : 'border-gray-200'
                   }`}
                 >
                   <input
                     type="radio"
                     name="textSize"
-                    value={opt.value}
-                    checked={textSize === opt.value}
-                    onChange={() => handleTextSizeChange(opt.value)}
-                    className="w-5 h-5 text-blue-600 focus:ring-blue-500 border-gray-300"
+                    value={size}
+                    checked={textSize === size}
+                    onChange={() => handleTextSizeChange(size)}
+                    className="w-5 h-5 text-app-primary focus:ring-app-primary border-gray-300"
                   />
-                  <span className="text-sm text-gray-700">{opt.label}</span>
+                  <span className="text-base text-app-text">{TEXT_SIZE_LABEL[size]}</span>
                 </label>
               ))}
             </div>
           </div>
 
           <div className="border-t pt-4">
-            <button
-              type="button"
-              onClick={() => setShowChangePassword(true)}
-              className="w-full py-2 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200"
-            >
+            <Button variant="subtle" fullWidth onClick={() => setShowChangePassword(true)}>
               パスワード変更
-            </button>
+            </Button>
           </div>
 
           {staff.isAdmin && (
-            <div className="border-t pt-4">
-              <button
-                type="button"
-                onClick={() => setShowStaffAdmin(true)}
-                className="w-full py-2 mb-2 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200"
-              >
+            <div className="border-t pt-4 space-y-3">
+              <Button variant="subtle" fullWidth onClick={() => setShowStaffAdmin(true)}>
                 スタッフ管理
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowCouponAdmin(true)}
-                className="w-full py-2 mb-4 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200"
-              >
+              </Button>
+              <Button variant="subtle" fullWidth onClick={() => setShowCouponAdmin(true)}>
                 クーポン管理
-              </button>
+              </Button>
 
-              <h4 className="text-sm font-bold text-red-600 mb-3">管理者設定</h4>
+              {/* Gemini APIキー・Webhook URL等はスタッフに関係ないので折りたたみ、
+                  「詳細設定(管理者のみ)」を開いた人だけに見せる(提案書「管理者設定」の折りたたみ)。
+                  中の項目名(Gemini APIキー等)は提案書の指示どおり変えていない。 */}
+              <details className="rounded-lg border border-gray-200">
+                <summary className="cursor-pointer select-none p-3 text-sm font-bold text-app-text">
+                  詳細設定(管理者のみ)
+                </summary>
 
-              {settingsQuery.isPending && (
-                <div className="flex justify-center py-4">
-                  <div className="w-6 h-6 rounded-full border-4 border-gray-200 loading-spinner" />
+                <div className="p-3 pt-0">
+                  {settingsQuery.isPending && <LoadingBlock />}
+
+                  {settingsQuery.data && (
+                    <>
+                      <label className="block text-sm font-bold text-gray-600 mb-1" htmlFor="geminiApiKey">
+                        Gemini APIキー
+                      </label>
+                      <div className="flex gap-1">
+                        <input
+                          id="geminiApiKey"
+                          type={showApiKey ? 'text' : 'password'}
+                          value={apiKeyInput}
+                          onChange={(e) => setApiKeyInput(e.target.value)}
+                          placeholder={apiKeyPlaceholder(settingsQuery.data)}
+                          className="flex-1 p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-app-primary"
+                        />
+                        <Button variant="outline" size="sub" onClick={() => setShowApiKey((v) => !v)}>
+                          {showApiKey ? '隠す' : '表示'}
+                        </Button>
+                      </div>
+                      <p className="text-sm text-app-muted mt-1">
+                        ※ 日報・事故報告のAI生成、領収書OCRに使用します。
+                        {settingsQuery.data.hasGeminiApiKey
+                          ? ' 保存済みのキーは表示できません。変更するときだけ新しいキーを入力してください(空のままなら現在のキーを維持します)。'
+                          : ' 空のまま保存はできません。'}
+                      </p>
+
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        <label
+                          className="block text-sm font-bold text-gray-600 mb-1"
+                          htmlFor="geminiReportModel"
+                        >
+                          日報・事故報告で使うモデル
+                        </label>
+                        <select
+                          id="geminiReportModel"
+                          value={reportModel}
+                          onChange={(e) => setReportModel(e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded text-sm mb-3 focus:ring-2 focus:ring-app-primary"
+                        >
+                          <ModelOptions current={reportModel} fetched={modelOptions} />
+                        </select>
+
+                        <label
+                          className="block text-sm font-bold text-gray-600 mb-1"
+                          htmlFor="geminiOcrModel"
+                        >
+                          領収書OCRで使うモデル
+                        </label>
+                        <select
+                          id="geminiOcrModel"
+                          value={ocrModel}
+                          onChange={(e) => setOcrModel(e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-app-primary"
+                        >
+                          <ModelOptions current={ocrModel} fetched={modelOptions} />
+                        </select>
+
+                        <Button
+                          variant="outline"
+                          size="sub"
+                          fullWidth
+                          className="mt-3"
+                          onClick={handleRefreshModels}
+                          disabled={refreshingModels}
+                        >
+                          {refreshingModels ? '取得中…' : '🔄 最新モデル一覧を取得'}
+                        </Button>
+                        <p className="text-sm text-app-muted mt-1">
+                          ※
+                          上のAPIキー入力欄に値があればその値で、空なら保存済みのキーで一覧を取得します(保存前の新しいキーでも確認できます)。モデルが使えなくなった場合はここで切り替えてください。
+                        </p>
+                      </div>
+
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        <label
+                          className="block text-sm font-bold text-gray-600 mb-1"
+                          htmlFor="gchatReportWebhook"
+                        >
+                          日報・事故報告 通知用 Webhook URL
+                        </label>
+                        <div className="flex gap-1">
+                          <input
+                            id="gchatReportWebhook"
+                            type={showReportWebhook ? 'text' : 'password'}
+                            value={reportWebhook}
+                            onChange={(e) => setReportWebhook(e.target.value)}
+                            className="flex-1 p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-app-primary"
+                          />
+                          <Button
+                            variant="outline"
+                            size="sub"
+                            onClick={() => setShowReportWebhook((v) => !v)}
+                          >
+                            {showReportWebhook ? '隠す' : '表示'}
+                          </Button>
+                        </div>
+                        <p className="text-sm text-app-muted mt-1">
+                          ※ 日報・事故報告・訪問完了通知の送信先です。空のまま保存はできません。
+                        </p>
+
+                        <label
+                          className="block text-sm font-bold text-gray-600 mt-3 mb-1"
+                          htmlFor="gchatReceiptWebhook"
+                        >
+                          領収書登録 通知用 Webhook URL
+                        </label>
+                        <div className="flex gap-1">
+                          <input
+                            id="gchatReceiptWebhook"
+                            type={showReceiptWebhook ? 'text' : 'password'}
+                            value={receiptWebhook}
+                            onChange={(e) => setReceiptWebhook(e.target.value)}
+                            className="flex-1 p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-app-primary"
+                          />
+                          <Button
+                            variant="outline"
+                            size="sub"
+                            onClick={() => setShowReceiptWebhook((v) => !v)}
+                          >
+                            {showReceiptWebhook ? '隠す' : '表示'}
+                          </Button>
+                        </div>
+                        <p className="text-sm text-app-muted mt-1">
+                          ※ 領収書登録通知の送信先です。空のまま保存はできません。
+                        </p>
+                      </div>
+
+                      {/* 締め日まわり(doc/14 §10)。取り消せる期限がこの2つから決まるので、
+                          意味が分かるよう1箇所にまとめて出す。 */}
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        <p className="text-sm font-bold text-gray-600 mb-2">領収書の締め日</p>
+
+                        <label className="block text-sm text-gray-600 mb-1" htmlFor="receiptClosingDay">
+                          会計の締め日
+                        </label>
+                        <select
+                          id="receiptClosingDay"
+                          value={closingDay}
+                          onChange={(e) => setClosingDay(e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-app-primary"
+                        >
+                          <option value="">月末</option>
+                          {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                            <option key={day} value={String(day)}>
+                              {day}日
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-sm text-app-muted mt-1">
+                          ※ 29〜31日は選べません(2月に存在しないため)。月末で締める場合は「月末」を選びます。
+                        </p>
+
+                        <label
+                          className="block text-sm text-gray-600 mt-3 mb-1"
+                          htmlFor="receiptCancellableDays"
+                        >
+                          領収書を取り消せる日数
+                        </label>
+                        <input
+                          id="receiptCancellableDays"
+                          type="number"
+                          min={0}
+                          max={14}
+                          value={cancellableDays}
+                          onChange={(e) => setCancellableDays(e.target.value)}
+                          className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-app-primary"
+                        />
+                        <p className="text-sm text-app-muted mt-1">
+                          ※
+                          暦日で数えます(訪問保育は土日祝日も訪問があるため)。締め日が先に来る場合は締め日が優先され、締め間際の領収書は取り消せる期間が短くなります。
+                        </p>
+                      </div>
+                    </>
+                  )}
+
+                  {settingsQuery.isError && (
+                    <p className="text-sm text-app-danger">
+                      {toFriendlyMessage(settingsQuery.error, '管理者設定の読み込み')}
+                    </p>
+                  )}
                 </div>
-              )}
-
-              {settingsQuery.data && (
-                <>
-                  <label className="block text-xs font-bold text-gray-600 mb-1" htmlFor="geminiApiKey">
-                    Gemini APIキー
-                  </label>
-                  <div className="flex gap-1">
-                    <input
-                      id="geminiApiKey"
-                      type={showApiKey ? 'text' : 'password'}
-                      value={apiKeyInput}
-                      onChange={(e) => setApiKeyInput(e.target.value)}
-                      placeholder={apiKeyPlaceholder(settingsQuery.data)}
-                      className="flex-1 p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowApiKey((v) => !v)}
-                      className="px-3 rounded border border-gray-300 text-xs text-gray-500 hover:bg-gray-50"
-                    >
-                      {showApiKey ? '隠す' : '表示'}
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    ※ 日報・事故報告のAI生成、領収書OCRに使用します。
-                    {settingsQuery.data.hasGeminiApiKey
-                      ? ' 保存済みのキーは表示できません。変更するときだけ新しいキーを入力してください(空のままなら現在のキーを維持します)。'
-                      : ' 空のまま保存はできません。'}
-                  </p>
-
-                  <div className="mt-4 pt-4 border-t border-gray-100">
-                    <label className="block text-xs font-bold text-gray-600 mb-1" htmlFor="geminiReportModel">
-                      日報・事故報告で使うモデル
-                    </label>
-                    <select
-                      id="geminiReportModel"
-                      value={reportModel}
-                      onChange={(e) => setReportModel(e.target.value)}
-                      className="w-full p-2 border border-gray-300 rounded text-sm mb-3 focus:ring-2 focus:ring-blue-500"
-                    >
-                      <ModelOptions current={reportModel} fetched={modelOptions} />
-                    </select>
-
-                    <label className="block text-xs font-bold text-gray-600 mb-1" htmlFor="geminiOcrModel">
-                      領収書OCRで使うモデル
-                    </label>
-                    <select
-                      id="geminiOcrModel"
-                      value={ocrModel}
-                      onChange={(e) => setOcrModel(e.target.value)}
-                      className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                    >
-                      <ModelOptions current={ocrModel} fetched={modelOptions} />
-                    </select>
-
-                    <button
-                      type="button"
-                      onClick={handleRefreshModels}
-                      disabled={refreshingModels}
-                      className="w-full mt-3 py-2 rounded-lg text-xs font-bold border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-60"
-                    >
-                      {refreshingModels ? '取得中…' : '🔄 最新モデル一覧を取得'}
-                    </button>
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      ※
-                      上のAPIキー入力欄に値があればその値で、空なら保存済みのキーで一覧を取得します(保存前の新しいキーでも確認できます)。モデルが使えなくなった場合はここで切り替えてください。
-                    </p>
-                  </div>
-
-                  <div className="mt-4 pt-4 border-t border-gray-100">
-                    <label
-                      className="block text-xs font-bold text-gray-600 mb-1"
-                      htmlFor="gchatReportWebhook"
-                    >
-                      日報・事故報告 通知用 Webhook URL
-                    </label>
-                    <div className="flex gap-1">
-                      <input
-                        id="gchatReportWebhook"
-                        type={showReportWebhook ? 'text' : 'password'}
-                        value={reportWebhook}
-                        onChange={(e) => setReportWebhook(e.target.value)}
-                        className="flex-1 p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowReportWebhook((v) => !v)}
-                        className="px-3 rounded border border-gray-300 text-xs text-gray-500 hover:bg-gray-50"
-                      >
-                        {showReportWebhook ? '隠す' : '表示'}
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      ※ 日報・事故報告・訪問完了通知の送信先です。空のまま保存はできません。
-                    </p>
-
-                    <label
-                      className="block text-xs font-bold text-gray-600 mt-3 mb-1"
-                      htmlFor="gchatReceiptWebhook"
-                    >
-                      領収書登録 通知用 Webhook URL
-                    </label>
-                    <div className="flex gap-1">
-                      <input
-                        id="gchatReceiptWebhook"
-                        type={showReceiptWebhook ? 'text' : 'password'}
-                        value={receiptWebhook}
-                        onChange={(e) => setReceiptWebhook(e.target.value)}
-                        className="flex-1 p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowReceiptWebhook((v) => !v)}
-                        className="px-3 rounded border border-gray-300 text-xs text-gray-500 hover:bg-gray-50"
-                      >
-                        {showReceiptWebhook ? '隠す' : '表示'}
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      ※ 領収書登録通知の送信先です。空のまま保存はできません。
-                    </p>
-                  </div>
-
-                  {/* 締め日まわり(doc/14 §10)。取り消せる期限がこの2つから決まるので、
-                      意味が分かるよう1箇所にまとめて出す。 */}
-                  <div className="mt-4 pt-4 border-t border-gray-100">
-                    <p className="text-xs font-bold text-gray-600 mb-2">領収書の締め日</p>
-
-                    <label className="block text-xs text-gray-600 mb-1" htmlFor="receiptClosingDay">
-                      会計の締め日
-                    </label>
-                    <select
-                      id="receiptClosingDay"
-                      value={closingDay}
-                      onChange={(e) => setClosingDay(e.target.value)}
-                      className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">月末</option>
-                      {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
-                        <option key={day} value={String(day)}>
-                          {day}日
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      ※ 29〜31日は選べません(2月に存在しないため)。月末で締める場合は「月末」を選びます。
-                    </p>
-
-                    <label className="block text-xs text-gray-600 mt-3 mb-1" htmlFor="receiptCancellableDays">
-                      領収書を取り消せる日数
-                    </label>
-                    <input
-                      id="receiptCancellableDays"
-                      type="number"
-                      min={0}
-                      max={14}
-                      value={cancellableDays}
-                      onChange={(e) => setCancellableDays(e.target.value)}
-                      className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                    />
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      ※
-                      暦日で数えます(訪問保育は土日祝日も訪問があるため)。締め日が先に来る場合は締め日が優先され、締め間際の領収書は取り消せる期間が短くなります。
-                    </p>
-                  </div>
-                </>
-              )}
-
-              {settingsQuery.isError && <p className="text-red-500 text-sm">{settingsQuery.error.message}</p>}
+              </details>
             </div>
           )}
 
-          {saveError && <p className="text-red-500 text-sm">{saveError}</p>}
+          {saveError && <p className="text-sm text-app-danger">{saveError}</p>}
+
+          <div className="border-t pt-4 space-y-3">
+            <Button variant="outline" fullWidth onClick={handleLogout}>
+              ログアウト
+            </Button>
+            <p className="text-center text-sm text-app-muted">Ver. 0.1 (katahimo-app)</p>
+          </div>
         </div>
 
-        <div className="p-4 border-t bg-gray-50 rounded-b-xl flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-bold rounded-lg hover:bg-gray-300"
-          >
-            キャンセル
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || (staff.isAdmin && settingsQuery.isPending)}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-60"
-          >
-            {saving ? '保存中…' : '保存して閉じる'}
-          </button>
+        <div className="p-4 border-t bg-gray-50 rounded-b-xl">
+          <ButtonRow>
+            <Button variant="subtle" fullWidth onClick={onClose}>
+              キャンセル
+            </Button>
+            <Button
+              variant="primary"
+              fullWidth
+              onClick={handleSave}
+              disabled={saving || (staff.isAdmin && settingsQuery.isPending)}
+            >
+              {saving ? '保存中…' : '保存して閉じる'}
+            </Button>
+          </ButtonRow>
         </div>
       </div>
 

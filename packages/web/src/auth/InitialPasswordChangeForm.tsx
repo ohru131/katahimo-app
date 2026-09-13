@@ -2,6 +2,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { StaffView } from '../api';
 import { changePassword, fetchMe } from '../api';
+import { Button, toFriendlyMessage } from '../ui';
 
 /**
  * 初期パスワードのままログインした人に、変更を終えるまで他の画面を見せない。
@@ -22,6 +23,7 @@ export function InitialPasswordChangeForm({
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [mismatch, setMismatch] = useState(false);
 
   const mutation = useMutation({
@@ -40,7 +42,7 @@ export function InitialPasswordChangeForm({
   });
 
   const inputClass =
-    'w-full p-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:outline-none';
+    'w-full p-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-app-primary focus:outline-none';
 
   return (
     <div className="fixed inset-0 bg-gray-900 z-50 flex items-center justify-center p-4">
@@ -63,7 +65,7 @@ export function InitialPasswordChangeForm({
           </p>
         </div>
 
-        <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-2">
+        <p className="text-sm text-gray-500 bg-gray-50 rounded-lg p-2">
           {staff.name} 様({staff.email})
         </p>
 
@@ -74,7 +76,7 @@ export function InitialPasswordChangeForm({
             </label>
             <input
               id="initialCurrent"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               required
@@ -86,15 +88,20 @@ export function InitialPasswordChangeForm({
             <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="initialNew">
               新しいパスワード
             </label>
-            <input
-              id="initialNew"
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-              autoComplete="new-password"
-              className={inputClass}
-            />
+            <div className="flex gap-2">
+              <input
+                id="initialNew"
+                type={showPassword ? 'text' : 'password'}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                autoComplete="new-password"
+                className={`flex-1 min-w-0 ${inputClass}`}
+              />
+              <Button variant="outline" size="sub" onClick={() => setShowPassword((v) => !v)}>
+                {showPassword ? '隠す' : '👁 見る'}
+              </Button>
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="initialConfirm">
@@ -102,7 +109,7 @@ export function InitialPasswordChangeForm({
             </label>
             <input
               id="initialConfirm"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
@@ -112,25 +119,21 @@ export function InitialPasswordChangeForm({
           </div>
         </div>
 
-        <div className="text-red-500 text-sm text-center min-h-[1.25rem]">
-          {mismatch ? '新しいパスワードが一致しません' : mutation.isError ? mutation.error.message : ''}
+        <div className="text-app-danger text-sm text-center min-h-[1.25rem]">
+          {mismatch
+            ? '新しいパスワードが一致しません'
+            : mutation.isError
+              ? toFriendlyMessage(mutation.error, 'パスワードの変更', mutation.error.message)
+              : ''}
         </div>
 
-        <button
-          type="submit"
-          disabled={mutation.isPending}
-          className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl transition-colors"
-        >
+        <Button variant="primary" fullWidth type="submit" disabled={mutation.isPending}>
           {mutation.isPending ? '変更中…' : 'パスワードを変更して続ける'}
-        </button>
+        </Button>
 
-        <button
-          type="button"
-          onClick={onLogout}
-          className="w-full text-sm text-gray-500 hover:text-gray-700 underline"
-        >
+        <Button variant="subtle" fullWidth onClick={onLogout}>
           ログアウト
-        </button>
+        </Button>
       </form>
     </div>
   );

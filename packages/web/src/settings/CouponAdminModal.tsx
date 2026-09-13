@@ -9,6 +9,7 @@ import type {
   CouponView,
 } from '../api';
 import { createCoupon, fetchCouponsForAdmin, updateCoupon } from '../api';
+import { Button, EmptyState, LoadingBlock, toFriendlyMessage } from '../ui';
 
 /** 割引条件の表示(例 '500円引き' '10%引き')。doc/14 §9の2種別に対応。 */
 function discountLabel(coupon: Pick<CouponView, 'discountKind' | 'discountAmountYen' | 'discountPercent'>) {
@@ -29,9 +30,9 @@ function conditionLabels(coupon: CouponView): string[] {
           : 'どなたか';
     labels.push(`🎂 ${subject}の誕生月`);
   }
-  if (coupon.audience === 'assigned') labels.push('配布した顧客のみ');
-  if (coupon.usageLimitKind === 'once_per_customer') labels.push('顧客ごと1回まで');
-  if (coupon.usageLimitKind === 'once_per_customer_per_year') labels.push('顧客ごと年1回まで');
+  if (coupon.audience === 'assigned') labels.push('配布したお客様のみ');
+  if (coupon.usageLimitKind === 'once_per_customer') labels.push('お客様ごと1回まで');
+  if (coupon.usageLimitKind === 'once_per_customer_per_year') labels.push('お客様ごと年1回まで');
   return labels;
 }
 
@@ -143,7 +144,15 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
     },
   });
 
-  const errorMessage = createMutation.error?.message ?? toggleActiveMutation.error?.message ?? null;
+  const errorMessage = createMutation.isError
+    ? toFriendlyMessage(createMutation.error, 'クーポンの登録', createMutation.error.message)
+    : toggleActiveMutation.isError
+      ? toFriendlyMessage(
+          toggleActiveMutation.error,
+          'クーポンの切りかえ',
+          toggleActiveMutation.error.message,
+        )
+      : null;
   const busy = createMutation.isPending || toggleActiveMutation.isPending;
 
   return (
@@ -151,13 +160,9 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
       <div className="bg-white w-full max-w-lg rounded-xl shadow-xl flex flex-col max-h-[90vh]">
         <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
           <h3 className="font-bold text-gray-800 text-sm">🎟️ クーポン管理</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-gray-200 rounded-full text-gray-500"
-          >
-            &times;
-          </button>
+          <Button variant="subtle" size="sub" onClick={onClose}>
+            ✕ 閉じる
+          </Button>
         </div>
 
         <div className="p-4 space-y-4 overflow-y-auto">
@@ -168,7 +173,7 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
             }}
             className="space-y-2 bg-gray-50 rounded-lg p-3"
           >
-            <h4 className="text-xs font-bold text-gray-600">クーポンを追加</h4>
+            <h4 className="text-sm font-bold text-gray-600">クーポンを追加</h4>
             <div className="flex gap-2">
               <input
                 value={code}
@@ -230,7 +235,7 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="flex gap-2 items-center">
-              <label className="text-xs text-gray-500 shrink-0" htmlFor="couponValidFrom">
+              <label className="text-sm text-gray-500 shrink-0" htmlFor="couponValidFrom">
                 有効期間
               </label>
               <input
@@ -240,7 +245,7 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
                 onChange={(e) => setValidFrom(e.target.value)}
                 className="flex-1 min-w-0 p-2 border border-gray-300 rounded text-sm"
               />
-              <span className="text-gray-400 text-xs">〜</span>
+              <span className="text-app-muted text-sm">〜</span>
               <input
                 type="date"
                 value={validTo}
@@ -249,12 +254,12 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
                 className="flex-1 min-w-0 p-2 border border-gray-300 rounded text-sm"
               />
             </div>
-            <p className="text-[10px] text-gray-400">※ 空欄はそれぞれ「下限なし」「無期限」になります。</p>
+            <p className="text-sm text-app-muted">※ 空欄はそれぞれ「下限なし」「無期限」になります。</p>
 
             {/* 適用条件・配布先・使用上限(doc/14 §9)。ここで決めた条件はサーバー側が判定するので、
                 現場のスタッフは日報画面で「使えるものだけ」を見ることになる。 */}
             <div className="flex gap-2 items-center">
-              <label className="text-xs text-gray-500 shrink-0 w-14" htmlFor="couponEligibilityKind">
+              <label className="text-sm text-gray-500 shrink-0 w-14" htmlFor="couponEligibilityKind">
                 使える日
               </label>
               <select
@@ -281,7 +286,7 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="flex gap-2 items-center">
-              <label className="text-xs text-gray-500 shrink-0 w-14" htmlFor="couponAudience">
+              <label className="text-sm text-gray-500 shrink-0 w-14" htmlFor="couponAudience">
                 使える人
               </label>
               <select
@@ -290,8 +295,8 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
                 onChange={(e) => setAudience(e.target.value as CouponAudience)}
                 className="flex-1 min-w-0 p-2 border border-gray-300 rounded text-sm bg-white"
               >
-                <option value="all">全ての顧客</option>
-                <option value="assigned">配布した顧客のみ</option>
+                <option value="all">すべてのお客様</option>
+                <option value="assigned">配布したお客様のみ</option>
               </select>
               <select
                 value={usageLimitKind}
@@ -300,18 +305,18 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
                 className="flex-1 min-w-0 p-2 border border-gray-300 rounded text-sm bg-white"
               >
                 <option value="unlimited">回数制限なし</option>
-                <option value="once_per_customer">顧客ごと1回まで</option>
-                <option value="once_per_customer_per_year">顧客ごと年1回まで</option>
+                <option value="once_per_customer">お客様ごと1回まで</option>
+                <option value="once_per_customer_per_year">お客様ごと年1回まで</option>
               </select>
             </div>
             {audience === 'assigned' && (
-              <p className="text-[10px] text-gray-400">
-                ※「配布した顧客のみ」は、顧客カルテの「クーポン」から配ってはじめて使えるようになります。
+              <p className="text-sm text-app-muted">
+                ※「配布したお客様のみ」は、お客様の情報の「クーポン」から配ってはじめて使えるようになります。
               </p>
             )}
             {eligibilityKind === 'birthday_month' && (
-              <p className="text-[10px] text-gray-400">
-                ※ 生年月日が登録されている方だけが対象です(顧客カルテで登録できます)。
+              <p className="text-sm text-app-muted">
+                ※ 生年月日が登録されている方だけが対象です(お客様の情報で登録できます)。
               </p>
             )}
 
@@ -323,25 +328,27 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
               className="w-full p-2 border border-gray-300 rounded text-sm"
             />
 
-            <button
-              type="submit"
-              disabled={busy}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-bold rounded"
-            >
+            <Button variant="primary" fullWidth type="submit" disabled={busy}>
               {createMutation.isPending ? '登録中…' : '登録する'}
-            </button>
+            </Button>
           </form>
 
-          {notice && <p className="text-green-600 text-xs">{notice}</p>}
-          {errorMessage && <p className="text-red-500 text-xs">{errorMessage}</p>}
+          {notice && <p className="text-sm text-app-done">{notice}</p>}
+          {errorMessage && <p className="text-sm text-app-danger">{errorMessage}</p>}
 
-          {couponsQuery.isPending && (
-            <div className="flex justify-center py-6">
-              <div className="w-6 h-6 rounded-full border-4 border-gray-200 loading-spinner" />
-            </div>
-          )}
+          {couponsQuery.isPending && <LoadingBlock />}
           {couponsQuery.isError && (
-            <p className="text-red-500 text-sm">{(couponsQuery.error as Error).message}</p>
+            <p className="text-sm text-app-danger">
+              {toFriendlyMessage(couponsQuery.error, 'クーポン一覧の読み込み')}
+            </p>
+          )}
+
+          {couponsQuery.data && couponsQuery.data.length === 0 && (
+            <EmptyState
+              icon="🎟️"
+              title="クーポンがまだ登録されていません"
+              nextStep="上のフォームから追加してください"
+            />
           )}
 
           <ul className="space-y-2">
@@ -356,13 +363,13 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
                   <div className="min-w-0">
                     <p className="font-bold break-words">
                       {coupon.name}
-                      <span className="ml-2 text-xs font-normal text-gray-400">{coupon.code}</span>
+                      <span className="ml-2 text-sm font-normal text-app-muted">{coupon.code}</span>
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-sm text-gray-500">
                       {discountLabel(coupon)} ・ {periodLabel(coupon)}
                     </p>
                     {conditionLabels(coupon).length > 0 && (
-                      <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-1">
+                      <p className="text-sm text-gray-500 mt-0.5 flex flex-wrap gap-1">
                         {conditionLabels(coupon).map((label) => (
                           <span key={label} className="bg-gray-100 rounded px-1.5 py-0.5">
                             {label}
@@ -370,11 +377,13 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
                         ))}
                       </p>
                     )}
-                    {coupon.note && <p className="text-xs text-gray-400 break-words mt-0.5">{coupon.note}</p>}
+                    {coupon.note && (
+                      <p className="text-sm text-app-muted break-words mt-0.5">{coupon.note}</p>
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
                     {!coupon.active && (
-                      <span className="text-xs bg-gray-200 text-gray-600 rounded px-1.5 py-0.5">
+                      <span className="text-sm bg-gray-200 text-gray-600 rounded px-1.5 py-0.5">
                         廃止済み
                       </span>
                     )}
@@ -382,14 +391,14 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
                 </div>
 
                 <div className="flex flex-wrap gap-2 mt-2">
-                  <button
-                    type="button"
+                  <Button
+                    variant="outline"
+                    size="sub"
                     disabled={busy}
                     onClick={() => toggleActiveMutation.mutate(coupon)}
-                    className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-60"
                   >
                     {coupon.active ? '廃止にする' : '有効に戻す'}
-                  </button>
+                  </Button>
                 </div>
               </li>
             ))}
@@ -397,13 +406,9 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="p-4 border-t bg-gray-50 rounded-b-xl text-right">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700"
-          >
+          <Button variant="subtle" onClick={onClose}>
             閉じる
-          </button>
+          </Button>
         </div>
       </div>
     </div>

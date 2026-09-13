@@ -2,6 +2,7 @@ import { useMutation } from '@tanstack/react-query';
 import type { FormEvent } from 'react';
 import { useState } from 'react';
 import { changePassword } from '../api';
+import { Button, ButtonRow, toFriendlyMessage } from '../ui';
 
 /** GAS版index.htmlのopenChangePass()モーダルと同じ役割・見た目にしている。 */
 export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
@@ -13,6 +14,10 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const mutation = useMutation({
     mutationFn: () => changePassword(currentPassword, newPassword),
   });
+
+  const errorMessage = mutation.isError
+    ? toFriendlyMessage(mutation.error, 'パスワード変更', mutation.error.message)
+    : null;
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -32,17 +37,13 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
       >
         <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
           <h3 className="font-bold text-gray-800">パスワード変更</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-gray-200 rounded-full text-gray-500"
-          >
-            &times;
-          </button>
+          <Button variant="subtle" size="sub" onClick={onClose}>
+            ✕ 閉じる
+          </Button>
         </div>
         <div className="p-4 space-y-3 overflow-y-auto">
           <div>
-            <label className="block text-xs font-bold text-gray-600 mb-1" htmlFor="currentPassword">
+            <label className="block text-sm font-bold text-gray-600 mb-1" htmlFor="currentPassword">
               現在のパスワード
             </label>
             <input
@@ -51,11 +52,11 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
               required
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+              className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-app-primary"
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-gray-600 mb-1" htmlFor="newPassword">
+            <label className="block text-sm font-bold text-gray-600 mb-1" htmlFor="newPassword">
               新しいパスワード
             </label>
             <input
@@ -64,11 +65,11 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
               required
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+              className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-app-primary"
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-gray-600 mb-1" htmlFor="confirmPassword">
+            <label className="block text-sm font-bold text-gray-600 mb-1" htmlFor="confirmPassword">
               新しいパスワード(確認)
             </label>
             <input
@@ -77,29 +78,21 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
               required
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+              className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-app-primary"
             />
           </div>
-          <div className="text-red-500 text-xs min-h-[1rem]">
-            {validationError || (mutation.isError ? mutation.error.message : '')}
-          </div>
-          {mutation.isSuccess && <p className="text-green-600 text-xs">パスワードを変更しました</p>}
+          <div className="text-sm text-app-danger min-h-[1.25rem]">{validationError || errorMessage}</div>
+          {mutation.isSuccess && <p className="text-sm text-app-done">✅ パスワードを変更しました</p>}
         </div>
-        <div className="p-4 border-t bg-gray-50 rounded-b-xl flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-bold rounded-lg hover:bg-gray-300"
-          >
-            閉じる
-          </button>
-          <button
-            type="submit"
-            disabled={mutation.isPending}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-60"
-          >
-            {mutation.isPending ? '変更中…' : '変更する'}
-          </button>
+        <div className="p-4 border-t bg-gray-50 rounded-b-xl">
+          <ButtonRow>
+            <Button variant="subtle" fullWidth onClick={onClose}>
+              閉じる
+            </Button>
+            <Button variant="primary" fullWidth type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? '変更中…' : '変更する'}
+            </Button>
+          </ButtonRow>
         </div>
       </form>
     </div>
