@@ -69,6 +69,22 @@ export function formatJstTimeOnly(date: Date): string {
 }
 
 /**
+ * 'YYYY-MM-DD'(JST)に日数を足す。実費報告(領収書)の取り消し期限に使う(doc/14 §10)。
+ *
+ * 【営業日ではなく暦日で数える理由】
+ * 訪問保育は土日祝日も訪問がある(平日だけの業務ではない)。「2営業日」を土日を除いて
+ * 数えると、金曜の領収書の期限が火曜まで延びる一方で、土日に訪問したぶんの期限だけが
+ * 実質的に長くなる。曜日で扱いが変わる理由が業務側に無いので、暦日で数える。
+ */
+export function addDaysToJstDateKey(dateStr: string, days: number): string {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  // 日付の足し算だけなのでUTCの正午で作る(タイムゾーンで前後の日にずれない)。
+  const date = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1, 12));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
  * 'YYYY-MM'(JST)の月を、絶対時刻の半開区間 [from, to) に変換する。
  *
  * 上限を含めないのは、月末の23:59:59.999のような端の値を「その月に入れるか」で悩まずに済み、

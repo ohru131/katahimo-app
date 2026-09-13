@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
-import { listCouponsForSelection, listReceiptsForStaff } from '@katahimo/core';
+import { formatJstDateKey, listCouponsForSelection, listReceiptsForStaff } from '@katahimo/core';
 import * as schema from '@katahimo/db/schema';
 import { serializeTransactions } from '@katahimo/db/serialize-transactions';
 import type { Database } from '@katahimo/db/tenant-scope';
@@ -73,7 +73,9 @@ describe('seedDemoData(公開デモの初期データ投入)', () => {
     const tenantId = tenantRows.rows[0]?.id;
     if (!tenantId) throw new Error('デモテナントが作られていません');
 
-    const today = new Date().toISOString().slice(0, 10);
+    // シードはJSTの「今日」を基準に作る。テスト側がUTCで日付/月を作ると、日本時間の夜
+    // (UTCではまだ前日/前月)に走らせたときだけ落ちる(誕生月クーポンも領収書も月がずれる)。
+    const today = formatJstDateKey(new Date());
     const staffRows = await client.query<{ id: string }>(
       "SELECT id FROM staff WHERE email = 'admin@demo.example.com' LIMIT 1;",
     );

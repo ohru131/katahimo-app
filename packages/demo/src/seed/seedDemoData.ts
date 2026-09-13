@@ -53,7 +53,10 @@ function fullAddress(index: number): string {
  * (誕生月クーポンは年を見ず月だけで判定するため。usecases/coupons.tsのfindBirthdayPerson)。
  */
 function representativeBirthdayThisMonth(today: Date): string {
-  return `1990/${today.getUTCMonth() + 1}/15`;
+  // UTCの月ではなくJSTの月を使う。月初/月末の日本時間の夜はUTCではまだ前月で、
+  // そのまま使うと「今月生まれ」のつもりが先月生まれになり、誕生月クーポンがデモに出ない。
+  const jstMonth = Number(toJstDateIso(today).slice(5, 7));
+  return `1990/${jstMonth}/15`;
 }
 
 /** 月齢から生年月日('YYYY-MM-DD')を作る。「今日」基準なので、いつ見ても年齢が古びない。 */

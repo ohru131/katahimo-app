@@ -70,7 +70,7 @@ text(s, ML, 3.9, CW, 0.3, "資料の構成(全29ページ)", size=13, color=INK,
 chs = [
     ("第1章", "まず用語から", "表・主キー・外部キー・\nトランザクション・RLS", ACCENT, ACCENT_L, "P4–5"),
     ("第2章", "現状の構成", "34テーブルの全体像と、\nテナント分離・データ保護", GREEN, GREEN_L, "P6–17"),
-    ("第3章", "設計上の問題点", "customers 37列の肥大化ほか\n6件を自己申告", RED, RED_L, "P18–24"),
+    ("第3章", "設計上の問題点", "customers 39列の肥大化ほか\n6件を自己申告", RED, RED_L, "P18–24"),
     ("第4章", "相談事項", "先行して用意したスキーマと、\n判断いただきたい論点", VIOLET, VIOLET_L, "P25–29"),
 ]
 cx = ML
@@ -306,9 +306,9 @@ note(s, ML, 6.02, CW, 0.78, "例外は3つだけ",
      accent=AMBER, fill=AMBER_L, size=10.5, lsize=10)
 
 # ══════════════════════════════════════════════════════════════
-# 9. テーブル一覧① 稼働中の15枚
+# 9. テーブル一覧① 稼働中の16枚
 # ══════════════════════════════════════════════════════════════
-s = sl_("テーブル一覧① — 稼働中の15枚", "アプリが実際に読み書きしている表と、鍵になる制約",
+s = sl_("テーブル一覧① — 稼働中の16枚", "アプリが実際に読み書きしている表と、鍵になる制約",
         source="RLS = 行レベルセキュリティ(そのテナントの行しか見えなくするDB側の仕組み)")
 rows = [
     ["tenants", "法人(テナント)マスタ", "slug で一意。ログイン前に法人を特定する", "対象外"],
@@ -318,25 +318,27 @@ rows = [
     ["staff", "スタッフ。認証情報も兼ねる", "UNIQUE(tenant_id, email) / (tenant_id, id)", "○"],
     ["sessions", "ログインセッション", "生トークンは保存せずSHA-256のみ", "○"],
     ["password_reset_codes", "パスワード再設定の6桁コード", "HMACの検証子のみ保存。30分・5回で無効", "○"],
-    ["customers", "顧客(利用世帯の代表者)。37列", "UNIQUE(tenant_id, external_source, external_id)", "○"],
+    ["customers", "顧客(利用世帯の代表者)。39列", "UNIQUE(tenant_id, external_source, external_id)", "○"],
     ["family_members", "世帯構成員(子ども等)", "customers への複合FK。生年月日は date + 元表記", "○"],
     ["daily_reports", "保育日報。本文は項目ごとの5列", "staff と customers 双方への複合FK", "○"],
     ["accident_reports", "事故報告 / ヒヤリハット。本文11列", "同上。report_type は CHECK で2値に限定", "○"],
     ["receipts", "領収書。画像はオブジェクトストレージ", "金額は整数の円。billing_type で顧客請求/会社経費", "○"],
     ["attendance_days", "勤怠(出勤簿)1日分", "UNIQUE(tenant_id, staff_id, business_date)", "○"],
     ["coupons", "割引クーポンの種別マスタ", "UNIQUE(tenant_id, code)。廃止は active=false", "○"],
+    ["customer_coupons", "顧客へのクーポン配布", "UNIQUE(tenant_id, customer_id, coupon_id)", "○"],
     ["coupon_redemptions", "日報1件への割引クーポン適用記録", "UNIQUE(tenant_id, daily_report_id, coupon_id)", "○"],
 ]
 cc = {(0, 3): MUTED}
 table(s, ML, 1.25, CW, ["テーブル", "役割", "鍵になる制約・特徴", "RLS"], rows,
-      col_w=[2.2, 3.9, 5.4, 0.75], size=10, hsize=10.5, row_h=0.29, header_h=0.33,
+      # 16行に増えたので行高を詰める(0.29のままだと下の注記(y=6.0)に食い込む)。
+      col_w=[2.2, 3.9, 5.4, 0.75], size=10, hsize=10.5, row_h=0.27, header_h=0.33,
       first_bold=True, cell_colors=cc,
       aligns=[PP_ALIGN.LEFT, PP_ALIGN.LEFT, PP_ALIGN.LEFT, PP_ALIGN.CENTER])
 note(s, ML, 6.0, 6.0, 1.0, "「複合FK」とは(次章で図解します)",
      "外部キーを (tenant_id, customer_id) の2列セットにしたもの。「そのIDが本当に同じ法人の行か」を"
      "データベース自身に確かめさせるための工夫です。",
      accent=ACCENT, fill=ACCENT_L, size=11)
-note(s, ML + 6.33, 6.0, 6.0, 1.0, "この15枚が「土台」です",
+note(s, ML + 6.33, 6.0, 6.0, 1.0, "この16枚が「土台」です",
      "提案書の差別化要因(予約・請求・カルテ)は、次ページの18枚としてスキーマだけ先に用意してあります。",
      accent=ORANGE, fill=ORANGE_L, size=11)
 
@@ -372,7 +374,7 @@ table(s, ML, 1.22, CW, ["テーブル", "領域", "役割と、鍵になる制�
       first_bold=True, cell_colors=cc2,
       aligns=[PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.LEFT])
 text(s, ML, 6.52, CW, 0.4,
-     "この18枚も既存15枚と同じ規約(tenant_id + RLS + 複合外部キー + CHECK + updated_at トリガー)に載せてあります。"
+     "この18枚も既存16枚と同じ規約(tenant_id + RLS + 複合外部キー + CHECK + updated_at トリガー)に載せてあります。"
      "先に作った理由と、そこで迷った判断は第4章(P26・P27)で扱います。",
      size=10.5, color=MUTED, line=1.3)
 
@@ -759,9 +761,9 @@ sec_("第 3 章", "設計上の問題点(自己申告)",
      "気づいている弱点を6件並べます。ここが今回いちばんご意見をいただきたい部分です")
 
 # ══════════════════════════════════════════════════════════════
-# 18. 問題① customers 37列
+# 18. 問題① customers 39列
 # ══════════════════════════════════════════════════════════════
-s = sl_("問題① customers が37列に肥大化している", "外部CSVの全項目を1枚の表で受けた結果",
+s = sl_("問題① customers が39列に肥大化している", "外部CSVの全項目を1枚の表で受けた結果",
         source="packages/db/src/schema/customers.ts / doc/09 4.1節", accent=RED)
 text(s, ML, 1.2, CW, 0.3,
      "外部予約システム(RESERVA)の顧客CSVを「1項目も落とさず取り込む」方針にしたため、CSVの列がほぼそのまま列になっている。",
@@ -774,9 +776,10 @@ cats = [
     ("位置情報", 3, "緯度 / 経度 / 取込元の生表記", PINK),
     ("他システムの会員証", 1, "Benefit会員ID", PINK),
     ("運用区分", 6, "会員種別 / 状態 / 支払方法 / 支払状況 / 性別 / 年代", GREEN),
+    ("生年月日", 2, "日付型 / 元表記(誕生月クーポン用・手入力)", GREEN),
     ("日時", 7, "登録日 / 外部更新日 / 第2住所の期間2列 / 退会日 / 作成・更新", MUTED),
 ]
-text(s, ML, 1.58, 5.9, 0.28, "現状:1枚に8カテゴリが同居している", size=12, color=RED, bold=True)
+text(s, ML, 1.58, 5.9, 0.28, "現状:1枚に9カテゴリが同居している", size=12, color=RED, bold=True)
 yy = 1.9
 for nm, n, cols, col in cats:
     rect(s, ML, yy, 5.9, 0.38, fill=WHITE, border=LINE)
@@ -785,8 +788,9 @@ for nm, n, cols, col in cats:
     text(s, ML + 2.28, yy + 0.04, 0.55, 0.3, f"{n}列", size=10.5, color=INK, bold=True,
          align=PP_ALIGN.RIGHT)
     text(s, ML + 2.95, yy + 0.07, 2.9, 0.3, cols, size=9, color=MUTED)
-    yy += 0.44
-box(s, ML, yy, 5.9, 0.36, "合計 37列(1テーブル)", fill=RED_L, border=None, color=RED, size=11.5,
+    # カテゴリが9つに増えたので行間を詰める(0.44のままだと下の注記(y=6.13)に食い込む)。
+    yy += 0.40
+box(s, ML, yy, 5.9, 0.36, "合計 39列(1テーブル)", fill=RED_L, border=None, color=RED, size=11.5,
     bold=True)
 
 text(s, ML + 6.33, 1.58, 6.0, 0.28, "分けるとしたらこうなる(案)", size=12, color=GREEN, bold=True)
@@ -808,7 +812,7 @@ card(s, ML + 6.33, yy2 + 0.06, 6.0, 1.35, "分けた場合に払う代償", acce
     {"t": "分ける単位を間違えると、後から直すコストは今より高くなる"},
 ], body_size=10.5)
 note(s, ML, 6.13, CW, 0.8, "ご相談したいこと(相談①)",
-     "「37列は多すぎるので分けるべき」か、「顧客マスタなら37列は普通で分けるほうが害」か。判断の基準"
+     "「39列は多すぎるので分けるべき」か、「顧客マスタなら39列は普通で分けるほうが害」か。判断の基準"
      "(何列を超えたら、どういう単位で分けるか)をご教示いただきたいです。運用前なので、分けるなら今が最も安いタイミングです。",
      accent=RED, fill=RED_L, size=11)
 
@@ -1100,7 +1104,7 @@ for ttl, col, items in plans:
             [{"t": it, "s": 9} for it in items[1:]], size=9, line=1.3, gap=6, marker_color=col)
     cx += GW2 + GG2
 
-card(s, ML, 5.78, 6.0, 1.12, "既存15枚と同じ規約に載せてある", accent=GREEN, items=[
+card(s, ML, 5.78, 6.0, 1.12, "既存16枚と同じ規約に載せてある", accent=GREEN, items=[
     {"t": "tenant_id + RLS(FORCE)・(tenant_id, 参照先ID) の複合外部キー・金額は円の整数・"
           "updated_at はトリガー。張り忘れはCIが機械的に検出する"},
 ], body_size=10.5)
@@ -1152,7 +1156,7 @@ note(s, ML, 6.06, CW, 0.8, "ご相談したいこと(相談⑧)",
 s = sl_("ご相談したいこと(まとめ)", "優先度順。特に伺いたいのは ①②③⑨",
         source="doc/09 第5章「レビュー観点」/ doc/15 §6 に対応")
 rows = [
-    ["①", "customers 37列を分けるべきか", "19",
+    ["①", "customers 39列を分けるべきか", "19",
      "顧客マスタとして何列までが常識的か、分ける単位の基準。運用前の今が最も安く直せる"],
     ["②", "業務データ平文化の前提が妥当か", "14・20",
      "「保存時暗号化は本番基盤に任せる」という前提の置き方。本番未配備のまま進めてよいか"],

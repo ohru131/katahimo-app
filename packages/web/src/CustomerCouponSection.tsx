@@ -42,11 +42,13 @@ export function CustomerCouponSection({
   const [selectedCouponId, setSelectedCouponId] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
 
-  // 顧客を切り替えたときに前の顧客の入力値が残らないようにする
-  // (このコンポーネントはモーダル内で顧客ごとにマウントされ直すとは限らない)。
+  // 生年月日はcustomerQueryの解決後に届くので、届いた時点で入力欄へ反映する。
+  // 顧客そのものを切り替えたときに前の顧客の入力が残らないようにするのは、呼び出し側が
+  // key={customerId} でこのコンポーネントを作り直すことで担保している(CustomerDetail.tsx)。
+  // ここでcustomerIdを依存に足す手もあるが、効果の中でcustomerIdを読んでいないため
+  // 「使っていない依存」になり、意図が伝わらないうえにlintにも引っかかる。
   useEffect(() => {
     setDobInput(dobRaw ?? '');
-    setNotice(null);
   }, [dobRaw]);
 
   const assignedQuery = useQuery({

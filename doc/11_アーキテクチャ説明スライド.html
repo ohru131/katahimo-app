@@ -401,7 +401,7 @@
     <text class="sm" x="298" y="188" text-anchor="middle">UK(tenant_id, email)</text>
     <rect class="box" x="210" y="250" width="175" height="52" style="stroke:var(--c-core)"/>
     <text class="h mono" x="298" y="270" text-anchor="middle">customers</text>
-    <text class="sm" x="298" y="286" text-anchor="middle">37列・全て平文・ソフトデリート</text>
+    <text class="sm" x="298" y="286" text-anchor="middle">39列・全て平文・ソフトデリート</text>
     <text class="sm" x="298" y="298" text-anchor="middle">UK(tenant_id, 取込元, 外部ID)</text>
     <rect class="box" x="210" y="330" width="175" height="44" style="stroke:var(--c-ext)"/>
     <text class="h mono" x="298" y="349" text-anchor="middle">outbox_jobs</text>
@@ -450,7 +450,7 @@
   </div>
   <div class="foot"><span>packages/db/src/schema/*.ts / drizzle/0000_baseline_schema.sql / doc/09 2章 ER図</span><span>katahimo-app</span></div>
   <div class="notes">
-    テーブルは33本です。左から読みます。すべてが tenants にぶら下がり、その下に「認証まわり(staff系)」と「業務データ(customers系)」の2系統がある。矢印の色が参照元です。紫が staff を参照するもの、緑が customers を参照するもの。日報・事故報告・領収書は両方を参照します。例外は3つだけで、tenants だけが RLS の対象外、領収書の顧客だけが nullable(経費のみの領収書があるため)、セッションのトークンハッシュだけがテナントをまたいで一意です。暗号化列が残っているのは app_settings だけです(2026-09 の見直し。8枚目で話します)。提案書にある予約・請求・カルテは、まだこの図に存在しません。
+    テーブルは34本です。左から読みます。すべてが tenants にぶら下がり、その下に「認証まわり(staff系)」と「業務データ(customers系)」の2系統がある。矢印の色が参照元です。紫が staff を参照するもの、緑が customers を参照するもの。日報・事故報告・領収書は両方を参照します。例外は3つだけで、tenants だけが RLS の対象外、領収書の顧客だけが nullable(経費のみの領収書があるため)、セッションのトークンハッシュだけがテナントをまたいで一意です。暗号化列が残っているのは app_settings だけです(2026-09 の見直し。8枚目で話します)。提案書にある予約・請求・カルテは、まだこの図に存在しません。
   </div>
 </section>
 
@@ -606,7 +606,7 @@
   </div>
   <div class="foot"><span>packages/db/src/schema / drizzle/*.sql / infra/initdb/01_bootstrap.sql / packages/ingestion</span><span>katahimo-app</span></div>
   <div class="notes">
-    テーブルごとに判断せず、33本すべてで同じ規約に寄せています。強調したいのは3つ。1つ目、参照を全部「テナントIDを含む複合FK」にして、インデックスと一意制約も tenant_id 先頭にそろえていること。2つ目、暗号化列を残した唯一の場所(app_settings の資格情報)では2列ペアを崩さず、復号世代を記録し忘れた暗号文が作れないようにしていること。3つ目、マイグレーションで手を入れるのは FORCE RLS と set_updated_at トリガーの2種類だけで、それ以外は生成物のままだということ。updated_at をアプリ任せにせずDBトリガーに寄せたのは、UPDATE経路を足したときの書き忘れが、スプレッドシートへのミラーの取り残しという気付けない壊れ方につながるためです。運用前で移行対象が無いので、既存の暗号文は引き継がない判断にしています。
+    テーブルごとに判断せず、34本すべてで同じ規約に寄せています。強調したいのは3つ。1つ目、参照を全部「テナントIDを含む複合FK」にして、インデックスと一意制約も tenant_id 先頭にそろえていること。2つ目、暗号化列を残した唯一の場所(app_settings の資格情報)では2列ペアを崩さず、復号世代を記録し忘れた暗号文が作れないようにしていること。3つ目、マイグレーションで手を入れるのは FORCE RLS と set_updated_at トリガーの2種類だけで、それ以外は生成物のままだということ。updated_at をアプリ任せにせずDBトリガーに寄せたのは、UPDATE経路を足したときの書き忘れが、スプレッドシートへのミラーの取り残しという気付けない壊れ方につながるためです。運用前で移行対象が無いので、既存の暗号文は引き継がない判断にしています。
   </div>
 </section>
 
@@ -615,7 +615,7 @@
   <h2>列をどう分けたか <small>業務データは全て平文列</small></h2>
   <div class="cols w-3-2">
     <div>
-      <h3 class="muted" style="margin:.1em 0 .3em"><code>customers</code> の全37列(RESERVA CSVの全項目に対応・すべて平文)</h3>
+      <h3 class="muted" style="margin:.1em 0 .3em"><code>customers</code> の全39列(RESERVA CSVの全項目+手入力の生年月日・すべて平文)</h3>
       <table>
         <tr><th>カテゴリ</th><th>列</th><th>備考</th></tr>
         <tr><td>識別子 <span class="muted">4</span></td><td><code>id</code> / <code>tenant_id</code> / <code>external_source</code> / <code>external_id</code></td><td class="muted">識別子そのもの</td></tr>

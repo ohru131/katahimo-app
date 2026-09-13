@@ -870,7 +870,7 @@ export interface ReceiptListItemView {
   cancelledAt: string | null;
   cancellationReason: string | null;
   cancelledByStaffName: string | null;
-  /** いま取り消せるか(領収書の日付+2営業日まで)。falseなら取消ボタンを出さない。 */
+  /** いま取り消せるか(領収書の日付+2日まで。管理者は期限後も真)。falseなら取消ボタンを出さない。 */
   canCancel: boolean;
 }
 

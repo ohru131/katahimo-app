@@ -370,11 +370,12 @@ note(s, ML + 6.33, 5.75, 6.0, 1.15, "正直に申し上げる例外",
 s = sl_("窓口(ポート)の一覧 — 29本", "core が「外にこれをやってほしい」と宣言しているものの全体",
         source="packages/core/src/ports/*.ts")
 groups = [
-    ("データの読み書き(14本)", ACCENT, ACCENT_L,
+    ("データの読み書き(15本)", ACCENT, ACCENT_L,
      ["Tenant テナント", "Staff スタッフ", "Session セッション", "PasswordResetCode 再設定コード",
       "Customer 顧客", "FamilyMember 世帯構成員", "DailyReport 日報",
       "AccidentReport 事故報告", "Receipt 領収書", "AttendanceDay 勤怠",
-      "Coupon クーポン", "CouponRedemption クーポン適用記録",
+      "Coupon クーポン", "CustomerCoupon 顧客へのクーポン配布",
+      "CouponRedemption クーポン適用記録",
       "AppSettings 管理者設定", "TenantKey 暗号鍵"]),
     ("外部サービス(9本)", VIOLET, VIOLET_L,
      ["ReportAi 日報の文章生成(Gemini)", "Notifier 通知(Google Chat)",
@@ -794,7 +795,7 @@ card(s, ML + 6.33, 1.28, 6.0, 4.6, "判断をいただきたいもの", accent=V
     {"t": "先行整備した5ドメインを実装へ進める順番(③)"},
     {"t": "テストの薄い層と、運用の受け皿をどこまで作るか(④⑤)"},
     {"t": [("データベース設計の論点は別資料", {"bold": True}),
-           (":customers 37列の肥大化、業務データを平文にした前提、予約の二重取り防止、"
+           (":customers 39列の肥大化、業務データを平文にした前提、予約の二重取り防止、"
             "廃棄手順、監査の時期(doc/12 第3〜4章)", {})]},
     {"t": [("いちばん知りたいこと", {"bold": True}),
            (":自分では気づきようがない構造的な問題が、他にあるかどうか", {})]},

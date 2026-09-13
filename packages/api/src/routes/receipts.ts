@@ -7,6 +7,7 @@ import {
 } from '@katahimo/core';
 import { formatJstDateTime } from '@katahimo/core/domain';
 import { RECEIPT_BILLING_TYPES, type ReceiptBillingType } from '@katahimo/core/ports';
+import { idSchema } from '@katahimo/shared';
 import { Hono } from 'hono';
 import type { Container } from '../container';
 import { getAuthenticatedSession, resolveReportTargetStaffId } from '../session';
@@ -22,6 +23,15 @@ function isReceiptBillingType(value: unknown): value is ReceiptBillingType {
 
 /** 取消理由(任意の1行)の上限。 */
 const MAX_CANCELLATION_REASON_LENGTH = 200;
+
+/**
+ * パスパラメータのUUIDを検証する。uuid列との比較にUUID以外の文字列を渡すと、PostgreSQLが
+ * `invalid input syntax for type uuid` を投げて500になる。入力の形の誤りは400で返す。
+ */
+function parsePathId(value: string): string | null {
+  const parsed = idSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
 
 export function createReceiptRoutes(container: Container) {
   const app = new Hono();
@@ -39,7 +49,11 @@ export function createReceiptRoutes(container: Container) {
     const yearMonth = c.req.query('yearMonth') ?? '';
     const staffId = resolveReportTargetStaffId(session, c.req.query('staffId'));
 
-    const result = await listReceiptsForStaff(container, session.tenantId, staffId, yearMonth);
+    const result = await listReceiptsForStaff(container, session.tenantId, staffId, yearMonth, {
+      // 管理者は期限後も取り消せる(経理の締め処理で戻すことがあるため。doc/14 §10)。
+      // 一覧側でも同じ判定にしないと、取り消せるのにボタンが出ない状態になる。
+      ignoreDeadline: session.isAdmin,
+    });
     // jstMonthRangeが解釈できない形式のときだけnullになる。
     if (!result) {
       return c.json({ code: 'validation_failed', message: 'yearMonth はYYYY-MM形式で指定してください' }, 400);
@@ -51,12 +65,18 @@ export function createReceiptRoutes(container: Container) {
    * 領収書を取り消す(論理削除。doc/14 §10)。
    *
    * 会計の記録なので編集は用意していない。訂正は「取り消して登録し直す」の一択で、
-   * 取り消した行も一覧に残る。期限(領収書の日付+2営業日)はここでも見る
-   * (画面はボタンを出さないが、APIを直接叩けば通ってしまうため)。
+   * 取り消した行も一覧に残る。期限(領収書の日付+2日)はここでも見る
+   * (画面はボタンを出さないが、APIを直接叩けば通ってしまうため)。管理者だけは期限後も
+   * 取り消せる(経理が締め処理で戻すことがあるため)。
    */
   app.post('/:id/cancel', async (c) => {
     const session = await getAuthenticatedSession(c, container);
     if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    const receiptId = parsePathId(c.req.param('id'));
+    if (!receiptId) {
+      return c.json({ success: false, message: 'IDの形式が不正です' }, 400);
+    }
 
     const body = await c.req.json().catch(() => null);
     const rawReason = (body as Record<string, unknown> | null)?.reason;
@@ -74,9 +94,10 @@ export function createReceiptRoutes(container: Container) {
       );
     }
 
-    const result = await cancelReceipt(container, session.tenantId, c.req.param('id'), {
+    const result = await cancelReceipt(container, session.tenantId, receiptId, {
       requesterStaffId: session.staffId,
       allowOtherStaff: session.isAdmin,
+      ignoreDeadline: session.isAdmin,
       reason: typeof rawReason === 'string' ? rawReason : null,
     });
     if (!result.ok) {
@@ -88,7 +109,7 @@ export function createReceiptRoutes(container: Container) {
       const message =
         result.reason === 'already_cancelled'
           ? 'この領収書は既に取り消されています'
-          : '取り消せる期間(領収書の日付+2営業日)を過ぎています';
+          : '取り消せる期間(領収書の日付+2日)を過ぎています';
       return c.json({ success: false, message }, 400);
     }
     return c.json({ success: true });
@@ -104,7 +125,12 @@ export function createReceiptRoutes(container: Container) {
     const session = await getAuthenticatedSession(c, container);
     if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
 
-    const image = await getReceiptImage(container, session.tenantId, c.req.param('id'), {
+    const receiptId = parsePathId(c.req.param('id'));
+    if (!receiptId) {
+      return c.json({ code: 'validation_failed', message: 'IDの形式が不正です' }, 400);
+    }
+
+    const image = await getReceiptImage(container, session.tenantId, receiptId, {
       requesterStaffId: session.staffId,
       allowOtherStaff: session.isAdmin,
     });

@@ -21,6 +21,15 @@ import type { ZodError } from 'zod';
 import type { Container } from '../container';
 import { getAuthenticatedSession } from '../session';
 
+/**
+ * パスパラメータのUUIDを検証する。uuid列との比較にUUID以外の文字列を渡すと、PostgreSQLが
+ * `invalid input syntax for type uuid` を投げて500になる。入力の形の誤りは400で返す。
+ */
+function parsePathId(value: string): string | null {
+  const parsed = idSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 /** zodのissuesを、routes/attendance.tsと同じ`{パス: メッセージ}`の形に変換する。 */
 function toFieldErrors(error: ZodError): Record<string, string> {
   const fields: Record<string, string> = {};
@@ -85,7 +94,12 @@ export function createCouponRoutes(container: Container) {
     if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
     if (!session.isAdmin) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
 
-    const coupons = await listCustomerCoupons(container, session.tenantId, c.req.param('customerId'));
+    const customerId = parsePathId(c.req.param('customerId'));
+    if (!customerId) {
+      return c.json({ code: 'validation_failed', message: 'customerId の形式が不正です' }, 400);
+    }
+
+    const coupons = await listCustomerCoupons(container, session.tenantId, customerId);
     return c.json({ coupons });
   });
 
@@ -94,6 +108,11 @@ export function createCouponRoutes(container: Container) {
     const session = await getAuthenticatedSession(c, container);
     if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
     if (!session.isAdmin) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const customerId = parsePathId(c.req.param('customerId'));
+    if (!customerId) {
+      return c.json({ code: 'validation_failed', message: 'customerId の形式が不正です' }, 400);
+    }
 
     const body = await c.req.json().catch(() => null);
     const parsed = customerCouponUpsertRequestSchema.safeParse(body);
@@ -104,12 +123,7 @@ export function createCouponRoutes(container: Container) {
       );
     }
 
-    const result = await assignCouponToCustomer(
-      container,
-      session.tenantId,
-      c.req.param('customerId'),
-      parsed.data,
-    );
+    const result = await assignCouponToCustomer(container, session.tenantId, customerId, parsed.data);
     if (!result.ok) {
       const status = result.reason === 'coupon_not_found' ? 404 : 400;
       const message =
@@ -127,12 +141,13 @@ export function createCouponRoutes(container: Container) {
     if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
     if (!session.isAdmin) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
 
-    const removed = await unassignCouponFromCustomer(
-      container,
-      session.tenantId,
-      c.req.param('customerId'),
-      c.req.param('couponId'),
-    );
+    const customerId = parsePathId(c.req.param('customerId'));
+    const couponId = parsePathId(c.req.param('couponId'));
+    if (!customerId || !couponId) {
+      return c.json({ code: 'validation_failed', message: 'IDの形式が不正です' }, 400);
+    }
+
+    const removed = await unassignCouponFromCustomer(container, session.tenantId, customerId, couponId);
     if (!removed) return c.json({ success: false, message: '割り当てが見つかりません' }, 404);
     return c.json({ success: true });
   });
@@ -184,7 +199,12 @@ export function createCouponRoutes(container: Container) {
       );
     }
 
-    const result = await updateCoupon(container, session.tenantId, c.req.param('couponId'), parsed.data);
+    const couponId = parsePathId(c.req.param('couponId'));
+    if (!couponId) {
+      return c.json({ code: 'validation_failed', message: 'couponId の形式が不正です' }, 400);
+    }
+
+    const result = await updateCoupon(container, session.tenantId, couponId, parsed.data);
     if (!result.ok) {
       const status = result.reason === 'not_found' ? 404 : 400;
       const message =

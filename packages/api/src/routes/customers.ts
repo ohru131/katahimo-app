@@ -4,7 +4,7 @@ import {
   searchCustomersByFamilyName,
   updateCustomerBirthday,
 } from '@katahimo/core';
-import { customerUpdateRequestSchema } from '@katahimo/shared';
+import { customerUpdateRequestSchema, idSchema } from '@katahimo/shared';
 import { Hono } from 'hono';
 import type { Container } from '../container';
 import { getAuthenticatedSession } from '../session';
@@ -61,6 +61,13 @@ export function createCustomerRoutes(container: Container) {
     if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
     if (!session.isAdmin) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
 
+    // uuid列との比較にUUID以外の文字列を渡すとPostgreSQLが例外を投げて500になる。
+    // 入力の形の誤りは400で返す(routes/coupons.ts の parsePathId と同じ理由)。
+    const customerId = idSchema.safeParse(c.req.param('id'));
+    if (!customerId.success) {
+      return c.json({ code: 'validation_failed', message: 'IDの形式が不正です' }, 400);
+    }
+
     const body = await c.req.json().catch(() => null);
     const parsed = customerUpdateRequestSchema.safeParse(body);
     if (!parsed.success) {
@@ -70,7 +77,7 @@ export function createCustomerRoutes(container: Container) {
     const updated = await updateCustomerBirthday(
       container,
       session.tenantId,
-      c.req.param('id'),
+      customerId.data,
       parsed.data.dob,
     );
     if (!updated) return c.json({ code: 'not_found', message: '顧客が見つかりません' }, 404);

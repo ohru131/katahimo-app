@@ -314,7 +314,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
       staffId: otherStaffId,
     });
 
-    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', WITHIN_DEADLINE);
+    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', { today: WITHIN_DEADLINE });
     expect(view?.receipts.map((r) => r.storeName)).toEqual(['九月の店B', '九月の店A']);
   });
 
@@ -323,7 +323,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     await upload({ at: '2026/09/30 23:59:00', amount: '200', storeName: '月末' });
     await upload({ at: '2026/10/01 00:00:00', amount: '300', storeName: '翌月初' });
 
-    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', WITHIN_DEADLINE);
+    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', { today: WITHIN_DEADLINE });
     expect(view?.receipts.map((r) => r.storeName)).toEqual(['月末', '月初']);
   });
 
@@ -343,7 +343,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     await upload({ at: '2026/09/03 10:00:00', amount: '500', storeName: 'C' });
     await upload({ at: '2026/09/04 10:00:00', amount: '読めず', storeName: 'D' });
 
-    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', WITHIN_DEADLINE);
+    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', { today: WITHIN_DEADLINE });
     expect(view?.customerBillableTotalYen).toBe(3000);
     expect(view?.companyExpenseTotalYen).toBe(500);
     expect(view?.unreadableAmountCount).toBe(1);
@@ -351,7 +351,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
 
   it('顧客名は表示用にcustomersから引き直す(領収書には複製しない)', async () => {
     await upload({ at: '2026/09/01 10:00:00', amount: '1000', storeName: 'A' });
-    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', WITHIN_DEADLINE);
+    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', { today: WITHIN_DEADLINE });
     expect(view?.receipts[0]?.customerName).toBe('田中 一郎');
   });
 
@@ -378,7 +378,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     });
     expect(result).toEqual({ ok: true });
 
-    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', WITHIN_DEADLINE);
+    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', { today: WITHIN_DEADLINE });
     // 行は消えない。
     expect(view?.receipts).toHaveLength(2);
     expect(view?.cancelledCount).toBe(1);
@@ -403,7 +403,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
       today: WITHIN_DEADLINE,
     });
 
-    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', WITHIN_DEADLINE);
+    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', { today: WITHIN_DEADLINE });
     expect(view?.receipts[0]?.cancellationReason).toBeNull();
   });
 
@@ -420,28 +420,68 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     expect(result).toEqual({ ok: false, reason: 'deadline_passed' });
 
     // 画面側も、期限を過ぎた行には取消ボタンを出さない。
-    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', AFTER_DEADLINE);
+    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', { today: AFTER_DEADLINE });
     expect(view?.receipts[0]?.canCancel).toBe(false);
   });
 
   it('期限内なら取消ボタンを出す(期限当日を含む)', async () => {
     await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
-    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', WITHIN_DEADLINE);
+    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', { today: WITHIN_DEADLINE });
     expect(view?.receipts[0]?.canCancel).toBe(true);
   });
 
-  it('週末をまたぐと期限も後ろにずれる(営業日で数えるため)', async () => {
-    // 2026/09/18は金曜。+2営業日は火曜(09/22)。
+  it('土日をまたいでも期限は延びない(訪問保育は土日祝日も訪問があるため暦日で数える)', async () => {
+    // 2026/09/18は金曜。暦日で+2日なので日曜(09/20)が期限。翌月曜(09/21)には取り消せない。
     await upload({ at: '2026/09/18 10:00:00', amount: '1000', storeName: '金曜の店' });
-    const onTuesday = new Date('2026-09-22T09:00:00+09:00');
-    const onWednesday = new Date('2026-09-23T09:00:00+09:00');
+    const onSunday = new Date('2026-09-20T09:00:00+09:00');
+    const onMonday = new Date('2026-09-21T09:00:00+09:00');
 
     expect(
-      (await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', onTuesday))?.receipts[0]?.canCancel,
+      (await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', { today: onSunday }))?.receipts[0]
+        ?.canCancel,
     ).toBe(true);
     expect(
-      (await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', onWednesday))?.receipts[0]?.canCancel,
+      (await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', { today: onMonday }))?.receipts[0]
+        ?.canCancel,
     ).toBe(false);
+  });
+
+  it('管理者(ignoreDeadline)は期限を過ぎても取り消せる', async () => {
+    await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
+    const receiptId = latestReceiptId();
+
+    // 一覧でも取消ボタンを出す(出さないと管理者が取り消す導線が無い)。
+    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', {
+      today: AFTER_DEADLINE,
+      ignoreDeadline: true,
+    });
+    expect(view?.receipts[0]?.canCancel).toBe(true);
+
+    const result = await cancelReceipt(deps, tenantId, receiptId, {
+      requesterStaffId: staffId,
+      allowOtherStaff: true,
+      ignoreDeadline: true,
+      reason: '経理の締め処理で戻す',
+      today: AFTER_DEADLINE,
+    });
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('管理者でも、取り消し済みの行は二重に取り消せない', async () => {
+    await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
+    const receiptId = latestReceiptId();
+    const adminOptions = {
+      requesterStaffId: staffId,
+      allowOtherStaff: true,
+      ignoreDeadline: true,
+      reason: '1回目',
+      today: AFTER_DEADLINE,
+    };
+    expect(await cancelReceipt(deps, tenantId, receiptId, adminOptions)).toEqual({ ok: true });
+    expect(await cancelReceipt(deps, tenantId, receiptId, adminOptions)).toEqual({
+      ok: false,
+      reason: 'already_cancelled',
+    });
   });
 
   it('二重取り消しは弾く(取り消した人・理由・時刻を上書きしない)', async () => {
@@ -459,7 +499,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
       reason: 'already_cancelled',
     });
 
-    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', WITHIN_DEADLINE);
+    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', { today: WITHIN_DEADLINE });
     expect(view?.receipts[0]?.cancellationReason).toBe('1回目');
   });
 

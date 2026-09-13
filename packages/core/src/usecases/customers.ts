@@ -196,6 +196,13 @@ export async function updateCustomerBirthday(
   customerId: string,
   dob: string | null | undefined,
 ): Promise<CustomerRecord | null> {
+  // CustomerRepositoryPort.updateは存在しないIDに対してnullではなく例外を投げる
+  // (DrizzleCustomerRepository.update)。先に引いて「見つからない」をnullで返さないと、
+  // 呼び出し側(APIルート)の404が死んだ分岐になり、実際は500で返ってしまう。
+  // findByIdはテナントスコープ(RLS)で引くので、他テナントのIDも「見つからない」になる。
+  const existing = await deps.customers.findById(tenantId, customerId);
+  if (!existing) return null;
+
   // doc/14 §6: 元表記は必ず残し、parseDateOnlyで解析できた場合だけ日付型のdobDateに入れる。
   const dobRaw = nullIfEmpty(dob);
   return deps.customers.update(tenantId, customerId, {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
-  addBusinessDays,
+  addDaysToJstDateKey,
   buildReceiptDedupeKey,
   buildReceiptNotificationText,
   canCheckReceiptDuplicate,
@@ -323,19 +323,19 @@ export interface ReceiptListView {
   cancelledCount: number;
 }
 
+/** 取り消せる期間(日)。訪問保育は土日祝日も訪問があるため暦日で数える(addDaysToJstDateKey)。 */
+const CANCELLABLE_DAYS = 2;
+
 /**
  * その領収書を`today`('YYYY-MM-DD'・JST)の時点で取り消せるか(doc/14 §10)。
  *
- * 期限は「領収書の日付 + 2営業日」の終わりまで。締めたあとの月の記録が動くと会計が合わなく
+ * 期限は「領収書の日付 + 2日」の終わりまで。締めたあとの月の記録が動くと会計が合わなく
  * なるため、時間が経ったものは取り消せない。判定の基準日は receipt_timestamp の日付にしている
  * (領収書には訪問日そのものを持っていない。OCRが読んだ領収書の日付、読めなければ登録時刻)。
  */
 export function canCancelReceiptOn(receiptDateStr: string, today: string): boolean {
-  return today <= addBusinessDays(receiptDateStr, CANCELLABLE_BUSINESS_DAYS);
+  return today <= addDaysToJstDateKey(receiptDateStr, CANCELLABLE_DAYS);
 }
-
-/** 取り消せる期間(営業日)。 */
-const CANCELLABLE_BUSINESS_DAYS = 2;
 
 /**
  * 指定スタッフが登録した領収書を月単位で返す(勤怠タブの領収書一覧)。
@@ -343,12 +343,22 @@ const CANCELLABLE_BUSINESS_DAYS = 2;
  * 取り消し済みの行も返す(一覧にグレーで残す仕様のため)。ただし合計には入れない。
  * 氏名はN+1にならないよう、一覧に出てくる顧客ID・スタッフIDの重複を畳んでから引く。
  */
+export interface ReceiptListOptions {
+  /** 期限判定の「今日」。テストから固定するためだけに受け取る。 */
+  today?: Date;
+  /**
+   * 期限(領収書の日付+2日)を無視して取消ボタンを出す。管理者向け。
+   * 経理が締め処理で戻すことがあるため、管理者だけは期限後も取り消せる(doc/14 §10)。
+   */
+  ignoreDeadline?: boolean;
+}
+
 export async function listReceiptsForStaff(
   deps: ReceiptDeps,
   tenantId: string,
   staffId: string,
   yearMonth: string,
-  today: Date = new Date(),
+  options: ReceiptListOptions = {},
 ): Promise<ReceiptListView | null> {
   const range = jstMonthRange(yearMonth);
   if (!range) return null;
@@ -377,7 +387,7 @@ export async function listReceiptsForStaff(
     }),
   );
 
-  const todayKey = formatJstDateKey(today);
+  const todayKey = formatJstDateKey(options.today ?? new Date());
   let customerBillableTotalYen = 0;
   let companyExpenseTotalYen = 0;
   let unreadableAmountCount = 0;
@@ -415,7 +425,8 @@ export async function listReceiptsForStaff(
         : null,
       canCancel:
         record.cancelledAt === null &&
-        canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey),
+        (options.ignoreDeadline === true ||
+          canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey)),
     })),
     customerBillableTotalYen,
     companyExpenseTotalYen,
@@ -439,6 +450,10 @@ export type CancelReceiptResult =
  * 【期限をサーバー側でも見る理由】
  * 画面は期限切れの行に取消ボタンを出さないが、APIを直接叩けば通ってしまう。締めた月の
  * 会計が動く操作なので、画面の出し分けだけに頼らない。
+ *
+ * 【管理者だけ期限を外す理由】
+ * 経理が締め処理で戻すことがある。現場のスタッフに期限を設けるのは、日が経ってから
+ * 記録が動くのを防ぐためで、その判断ができる管理者まで縛る理由は無い。
  */
 export async function cancelReceipt(
   deps: ReceiptDeps,
@@ -447,6 +462,8 @@ export async function cancelReceipt(
   options: {
     requesterStaffId: string;
     allowOtherStaff: boolean;
+    /** 期限(領収書の日付+2日)を無視して取り消す。管理者向け。 */
+    ignoreDeadline?: boolean;
     /** 任意の1行。未入力はnull。 */
     reason: string | null;
     today?: Date;
@@ -460,9 +477,11 @@ export async function cancelReceipt(
   // 二重取り消しは、取り消した人・理由・時刻を上書きしてしまうので弾く。
   if (record.cancelledAt !== null) return { ok: false, reason: 'already_cancelled' };
 
-  const todayKey = formatJstDateKey(options.today ?? new Date());
-  if (!canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey)) {
-    return { ok: false, reason: 'deadline_passed' };
+  if (options.ignoreDeadline !== true) {
+    const todayKey = formatJstDateKey(options.today ?? new Date());
+    if (!canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey)) {
+      return { ok: false, reason: 'deadline_passed' };
+    }
   }
 
   const cancelled = await deps.receipts.cancel(tenantId, receiptId, {

@@ -274,7 +274,13 @@ export function CustomerDetail({ customerId, onClose }: { customerId: string; on
                 </ul>
               </section>
 
-              {isAdmin && <CustomerCouponSection customerId={customerId} dobRaw={query.data.dobRaw} />}
+              {/* key に顧客IDを入れて、顧客が変わったら作り直す。生年月日の入力途中や配布する
+                  クーポンの選択といった顧客固有の状態を、前の顧客のまま持ち越さない
+                  (生年月日が両方とも未登録の顧客へ切り替えると props の値が変わらないので、
+                  state のリセットだけでは取りこぼす)。 */}
+              {isAdmin && (
+                <CustomerCouponSection key={customerId} customerId={customerId} dobRaw={query.data.dobRaw} />
+              )}
             </>
           )}
         </div>
