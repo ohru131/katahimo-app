@@ -93,6 +93,9 @@ export const outboxJobs = pgTable(
       'outbox_jobs_kind_check',
       sql`${t.kind} IN (${sql.raw(MIRROR_KINDS.map((k) => `'${k}'`).join(', '))})`,
     ),
+    // 「この領収書はもう外部へ送ったか」を画面で出すための経路(listStatusByTargets)。
+    // doc/14 §3。done/failedが積み上がってもフルスキャンにならないようにする。
+    index('outbox_jobs_tenant_kind_target_idx').on(t.tenantId, t.kind, t.targetId),
     check('outbox_jobs_attempts_check', sql`${t.attempts} >= 0`),
   ],
 ).enableRLS();

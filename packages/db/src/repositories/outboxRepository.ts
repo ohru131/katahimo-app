@@ -1,5 +1,7 @@
 import type {
   MirrorJob,
+  MirrorJobStatus,
+  MirrorKind,
   OutboxJobRecord,
   OutboxRepositoryPort,
   TransactionScope,
@@ -50,11 +52,45 @@ export class DrizzleOutboxRepository implements OutboxRepositoryPort {
             kind: job.kind,
             targetId: job.targetId,
             idempotencyKey: job.idempotencyKey,
+            // 指定が無ければ列の既定(now())のまま=すぐ送信対象になる。
+            ...(job.notBefore ? { nextAttemptAt: job.notBefore } : {}),
           })
           .onConflictDoNothing({ target: [outboxJobs.tenantId, outboxJobs.idempotencyKey] });
       },
       scope,
     );
+  }
+
+  async listStatusByTargets(
+    tenantId: string,
+    kind: MirrorKind,
+    targetIds: string[],
+  ): Promise<MirrorJobStatus[]> {
+    if (targetIds.length === 0) return [];
+    return withTenant(this.db, tenantId, async (tx) => {
+      const rows = await tx
+        .select({
+          targetId: outboxJobs.targetId,
+          status: outboxJobs.status,
+          nextAttemptAt: outboxJobs.nextAttemptAt,
+          lastError: outboxJobs.lastError,
+        })
+        .from(outboxJobs)
+        .where(
+          and(
+            eq(outboxJobs.tenantId, tenantId),
+            eq(outboxJobs.kind, kind),
+            inArray(outboxJobs.targetId, targetIds),
+          ),
+        );
+      return rows.map((row) => ({
+        targetId: row.targetId,
+        // outbox_jobs_status_check によりDB上はこの4値しか入らない。
+        status: row.status as MirrorJobStatus['status'],
+        nextAttemptAt: row.nextAttemptAt,
+        lastError: row.lastError,
+      }));
+    });
   }
 
   async claimPending(tenantId: string, limit: number): Promise<OutboxJobRecord[]> {

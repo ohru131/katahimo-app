@@ -85,6 +85,25 @@ export function addDaysToJstDateKey(dateStr: string, days: number): string {
 }
 
 /**
+ * 'YYYY-MM-DD'(JST)の月末日を返す。実費報告(領収書)の締めに使う(doc/14 §10)。
+ */
+export function jstEndOfMonthDateKey(dateStr: string): string {
+  const [year, month] = dateStr.split('-').map(Number);
+  // 翌月0日 = 当月末日。Date.UTCは月が12を超えると翌年に繰り上がるため12月でも分岐は要らない。
+  const date = new Date(Date.UTC(year ?? 1970, month ?? 1, 0, 12));
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * 'YYYY-MM-DD'(JST)の日の終わり=翌日0時(JST)を、絶対時刻で返す。
+ * 「その日いっぱいまで」を半開区間の上限として扱うために使う。
+ */
+export function jstEndOfDay(dateStr: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, (day ?? 1) + 1) - JST_OFFSET_MINUTES * 60_000);
+}
+
+/**
  * 'YYYY-MM'(JST)の月を、絶対時刻の半開区間 [from, to) に変換する。
  *
  * 上限を含めないのは、月末の23:59:59.999のような端の値を「その月に入れるか」で悩まずに済み、

@@ -870,8 +870,14 @@ export interface ReceiptListItemView {
   cancelledAt: string | null;
   cancellationReason: string | null;
   cancelledByStaffName: string | null;
-  /** いま取り消せるか(領収書の日付+2日まで。管理者は期限後も真)。falseなら取消ボタンを出さない。 */
+  /** いま取り消せるか(領収書の日付+2日・月末まで。管理者は期限後も真)。falseなら取消ボタンを出さない。 */
   canCancel: boolean;
+  /** ミラー送信(スプレッドシートへの書き出し)の状態。ミラーを使っていないテナントはnull。 */
+  mirrorStatus: 'pending' | 'processing' | 'done' | 'failed' | null;
+  /** pendingのとき、この時刻以降に送信される。 */
+  mirrorScheduledAt: string | null;
+  /** 送信に失敗して止まっているときの理由。 */
+  mirrorError: string | null;
 }
 
 export interface ReceiptListView {
@@ -883,6 +889,10 @@ export interface ReceiptListView {
   unreadableAmountCount: number;
   /** 取り消し済みの件数(一覧には残るが集計には入らない)。 */
   cancelledCount: number;
+  /** まだスプレッドシートへ送っていない件数(取り消し期限まで送信を待つため必ず発生する)。 */
+  pendingMirrorCount: number;
+  /** 送信に失敗して止まっている件数。0でなければ管理者の対応が要る。 */
+  failedMirrorCount: number;
 }
 
 /**

@@ -113,6 +113,21 @@ function ReceiptRow({
 
       {receipt.handoffText && <p className="text-xs mt-1 break-words opacity-80">{receipt.handoffText}</p>}
 
+      {/* ミラー送信の状態(doc/14 §10)。取り消せる期間が終わるまで送信を待つ作りなので、
+          「登録したのにまだスプレッドシートに出ていない」期間が必ずある。いつ送られるのかと、
+          送信が止まっていないかを行に出しておかないと、締めのときに取り残しに気付けない。 */}
+      {!cancelled && receipt.mirrorStatus === 'pending' && receipt.mirrorScheduledAt && (
+        <p className="text-xs mt-1 text-gray-500">
+          スプレッドシートへは {receipt.mirrorScheduledAt} 以降に送信(取消できる間は送りません)
+        </p>
+      )}
+      {!cancelled && receipt.mirrorStatus === 'failed' && (
+        <p className="text-xs mt-1 text-red-600 break-words">
+          スプレッドシートへの送信に失敗しています
+          {receipt.mirrorError ? ` — ${receipt.mirrorError}` : ''}
+        </p>
+      )}
+
       {/* 取り消した記録も会計の履歴なので、いつ・誰が・なぜ取り消したかを行に残して見せる。 */}
       {cancelled && (
         <p className="text-xs mt-2 bg-gray-100 rounded p-2 text-gray-500 break-words">
@@ -282,6 +297,17 @@ export function ReceiptListModal({ staffId, onClose }: { staffId?: string; onClo
                 {view.cancelledCount > 0 && (
                   <li className="text-gray-500">
                     取消済み {view.cancelledCount}枚(一覧には残りますが、合計には入りません)
+                  </li>
+                )}
+                {/* 送信待ち・送信失敗の件数。締めのときにここだけ見れば取り残しが分かる。 */}
+                {view.pendingMirrorCount > 0 && (
+                  <li className="text-gray-500">
+                    スプレッドシート未送信 {view.pendingMirrorCount}枚(取消できる期間が終わってから送信)
+                  </li>
+                )}
+                {view.failedMirrorCount > 0 && (
+                  <li className="text-red-600 font-bold">
+                    スプレッドシートへの送信に失敗 {view.failedMirrorCount}枚(対応が必要です)
                   </li>
                 )}
               </ul>

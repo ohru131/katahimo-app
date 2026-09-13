@@ -3,7 +3,13 @@ import type { LoginThrottlePolicy } from '../domain/auth/loginThrottle';
 import { applyFailedLogin } from '../domain/auth/loginThrottle';
 import type { CryptoPort, EncryptedValue } from '../ports/crypto';
 import type { MailerPort, MailMessage } from '../ports/mailer';
-import type { MirrorJob, OutboxJobRecord, OutboxRepositoryPort } from '../ports/mirror';
+import type {
+  MirrorJob,
+  MirrorJobStatus,
+  MirrorKind,
+  OutboxJobRecord,
+  OutboxRepositoryPort,
+} from '../ports/mirror';
 import type {
   AccidentReportMirrorPayload,
   AttendanceAggregateMirrorPayload,
@@ -831,7 +837,8 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
  */
 export interface OutboxRowForTest extends OutboxJobRecord {
   idempotencyKey: string;
-  status: string;
+  // 本物のoutbox_jobs_status_checkと同じ4値に揃える(画面へ返す状態と型を一致させるため)。
+  status: MirrorJobStatus['status'];
   nextAttemptAt: Date | null;
   lastError: string | null;
 }
@@ -855,9 +862,26 @@ export class FakeOutboxRepository implements OutboxRepositoryPort, FakeTransacti
       idempotencyKey: job.idempotencyKey,
       attempts: 0,
       status: 'pending',
-      nextAttemptAt: null,
+      // DrizzleOutboxRepositoryと同じ扱い。notBeforeが無ければ即座に対象になる。
+      nextAttemptAt: job.notBefore ?? null,
       lastError: null,
     });
+  }
+
+  async listStatusByTargets(
+    tenantId: string,
+    kind: MirrorKind,
+    targetIds: string[],
+  ): Promise<MirrorJobStatus[]> {
+    const idSet = new Set(targetIds);
+    return this.rows
+      .filter((r) => r.tenantId === tenantId && r.kind === kind && idSet.has(r.targetId))
+      .map((r) => ({
+        targetId: r.targetId,
+        status: r.status,
+        nextAttemptAt: r.nextAttemptAt ?? this.now(),
+        lastError: r.lastError,
+      }));
   }
 
   async claimPending(tenantId: string, limit: number): Promise<OutboxJobRecord[]> {

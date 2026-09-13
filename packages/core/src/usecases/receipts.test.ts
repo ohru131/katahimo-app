@@ -224,6 +224,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
   let otherStaffId: string;
   let customerId: string;
   let receiptRepository: FakeReceiptRepository;
+  let mirror: FakeOutboxRepository;
 
   beforeEach(async () => {
     const staff = new FakeStaffRepository();
@@ -259,7 +260,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     customerId = (await createCustomer(customerDeps, { tenantId, name: '田中 一郎' })).id;
 
     receiptRepository = new FakeReceiptRepository();
-    const mirror = new FakeOutboxRepository();
+    mirror = new FakeOutboxRepository();
     deps = {
       receipts: receiptRepository,
       staff,
@@ -482,6 +483,36 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
       ok: false,
       reason: 'already_cancelled',
     });
+  });
+
+  it('ミラー送信は取り消し期限が切れるまで始まらない(送ってから取り消される状態を作らない)', async () => {
+    await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
+
+    const [job] = mirror.listAllForTest();
+    if (!job) throw new Error('ミラージョブが積まれていません');
+    // 2026-09-14の領収書は9/16いっぱいまで取り消せるので、送信開始は9/17 00:00 JST。
+    expect(job.nextAttemptAt?.toISOString()).toBe('2026-09-16T15:00:00.000Z');
+  });
+
+  it('月末の領収書は翌月へ持ち越さず、その月のうちに送る', async () => {
+    await upload({ at: '2026/09/30 10:00:00', amount: '1000', storeName: '月末の店' });
+
+    const [job] = mirror.listAllForTest();
+    if (!job) throw new Error('ミラージョブが積まれていません');
+    // 9/30いっぱいで取り消し期限が切れ、10/1 00:00 JST に送られる(9月分が10月にずれ込まない)。
+    expect(job.nextAttemptAt?.toISOString()).toBe('2026-09-30T15:00:00.000Z');
+  });
+
+  it('まだ送っていない領収書の件数と送信予定を返す(締めのときに取り残しに気付けるように)', async () => {
+    await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
+
+    const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', {
+      today: WITHIN_DEADLINE,
+    });
+    expect(view?.pendingMirrorCount).toBe(1);
+    expect(view?.failedMirrorCount).toBe(0);
+    expect(view?.receipts[0]?.mirrorStatus).toBe('pending');
+    expect(view?.receipts[0]?.mirrorScheduledAt).toBe('2026/09/17 00:00:00');
   });
 
   it('二重取り消しは弾く(取り消した人・理由・時刻を上書きしない)', async () => {

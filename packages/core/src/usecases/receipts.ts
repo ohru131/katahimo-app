@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import {
-  addDaysToJstDateKey,
   buildReceiptDedupeKey,
   buildReceiptNotificationText,
   canCheckReceiptDuplicate,
@@ -11,9 +10,11 @@ import {
   normalizeAmount,
   normalizeText,
   parseJstTimestampString,
+  receiptCancellableUntil,
+  receiptMirrorSendAfter,
 } from '../domain';
 import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
-import type { MirrorPort } from '../ports/mirror';
+import type { MirrorJobStatus, MirrorPort, OutboxRepositoryPort } from '../ports/mirror';
 import type { NotifierPort } from '../ports/notifier';
 import type {
   CustomerRepositoryPort,
@@ -211,6 +212,10 @@ export async function uploadReceipts(
             kind: 'receipt',
             targetId: receiptRecord.id,
             idempotencyKey: buildMirrorIdempotencyKey('receipt', receiptRecord.id, receiptRecord.createdAt),
+            // 取り消せる期間が終わるまで送信を始めない(doc/14 §10)。スプレッドシートへの追記は
+            // 送ってしまうと取り消しても向こう側に残るため、「送ったあとに取り消された」状態を
+            // 作れないようにする。月末で打ち切るので、前月分が翌月に送られることもない。
+            notBefore: receiptMirrorSendAfter(formatJstDateKey(receiptRecord.receiptTimestamp)),
           },
           scope,
         );
@@ -300,10 +305,19 @@ export interface ReceiptListItemView {
   /** 取り消した人の氏名。 */
   cancelledByStaffName: string | null;
   /**
-   * いま取り消せるか。取り消せるのは有効な行のうち、領収書の日付+2営業日までの分
+   * いま取り消せるか。取り消せるのは有効な行のうち、領収書の日付+2日(月末まで)の分
    * (canCancelReceiptOn)。画面はこれがfalseなら取消ボタンを出さない。
    */
   canCancel: boolean;
+  /**
+   * ミラー送信(スプレッドシートへの書き出し)の状態。ミラーを使っていないテナントは
+   * ジョブ自体が積まれないのでnull。
+   */
+  mirrorStatus: 'pending' | 'processing' | 'done' | 'failed' | null;
+  /** pendingのとき、この時刻以降に送信される('yyyy/MM/dd HH:mm:ss'・JST)。 */
+  mirrorScheduledAt: string | null;
+  /** 送信に失敗して止まっているときの理由。 */
+  mirrorError: string | null;
 }
 
 export interface ReceiptListView {
@@ -321,20 +335,31 @@ export interface ReceiptListView {
   unreadableAmountCount: number;
   /** 取り消し済みの件数。一覧には残るが集計には入らないことを画面で示すために返す。 */
   cancelledCount: number;
+  /**
+   * まだスプレッドシートへ送っていない件数(pending/processing)。
+   *
+   * 領収書のミラー送信は取り消し期限まで遅らせてあるので、「登録したのにまだ外部に出ていない」
+   * 期間が必ずある。締めのときに何件残っているかが分からないと、送信が止まっていることに
+   * 気付けない(doc/14 §10)。
+   */
+  pendingMirrorCount: number;
+  /** 送信に失敗して止まっている件数。0でなければ管理者の対応が要る。 */
+  failedMirrorCount: number;
 }
-
-/** 取り消せる期間(日)。訪問保育は土日祝日も訪問があるため暦日で数える(addDaysToJstDateKey)。 */
-const CANCELLABLE_DAYS = 2;
 
 /**
  * その領収書を`today`('YYYY-MM-DD'・JST)の時点で取り消せるか(doc/14 §10)。
  *
- * 期限は「領収書の日付 + 2日」の終わりまで。締めたあとの月の記録が動くと会計が合わなく
- * なるため、時間が経ったものは取り消せない。判定の基準日は receipt_timestamp の日付にしている
- * (領収書には訪問日そのものを持っていない。OCRが読んだ領収書の日付、読めなければ登録時刻)。
+ * 期限は「領収書の日付 + 2日、ただしその月の末日まで」(receiptCancellableUntil)。
+ * 締めたあとの月の記録が動くと会計が合わなくなるため、時間が経ったものは取り消せない。
+ * 判定の基準日は receipt_timestamp の日付にしている(領収書には訪問日そのものを持っていない。
+ * OCRが読んだ領収書の日付、読めなければ登録時刻)。
+ *
+ * ミラー送信はこの期限が切れた直後に始まる(receiptMirrorSendAfter)。2つを同じ計算に
+ * 揃えてあるので、「外部へ送ったあとに取り消された」状態は起きない。
  */
 export function canCancelReceiptOn(receiptDateStr: string, today: string): boolean {
-  return today <= addDaysToJstDateKey(receiptDateStr, CANCELLABLE_DAYS);
+  return today <= receiptCancellableUntil(receiptDateStr);
 }
 
 /**
@@ -376,6 +401,19 @@ export async function listReceiptsForStaff(
     }),
   );
 
+  // ミラー送信の状態(まだ外部へ送っていないもの)を1回でまとめて引く。
+  // ReceiptDeps.mirror は MirrorPort 型なので、状態の読み出しができる実装(outboxリポジトリ)の
+  // ときだけ使う。NoopMirrorPort(ミラー無効)ではジョブが無いので、全てnullになる。
+  const mirrorStatusByTarget = new Map<string, MirrorJobStatus>();
+  if (records.length > 0 && 'listStatusByTargets' in deps.mirror) {
+    const statuses = await (deps.mirror as OutboxRepositoryPort).listStatusByTargets(
+      tenantId,
+      'receipt',
+      records.map((r) => r.id),
+    );
+    for (const status of statuses) mirrorStatusByTarget.set(status.targetId, status);
+  }
+
   const cancelledByIds = Array.from(
     new Set(records.map((r) => r.cancelledByStaffId).filter((id): id is string => id !== null)),
   );
@@ -392,7 +430,12 @@ export async function listReceiptsForStaff(
   let companyExpenseTotalYen = 0;
   let unreadableAmountCount = 0;
   let cancelledCount = 0;
+  let pendingMirrorCount = 0;
+  let failedMirrorCount = 0;
   for (const record of records) {
+    const mirror = mirrorStatusByTarget.get(record.id);
+    if (mirror?.status === 'pending' || mirror?.status === 'processing') pendingMirrorCount += 1;
+    if (mirror?.status === 'failed') failedMirrorCount += 1;
     // 取り消し済みは集計から外す(「データ出力時は取消済みを除外する」と同じ扱い)。
     if (record.cancelledAt !== null) {
       cancelledCount += 1;
@@ -427,11 +470,19 @@ export async function listReceiptsForStaff(
         record.cancelledAt === null &&
         (options.ignoreDeadline === true ||
           canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey)),
+      mirrorStatus: mirrorStatusByTarget.get(record.id)?.status ?? null,
+      mirrorScheduledAt:
+        mirrorStatusByTarget.get(record.id)?.status === 'pending'
+          ? formatJstDateTime(mirrorStatusByTarget.get(record.id)?.nextAttemptAt ?? new Date())
+          : null,
+      mirrorError: mirrorStatusByTarget.get(record.id)?.lastError ?? null,
     })),
     customerBillableTotalYen,
     companyExpenseTotalYen,
     unreadableAmountCount,
     cancelledCount,
+    pendingMirrorCount,
+    failedMirrorCount,
   };
 }
 

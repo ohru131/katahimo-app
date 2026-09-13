@@ -903,6 +903,7 @@ CREATE INDEX "staff_traits_tenant_definition_idx" ON "staff_traits" USING btree 
 CREATE INDEX "trait_definitions_tenant_subject_idx" ON "trait_definitions" USING btree ("tenant_id","subject_kind","sort_order");--> statement-breakpoint
 CREATE UNIQUE INDEX "outbox_jobs_tenant_idempotency_key_idx" ON "outbox_jobs" USING btree ("tenant_id","idempotency_key");--> statement-breakpoint
 CREATE INDEX "outbox_jobs_tenant_status_next_attempt_idx" ON "outbox_jobs" USING btree ("tenant_id","status","next_attempt_at","created_at");--> statement-breakpoint
+CREATE INDEX "outbox_jobs_tenant_kind_target_idx" ON "outbox_jobs" USING btree ("tenant_id","kind","target_id");--> statement-breakpoint
 CREATE INDEX "password_reset_codes_staff_idx" ON "password_reset_codes" USING btree ("tenant_id","staff_id","created_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "receipts_tenant_dedupe_key_uidx" ON "receipts" USING btree ("tenant_id","dedupe_key") WHERE "receipts"."dedupe_key" IS NOT NULL AND "receipts"."cancelled_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "receipts_tenant_staff_timestamp_idx" ON "receipts" USING btree ("tenant_id","staff_id","receipt_timestamp" DESC NULLS LAST);--> statement-breakpoint

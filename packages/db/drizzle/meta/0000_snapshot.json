@@ -1,5 +1,5 @@
 {
-  "id": "977b5a76-8c64-4aef-9254-22f249041f6c",
+  "id": "50e1c886-7b95-4e42-84e7-fe3a3c08914d",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -4620,6 +4620,33 @@
             },
             {
               "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "outbox_jobs_tenant_kind_target_idx": {
+          "name": "outbox_jobs_tenant_kind_target_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "target_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
