@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import type { CouponDiscountKind, CouponView } from '../api';
+import type {
+  CouponAudience,
+  CouponBirthdaySubject,
+  CouponDiscountKind,
+  CouponEligibilityKind,
+  CouponUsageLimitKind,
+  CouponView,
+} from '../api';
 import { createCoupon, fetchCouponsForAdmin, updateCoupon } from '../api';
 
 /** 割引条件の表示(例 '500円引き' '10%引き')。doc/14 §9の2種別に対応。 */
@@ -8,6 +15,24 @@ function discountLabel(coupon: Pick<CouponView, 'discountKind' | 'discountAmount
   return coupon.discountKind === 'amount'
     ? `${coupon.discountAmountYen}円引き`
     : `${coupon.discountPercent}%引き`;
+}
+
+/** 適用条件・配布先・使用上限のうち、既定でないものだけを短い札にする(一覧の1行に収めるため)。 */
+function conditionLabels(coupon: CouponView): string[] {
+  const labels: string[] = [];
+  if (coupon.eligibilityKind === 'birthday_month') {
+    const subject =
+      coupon.birthdaySubject === 'customer'
+        ? '世帯代表'
+        : coupon.birthdaySubject === 'family_member'
+          ? '世帯構成員'
+          : 'どなたか';
+    labels.push(`🎂 ${subject}の誕生月`);
+  }
+  if (coupon.audience === 'assigned') labels.push('配布した顧客のみ');
+  if (coupon.usageLimitKind === 'once_per_customer') labels.push('顧客ごと1回まで');
+  if (coupon.usageLimitKind === 'once_per_customer_per_year') labels.push('顧客ごと年1回まで');
+  return labels;
 }
 
 /** 有効期間の表示。片方だけ/両方null(=無期限)もある(coupons_valid_period_check参照)。 */
@@ -35,6 +60,10 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
   const [discountPercent, setDiscountPercent] = useState('');
   const [validFrom, setValidFrom] = useState('');
   const [validTo, setValidTo] = useState('');
+  const [audience, setAudience] = useState<CouponAudience>('all');
+  const [eligibilityKind, setEligibilityKind] = useState<CouponEligibilityKind>('manual');
+  const [birthdaySubject, setBirthdaySubject] = useState<CouponBirthdaySubject>('any');
+  const [usageLimitKind, setUsageLimitKind] = useState<CouponUsageLimitKind>('unlimited');
   const [note, setNote] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -58,6 +87,18 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
     setDiscountPercent('');
   };
 
+  /**
+   * 誕生月に切り替えたら、使用上限の既定を「年1回」にする。誕生月割引を上限なしで作ると、
+   * 誕生月に3回訪問すれば3回割引が付く(運用の意図とまず食い違う)ため、安全側を初期値にする。
+   * 上限なしにしたい場合は明示的に選び直せる。
+   */
+  const handleEligibilityKindChange = (kind: CouponEligibilityKind) => {
+    setEligibilityKind(kind);
+    if (kind === 'birthday_month' && usageLimitKind === 'unlimited') {
+      setUsageLimitKind('once_per_customer_per_year');
+    }
+  };
+
   const createMutation = useMutation({
     mutationFn: () =>
       createCoupon({
@@ -68,6 +109,12 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
         discountPercent: discountKind === 'percent' ? Number(discountPercent) : undefined,
         validFrom: validFrom || undefined,
         validTo: validTo || undefined,
+        audience,
+        eligibilityKind,
+        // 誕生月クーポン以外に対象者を送るとサーバー側で拒否される
+        // (coupons_birthday_subject_check と同じ条件)。
+        birthdaySubject: eligibilityKind === 'birthday_month' ? birthdaySubject : undefined,
+        usageLimitKind,
         note: note.trim() || undefined,
       }),
     onSuccess: () => {
@@ -79,6 +126,10 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
       setDiscountPercent('');
       setValidFrom('');
       setValidTo('');
+      setAudience('all');
+      setEligibilityKind('manual');
+      setBirthdaySubject('any');
+      setUsageLimitKind('unlimited');
       setNote('');
       refresh();
     },
@@ -200,6 +251,70 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
             </div>
             <p className="text-[10px] text-gray-400">※ 空欄はそれぞれ「下限なし」「無期限」になります。</p>
 
+            {/* 適用条件・配布先・使用上限(doc/14 §9)。ここで決めた条件はサーバー側が判定するので、
+                現場のスタッフは日報画面で「使えるものだけ」を見ることになる。 */}
+            <div className="flex gap-2 items-center">
+              <label className="text-xs text-gray-500 shrink-0 w-14" htmlFor="couponEligibilityKind">
+                使える日
+              </label>
+              <select
+                id="couponEligibilityKind"
+                value={eligibilityKind}
+                onChange={(e) => handleEligibilityKindChange(e.target.value as CouponEligibilityKind)}
+                className="flex-1 min-w-0 p-2 border border-gray-300 rounded text-sm bg-white"
+              >
+                <option value="manual">いつでも(有効期間内)</option>
+                <option value="birthday_month">誕生月のみ</option>
+              </select>
+              {eligibilityKind === 'birthday_month' && (
+                <select
+                  value={birthdaySubject}
+                  onChange={(e) => setBirthdaySubject(e.target.value as CouponBirthdaySubject)}
+                  aria-label="誕生日を見る対象者"
+                  className="flex-1 min-w-0 p-2 border border-gray-300 rounded text-sm bg-white"
+                >
+                  <option value="any">世帯の誰か</option>
+                  <option value="customer">世帯代表</option>
+                  <option value="family_member">世帯構成員(お子さま等)</option>
+                </select>
+              )}
+            </div>
+
+            <div className="flex gap-2 items-center">
+              <label className="text-xs text-gray-500 shrink-0 w-14" htmlFor="couponAudience">
+                使える人
+              </label>
+              <select
+                id="couponAudience"
+                value={audience}
+                onChange={(e) => setAudience(e.target.value as CouponAudience)}
+                className="flex-1 min-w-0 p-2 border border-gray-300 rounded text-sm bg-white"
+              >
+                <option value="all">全ての顧客</option>
+                <option value="assigned">配布した顧客のみ</option>
+              </select>
+              <select
+                value={usageLimitKind}
+                onChange={(e) => setUsageLimitKind(e.target.value as CouponUsageLimitKind)}
+                aria-label="使用回数の上限"
+                className="flex-1 min-w-0 p-2 border border-gray-300 rounded text-sm bg-white"
+              >
+                <option value="unlimited">回数制限なし</option>
+                <option value="once_per_customer">顧客ごと1回まで</option>
+                <option value="once_per_customer_per_year">顧客ごと年1回まで</option>
+              </select>
+            </div>
+            {audience === 'assigned' && (
+              <p className="text-[10px] text-gray-400">
+                ※「配布した顧客のみ」は、顧客カルテの「クーポン」から配ってはじめて使えるようになります。
+              </p>
+            )}
+            {eligibilityKind === 'birthday_month' && (
+              <p className="text-[10px] text-gray-400">
+                ※ 生年月日が登録されている方だけが対象です(顧客カルテで登録できます)。
+              </p>
+            )}
+
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -246,6 +361,15 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
                     <p className="text-xs text-gray-500">
                       {discountLabel(coupon)} ・ {periodLabel(coupon)}
                     </p>
+                    {conditionLabels(coupon).length > 0 && (
+                      <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-1">
+                        {conditionLabels(coupon).map((label) => (
+                          <span key={label} className="bg-gray-100 rounded px-1.5 py-0.5">
+                            {label}
+                          </span>
+                        ))}
+                      </p>
+                    )}
                     {coupon.note && <p className="text-xs text-gray-400 break-words mt-0.5">{coupon.note}</p>}
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">

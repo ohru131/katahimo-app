@@ -410,9 +410,9 @@ async function createCouponFixture(): Promise<CouponFixture> {
   if (!couponA || !couponB) throw new Error('クーポンの準備に失敗しました');
 
   await client.query(
-    `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, coupon_id, discount_kind, discount_amount_yen)
-     VALUES ($1, $2, $3, 'amount', 500), ($4, $5, $6, 'amount', 500);`,
-    [tenantA, dailyReportA, couponA, tenantB, dailyReportB, couponB],
+    `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id, discount_kind, discount_amount_yen)
+     VALUES ($1, $2, $3, $4, 'amount', 500), ($5, $6, $7, $8, 'amount', 500);`,
+    [tenantA, dailyReportA, customerA, couponA, tenantB, dailyReportB, customerB, couponB],
   );
 
   return { client, tenantA, tenantB, couponA, couponB, dailyReportA, dailyReportB };

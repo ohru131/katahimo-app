@@ -3,6 +3,7 @@ export * from './appSettingsRepository';
 export * from './attendanceDayRepository';
 export * from './couponRedemptionRepository';
 export * from './couponRepository';
+export * from './customerCouponRepository';
 export * from './customerRepository';
 export * from './dailyReportRepository';
 export * from './familyMemberRepository';

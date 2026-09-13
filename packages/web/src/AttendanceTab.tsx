@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { AdminTargetStaffSelector, useAdminTargetStaff } from './AdminTargetStaffContext';
 import { fetchAttendanceMonth } from './api';
 import { AttendanceCalendar } from './attendance/AttendanceCalendar';
+import { ReceiptListModal } from './attendance/ReceiptListModal';
 
 function currentYearMonth(): string {
   return new Date().toLocaleDateString('sv-SE').slice(0, 7); // 'YYYY-MM'
@@ -94,6 +95,9 @@ function MonthlyModal({ staffId, onClose }: { staffId?: string; onClose: () => v
  */
 export function AttendanceTab() {
   const [showMonthly, setShowMonthly] = useState(false);
+  // 領収書一覧をこのタブに置いたのは、勤怠と同じ「自分が月にやったことを後から見て直す」
+  // 画面だから(対象スタッフの切り替えも月単位の見方も勤怠と同じ規則で動く)。
+  const [showReceipts, setShowReceipts] = useState(false);
   const { effectiveStaffId } = useAdminTargetStaff();
 
   return (
@@ -108,11 +112,19 @@ export function AttendanceTab() {
         >
           📊 月次集計
         </button>
+        <button
+          type="button"
+          onClick={() => setShowReceipts(true)}
+          className="flex-1 py-2 rounded-xl text-sm font-bold border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors"
+        >
+          🧾 領収書
+        </button>
       </div>
 
       <AttendanceCalendar staffId={effectiveStaffId} />
 
       {showMonthly && <MonthlyModal staffId={effectiveStaffId} onClose={() => setShowMonthly(false)} />}
+      {showReceipts && <ReceiptListModal staffId={effectiveStaffId} onClose={() => setShowReceipts(false)} />}
     </div>
   );
 }

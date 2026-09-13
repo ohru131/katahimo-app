@@ -1,11 +1,26 @@
 import type {
   AttendanceRowData,
+  CouponAudience,
+  CouponBirthdaySubject,
   CouponCreateRequest,
   CouponDiscountKind,
+  CouponEligibilityKind,
   CouponUpdateRequest,
+  CouponUsageLimitKind,
+  CustomerCouponUpsertRequest,
 } from '@katahimo/shared';
 
-export type { AttendanceRowData, CouponCreateRequest, CouponDiscountKind, CouponUpdateRequest };
+export type {
+  AttendanceRowData,
+  CouponAudience,
+  CouponBirthdaySubject,
+  CouponCreateRequest,
+  CouponDiscountKind,
+  CouponEligibilityKind,
+  CouponUpdateRequest,
+  CouponUsageLimitKind,
+  CustomerCouponUpsertRequest,
+};
 
 export interface StaffView {
   staffId?: string;
@@ -66,6 +81,8 @@ export interface CustomerDetailView {
   paymentStatus: string | null;
   gender: string | null;
   ageBracket: string | null;
+  dobDate: string | null;
+  dobRaw: string | null;
   registeredAt: string | null;
   externalLastUpdatedAt: string | null;
   deactivatedAt: string | null;
@@ -461,6 +478,12 @@ export interface CouponSelectionView {
   discountKind: CouponDiscountKind;
   discountAmountYen: number | null;
   discountPercent: number | null;
+  eligibilityKind: CouponEligibilityKind;
+  usageLimitKind: CouponUsageLimitKind;
+  /** 誕生月クーポンのとき、根拠になる人の氏名(「○○さんの誕生月」と出すため)。 */
+  birthdaySubjectName: string | null;
+  /** この顧客では使用上限に達している。選択肢には残すが選べない。 */
+  alreadyUsed: boolean;
 }
 
 /** 管理者のクーポン管理画面用の1件(GET /api/coupons/admin)。廃止済み(active=false)も含む。 */
@@ -475,9 +498,33 @@ export interface CouponView {
   validFrom: string | null;
   /** 有効期間の上限('YYYY-MM-DD')。nullは無期限。 */
   validTo: string | null;
+  /** 'all'=全顧客、'assigned'=配った顧客だけ(顧客カルテから配る)。 */
+  audience: CouponAudience;
+  /** 'manual'=条件なし、'birthday_month'=対象者の誕生月のみ。 */
+  eligibilityKind: CouponEligibilityKind;
+  /** eligibilityKind='birthday_month'のときだけ値が入る(誰の誕生日を見るか)。 */
+  birthdaySubject: CouponBirthdaySubject | null;
+  /** 同じ顧客が何回使えるか。 */
+  usageLimitKind: CouponUsageLimitKind;
   /** false=廃止済み。廃止しても行は消さない(doc/14 §9)ので一覧には引き続き出る。 */
   active: boolean;
   note: string | null;
+}
+
+/** 顧客カルテの「この顧客が使えるクーポン」1件(GET /api/coupons/admin/customers/:customerId)。 */
+export interface CustomerCouponView {
+  couponId: string;
+  code: string;
+  name: string;
+  discountKind: CouponDiscountKind;
+  discountAmountYen: number | null;
+  discountPercent: number | null;
+  /** この顧客に限った有効期間。nullはクーポンマスタの期間に従う。 */
+  validFrom: string | null;
+  validTo: string | null;
+  note: string | null;
+  /** クーポンマスタ側が廃止済み。配ってあっても使えない。 */
+  couponInactive: boolean;
 }
 
 /** 日報1件に適用済みのクーポン1件(保存結果・履歴表示で使う)。core DailyReportCouponViewと同じ形。 */
@@ -488,16 +535,76 @@ export interface DailyReportCouponView {
   discountKind: CouponDiscountKind;
   discountAmountYen: number | null;
   discountPercent: number | null;
+  /** 誕生月クーポンのとき、根拠にした人の氏名(適用時点の値)。 */
+  birthdaySubjectName: string | null;
 }
 
 /**
- * 日報画面のクーポン選択用一覧。active かつ`date`('YYYY-MM-DD')の時点で有効なものだけが返る
- * (doc/14 §9)。dateは日報の対象日を渡すこと(有効期間の判定が日付依存のため)。
+ * 日報画面のクーポン選択用一覧。その顧客がその日に使える条件を満たすものだけが返る
+ * (doc/14 §9)。誕生月でない月の誕生月クーポンや、その顧客に配られていないクーポンは
+ * 返ってこないので、画面側で条件を判定する必要はない。
+ *
+ * reportIdは編集中の日報。その日報が既に使っている分を「使用済み」に数えないために渡す。
  */
-export async function fetchCouponsForSelection(date: string): Promise<CouponSelectionView[]> {
-  const res = await fetch(`/api/coupons?date=${encodeURIComponent(date)}`, { credentials: 'include' });
+export async function fetchCouponsForSelection(
+  customerId: string,
+  date: string,
+  reportId?: string | null,
+): Promise<CouponSelectionView[]> {
+  const params = new URLSearchParams({ customerId, date });
+  if (reportId) params.set('reportId', reportId);
+  const res = await fetch(`/api/coupons?${params.toString()}`, { credentials: 'include' });
   const body = await parseJsonOrThrow<{ coupons: CouponSelectionView[] }>(res);
   return body.coupons;
+}
+
+/**
+ * 顧客の生年月日を登録・更新する(管理者のみ)。誕生月クーポンの判定に使う。
+ * 空文字を渡すと消える。顧客の他の項目はRESERVA CSVの取込が正なので編集できない。
+ */
+export async function updateCustomerBirthday(customerId: string, dob: string): Promise<void> {
+  const res = await fetch(`/api/customers/${encodeURIComponent(customerId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ dob }),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || '生年月日の更新に失敗しました');
+}
+
+/** 顧客カルテの「この顧客が使えるクーポン」一覧(管理者のみ)。 */
+export async function fetchCustomerCoupons(customerId: string): Promise<CustomerCouponView[]> {
+  const res = await fetch(`/api/coupons/admin/customers/${encodeURIComponent(customerId)}`, {
+    credentials: 'include',
+  });
+  const body = await parseJsonOrThrow<{ coupons: CustomerCouponView[] }>(res);
+  return body.coupons;
+}
+
+/** 顧客にクーポンを配る(既に配ってあれば有効期間・メモを上書きする)。 */
+export async function assignCouponToCustomer(
+  customerId: string,
+  input: CustomerCouponUpsertRequest,
+): Promise<void> {
+  const res = await fetch(`/api/coupons/admin/customers/${encodeURIComponent(customerId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(input),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'クーポンの配布に失敗しました');
+}
+
+/** 顧客への配布を取り消す。過去の適用記録は残る。 */
+export async function unassignCouponFromCustomer(customerId: string, couponId: string): Promise<void> {
+  const res = await fetch(
+    `/api/coupons/admin/customers/${encodeURIComponent(customerId)}/${encodeURIComponent(couponId)}`,
+    { method: 'DELETE', credentials: 'include' },
+  );
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'クーポンの配布取り消しに失敗しました');
 }
 
 /** 管理者のクーポン管理画面用。廃止済みも含む全件。 */
@@ -743,6 +850,107 @@ export async function uploadReceipts(input: UploadReceiptsInput): Promise<Upload
     body: JSON.stringify(input),
   });
   return parseJsonOrThrow<UploadReceiptsResult>(res);
+}
+
+/** 勤怠タブの領収書一覧の1件(GET /api/receipts)。core ReceiptListItemViewと同じ形。 */
+export interface ReceiptListItemView {
+  id: string;
+  /** 'yyyy/MM/dd HH:mm'(JST)。 */
+  receiptTimestamp: string;
+  amountYen: number | null;
+  /** OCRが返した金額の生文字列。amountYenがnullのときに何が読めていたのかを示す。 */
+  amountRaw: string | null;
+  storeName: string | null;
+  handoffText: string | null;
+  customerId: string | null;
+  /** 顧客に紐付かない経費領収書(駐車場代等)はnull。 */
+  customerName: string | null;
+  billingType: ReceiptBillingType;
+  /** 取り消し済みなら'yyyy/MM/dd HH:mm'(JST)。有効な行はnull。 */
+  cancelledAt: string | null;
+  cancellationReason: string | null;
+  cancelledByStaffName: string | null;
+  /** いま取り消せるか(領収書の日付+2日・月末まで。管理者は期限後も真)。falseなら取消ボタンを出さない。 */
+  canCancel: boolean;
+  /** ミラー送信(スプレッドシートへの書き出し)の状態。ミラーを使っていないテナントはnull。 */
+  mirrorStatus: 'pending' | 'processing' | 'done' | 'failed' | null;
+  /** pendingのとき、この時刻以降に送信される。 */
+  mirrorScheduledAt: string | null;
+  /** 送信に失敗して止まっているときの理由。 */
+  mirrorError: string | null;
+}
+
+export interface ReceiptListView {
+  yearMonth: string;
+  receipts: ReceiptListItemView[];
+  customerBillableTotalYen: number;
+  companyExpenseTotalYen: number;
+  /** 金額を数値にできていない領収書の件数(合計に入っていない分)。 */
+  unreadableAmountCount: number;
+  /** 取り消し済みの件数(一覧には残るが集計には入らない)。 */
+  cancelledCount: number;
+  /** まだスプレッドシートへ送っていない件数(取り消し期限まで送信を待つため必ず発生する)。 */
+  pendingMirrorCount: number;
+  /** 送信に失敗して止まっている件数。0でなければ管理者の対応が要る。 */
+  failedMirrorCount: number;
+}
+
+/**
+ * 登録済みの領収書を月単位で取得する。`staffId`は管理者だけが指定でき、それ以外は
+ * サーバー側で本人のstaffIdに強制される。
+ */
+export async function fetchReceipts(yearMonth: string, staffId?: string): Promise<ReceiptListView> {
+  const params = new URLSearchParams({ yearMonth });
+  if (staffId) params.set('staffId', staffId);
+  const res = await fetch(`/api/receipts?${params.toString()}`, { credentials: 'include' });
+  return parseJsonOrThrow<ReceiptListView>(res);
+}
+
+/**
+ * 領収書を取り消す(論理削除。doc/14 §10)。
+ * 会計の記録なので編集はできない。訂正は「取り消して登録し直す」。
+ *
+ * 戻り値の `mirrorAlreadySent` は「取り消した時点で既に外部シートへ送られていた」ことを表す。
+ * 管理者が期限後に取り消したときだけ起こりうる。シート側の行はこちらからは消せないので、
+ * 呼び出し側は操作した人へ伝える必要がある。
+ */
+export async function cancelReceipt(
+  receiptId: string,
+  reason: string,
+): Promise<{ mirrorAlreadySent: boolean }> {
+  const res = await fetch(`/api/receipts/${encodeURIComponent(receiptId)}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ reason }),
+  });
+  const body = await parseJsonOrThrow<{
+    success: boolean;
+    message?: string;
+    mirrorAlreadySent?: boolean;
+  }>(res);
+  if (!body.success) throw new Error(body.message || '領収書の取り消しに失敗しました');
+  return { mirrorAlreadySent: body.mirrorAlreadySent === true };
+}
+
+/**
+ * 領収書画像を取得し、`<img src>` に渡せるオブジェクトURLを返す。
+ *
+ * 【URLを組み立てて <img src> に直接渡さない理由】
+ * 公開デモはAPIサーバーを持たず、ページ内で `window.fetch` を横取りしてブラウザ内の
+ * PGliteに繋いでいる(packages/demo/src/demoApi.ts)。`<img src>` の読み込みはfetchを
+ * 通らないので、デモでは実在しないパスへの本物のリクエストになり必ず失敗する。
+ * fetchで取ってからオブジェクトURLにすれば、本番でもデモでも同じコードで動く。
+ *
+ * 画像の実体を一覧のJSONに載せない(base64にするとレスポンスが重くなる)のは変わらない。
+ * 返したURLは使い終わったら `URL.revokeObjectURL` で解放すること。
+ */
+export async function fetchReceiptImageObjectUrl(receiptId: string): Promise<string> {
+  const res = await fetch(`/api/receipts/${encodeURIComponent(receiptId)}/image`, {
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error('領収書画像を取得できませんでした');
+  return URL.createObjectURL(await res.blob());
 }
 
 export interface ReceiptOcrResult {

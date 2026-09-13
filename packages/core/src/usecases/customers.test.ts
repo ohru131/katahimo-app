@@ -7,6 +7,7 @@ import {
   listCustomers,
   searchCustomersByFamilyName,
   updateCustomer,
+  updateCustomerBirthday,
 } from './customers';
 import { FakeCustomerRepository, FakeFamilyMemberRepository } from './testDoubles';
 
@@ -97,6 +98,51 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     expect(detail?.familyMembers).toEqual([
       { id: expect.any(String), name: '佐藤 太郎', dobDate: null, dobRaw: '1990/1', info: null },
     ]);
+  });
+
+  it('世帯代表の生年月日も日付型と元表記の2列に分けて保存される(doc/14 §6)', async () => {
+    const created = await createCustomer(deps, { tenantId, name: '佐藤 花子', dob: '1990/6/15' });
+
+    const detail = await getCustomerDetail(deps, tenantId, created.id);
+    expect(detail?.dobDate).toBe('1990-06-15');
+    expect(detail?.dobRaw).toBe('1990/6/15');
+  });
+
+  it('取込(dobを渡さない更新)は、手入力済みの生年月日を消さない', async () => {
+    // RESERVA CSVには生年月日の列が無いため、再取込は毎回dobを渡さずにupdateCustomerを呼ぶ。
+    // そこで生年月日がnullに上書きされると、誕生月クーポンが翌月から無言で効かなくなる。
+    const created = await createCustomer(deps, { tenantId, name: '佐藤 花子', dob: '1990/6/15' });
+
+    await updateCustomer(deps, tenantId, created.id, {
+      tenantId,
+      name: '佐藤 花子',
+      city: '仙台市青葉区',
+    });
+
+    const detail = await getCustomerDetail(deps, tenantId, created.id);
+    expect(detail?.dobDate).toBe('1990-06-15');
+    expect(detail?.dobRaw).toBe('1990/6/15');
+    expect(detail?.city).toBe('仙台市青葉区');
+  });
+
+  it('updateCustomerBirthdayで生年月日だけを更新でき、空文字を渡すと消える', async () => {
+    const created = await createCustomer(deps, {
+      tenantId,
+      name: '佐藤 花子',
+      email: 'hanako@example.test',
+      dob: '1990/6/15',
+    });
+
+    await updateCustomerBirthday(deps, tenantId, created.id, '1991/7/20');
+    let detail = await getCustomerDetail(deps, tenantId, created.id);
+    expect(detail?.dobDate).toBe('1991-07-20');
+    // 他の項目を巻き添えにしない(全項目パッチを作るupdateCustomerと違うのがこの関数の目的)。
+    expect(detail?.email).toBe('hanako@example.test');
+
+    await updateCustomerBirthday(deps, tenantId, created.id, '');
+    detail = await getCustomerDetail(deps, tenantId, created.id);
+    expect(detail?.dobDate).toBeNull();
+    expect(detail?.dobRaw).toBeNull();
   });
 
   it('緯度経度は分解されてlat/lng/latLngRawに保存される(doc/14 §7)', async () => {

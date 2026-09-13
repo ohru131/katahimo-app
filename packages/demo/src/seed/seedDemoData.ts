@@ -1,11 +1,13 @@
 import type { Container } from '@katahimo/api';
 import {
+  assignCouponToCustomer,
   createCoupon,
   createCustomer,
   registerStaff,
   saveAccidentReport,
   saveAttendanceDay,
   saveDailyReport,
+  uploadReceipts,
 } from '@katahimo/core';
 import type { AttendanceRowData } from '@katahimo/shared';
 import { MAX_MOVE_LEGS } from '@katahimo/shared';
@@ -46,11 +48,70 @@ function fullAddress(index: number): string {
   return `${figure.prefecture}${figure.city}${figure.addressDetail}`;
 }
 
+/**
+ * 世帯代表者の生年月日を「今月」で作る('YYYY/M/D' の手入力と同じ表記)。年は固定で構わない
+ * (誕生月クーポンは年を見ず月だけで判定するため。usecases/coupons.tsのfindBirthdayPerson)。
+ */
+function representativeBirthdayThisMonth(today: Date): string {
+  // UTCの月ではなくJSTの月を使う。月初/月末の日本時間の夜はUTCではまだ前月で、
+  // そのまま使うと「今月生まれ」のつもりが先月生まれになり、誕生月クーポンがデモに出ない。
+  const jstMonth = Number(toJstDateIso(today).slice(5, 7));
+  return `1990/${jstMonth}/15`;
+}
+
 /** 月齢から生年月日('YYYY-MM-DD')を作る。「今日」基準なので、いつ見ても年齢が古びない。 */
 function birthDateFromAgeMonths(today: Date, ageMonths: number): string {
   const dob = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - ageMonths, 15));
   return dob.toISOString().slice(0, 10);
 }
+
+/**
+ * デモ用の領収書画像(1x1の透明PNG)。実物の写真を同梱せずに「画像を見る」の導線まで
+ * 確かめられるようにするための最小データ。
+ */
+const DEMO_RECEIPT_IMAGE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+/**
+ * デモ用の領収書。金額が'よみとれず'の行は、OCRが数値にできなかった場合(amount_yenがnull)を
+ * 再現する。一覧の合計は読めた分だけなので、その枚数が警告として出ることまで見せられる。
+ */
+const DEMO_RECEIPTS: {
+  time: string;
+  amount: string;
+  storeName: string;
+  billingType: 'customer_billable' | 'company_expense';
+  handoffText: string;
+}[] = [
+  {
+    time: '10:30',
+    amount: '1280',
+    storeName: 'スーパーみどり',
+    billingType: 'customer_billable',
+    handoffText: 'おやつと飲み物を購入しました',
+  },
+  {
+    time: '12:15',
+    amount: '600',
+    storeName: 'コインパーキング仙台駅前',
+    billingType: 'company_expense',
+    handoffText: '訪問先の駐車場代',
+  },
+  {
+    time: '15:40',
+    amount: '2450',
+    storeName: 'ドラッグストアあおば',
+    billingType: 'customer_billable',
+    handoffText: 'おむつを買い足しました',
+  },
+  {
+    time: '17:05',
+    amount: 'よみとれず',
+    storeName: '',
+    billingType: 'company_expense',
+    handoffText: 'レシートが薄く、金額を読み取れませんでした',
+  },
+];
 
 const VISIT_NOTES = [
   '室内遊びを中心に過ごしました。積み木を高く積むことに繰り返し挑戦していました。',
@@ -127,6 +188,34 @@ export async function seedDemoData(
   });
   if (!springCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${springCoupon.reason})`);
 
+  // 誕生月クーポン(doc/14 §9)。日報タブのクーポン選択に「🎂 ○○さんの誕生月」として
+  // 出るのは、世帯代表またはお子さまの誕生月に当たる世帯だけになる。下で1世帯目の代表者に
+  // 「今月」の生年月日を入れてあるので、デモをいつ開いてもこの動きを1件は見られる。
+  const birthdayCoupon = await createCoupon(container, tenant.id, {
+    code: 'BIRTHDAY10',
+    name: 'お誕生月 10%引き',
+    discountKind: 'percent',
+    discountPercent: 10,
+    eligibilityKind: 'birthday_month',
+    birthdaySubject: 'any',
+    usageLimitKind: 'once_per_customer_per_year',
+    note: '世帯代表またはお子さまの誕生月に、年1回ご利用いただけます',
+  });
+  if (!birthdayCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${birthdayCoupon.reason})`);
+
+  // 顧客ごとに配るクーポン。配っていない世帯では日報タブの選択肢に出ない
+  // (顧客カルテの「クーポン」から配ると出てくる)。
+  const thankYouCoupon = await createCoupon(container, tenant.id, {
+    code: 'THANKS1000',
+    name: '長期ご利用のお礼 1000円引き',
+    discountKind: 'amount',
+    discountAmountYen: 1000,
+    audience: 'assigned',
+    usageLimitKind: 'once_per_customer',
+    note: '対象の世帯にのみ配布。1回限り',
+  });
+  if (!thankYouCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${thankYouCoupon.reason})`);
+
   const customerIdByName = new Map<string, string>();
   const addressLatLng = new Map<string, { lat: number; lng: number }>();
   addressLatLng.set(DEMO_OFFICE.address, { lat: DEMO_OFFICE.lat, lng: DEMO_OFFICE.lng });
@@ -157,6 +246,10 @@ export async function seedDemoData(
       latLng: `${figure.lat},${figure.lng}`,
       memberType: '定期利用',
       memberStatus: '有効',
+      // 1世帯目の代表者だけ「今月」生まれにして、誕生月クーポン(BIRTHDAY10)がデモを
+      // いつ開いても1件は選択肢に出るようにする。他の世帯は未登録のまま残し、
+      // 「生年月日が入っていない世帯では誕生月クーポンが出ない」ことも同時に見せる。
+      dob: index === 0 ? representativeBirthdayThisMonth(today) : undefined,
       registeredAt: new Date(today.getTime() - 200 * 24 * 60 * 60 * 1000),
       familyMembers: figure.children.map((child) => ({
         name: `${figure.familyName} ${child.givenName}`,
@@ -166,6 +259,14 @@ export async function seedDemoData(
     });
     customerIdByName.set(name, created.id);
     addressLatLng.set(address, { lat: figure.lat, lng: figure.lng });
+
+    // 配布型クーポンは1世帯目にだけ配る(顧客カルテの「クーポン」で配布状況を見られる)。
+    if (index === 0) {
+      const assigned = await assignCouponToCustomer(container, tenant.id, created.id, {
+        couponId: thankYouCoupon.couponId,
+      });
+      if (!assigned.ok) throw new Error(`デモ用クーポンの配布に失敗しました(${assigned.reason})`);
+    }
   }
 
   // 今日ぶんも入れる。「今日の訪問がまだ1件も無い」状態でデモが始まると、
@@ -255,6 +356,33 @@ export async function seedDemoData(
         businessDate,
         buildAttendanceRow(visits, dateIndex),
       );
+    }
+  }
+
+  // 領収書(doc/14 §10)。勤怠タブの「🧾 領収書」を開いたときに一覧が空にならないよう、
+  // 今月ぶんを何枚か入れておく。請求区分の両方・顧客に紐付かない経費・OCRが金額を読めなかった
+  // 場合の3つを混ぜて、一覧の見え方(合計に入らない枚数の警告を含む)をそのまま確かめられるようにする。
+  onProgress({ message: '領収書を登録しています…', ratio: 0.95 });
+  const receiptCustomerId = customerIdByName.get(
+    `${DEMO_FIGURES[0]?.familyName} ${DEMO_FIGURES[0]?.givenName}`,
+  );
+  if (receiptCustomerId) {
+    for (const receipt of DEMO_RECEIPTS) {
+      await uploadReceipts(container, tenant.id, {
+        staffId: adminStaffId,
+        // 駐車場代のような会社経費は顧客に紐付かない(customer_billableにはできない)。
+        customerId: receipt.billingType === 'customer_billable' ? receiptCustomerId : null,
+        images: [
+          {
+            data: DEMO_RECEIPT_IMAGE,
+            amount: receipt.amount,
+            storeName: receipt.storeName,
+            billingType: receipt.billingType,
+          },
+        ],
+        fallbackTimestamp: `${toJstDateIso(today).replaceAll('-', '/')} ${receipt.time}:00`,
+        handoffText: receipt.handoffText,
+      });
     }
   }
 

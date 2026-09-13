@@ -118,6 +118,18 @@ export const customers = pgTable(
     /** 年代(例: "30代")。生年月日そのものではなく既に丸められた区分。 */
     ageBracket: text(),
 
+    // doc/14 §6: 生年月日は日付型(dobDate)と元表記(dobRaw)の2列で持つ。family_members と
+    // 同じ形にしておくことで、誕生月クーポン(doc/14 §9)が世帯代表と世帯構成員を
+    // 同じロジックで扱える。
+    /**
+     * 世帯代表者の生年月日。RESERVA CSVには生年月日の列が無い(あるのは丸め済みの
+     * ageBracket だけ)ため、取り込みでは埋まらず顧客編集画面からの手入力で入る。
+     * 解析できない表記は1月1日等を勝手に補わずnullのままにする。
+     */
+    dobDate: date(),
+    /** 生年月日の元表記(normalizeDateStrで正規化済みの"YYYY/M/D"形式)。解析成否によらず残す。 */
+    dobRaw: text(),
+
     /** RESERVA側の登録日時(CSVのExcelシリアル日時から変換)。 */
     registeredAt: timestamp({ withTimezone: true }),
     /** RESERVA側の最終更新日時。このアプリ内でのupdatedAtとは別物。 */

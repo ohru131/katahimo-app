@@ -3,7 +3,13 @@ import type { LoginThrottlePolicy } from '../domain/auth/loginThrottle';
 import { applyFailedLogin } from '../domain/auth/loginThrottle';
 import type { CryptoPort, EncryptedValue } from '../ports/crypto';
 import type { MailerPort, MailMessage } from '../ports/mailer';
-import type { MirrorJob, OutboxJobRecord, OutboxRepositoryPort } from '../ports/mirror';
+import type {
+  MirrorJob,
+  MirrorJobStatus,
+  MirrorKind,
+  OutboxJobRecord,
+  OutboxRepositoryPort,
+} from '../ports/mirror';
 import type {
   AccidentReportMirrorPayload,
   AttendanceAggregateMirrorPayload,
@@ -28,6 +34,8 @@ import type {
   CouponRedemptionRecord,
   CouponRedemptionRepositoryPort,
   CouponRepositoryPort,
+  CustomerCouponRecord,
+  CustomerCouponRepositoryPort,
   CustomerPatchInput,
   CustomerProfileFields,
   CustomerRecord,
@@ -40,6 +48,7 @@ import type {
   NewAccidentReportInput,
   NewCouponInput,
   NewCouponRedemptionInput,
+  NewCustomerCouponInput,
   NewCustomerInput,
   NewDailyReportInput,
   NewFamilyMemberInput,
@@ -348,6 +357,8 @@ const EMPTY_PROFILE_FIELDS: CustomerProfileFields = {
   paymentStatus: null,
   gender: null,
   ageBracket: null,
+  dobDate: null,
+  dobRaw: null,
   registeredAt: null,
   externalLastUpdatedAt: null,
 };
@@ -712,8 +723,13 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
    */
   async create(input: NewReceiptInput): Promise<ReceiptRecord> {
     if (input.dedupeKey !== null) {
+      // 取り消し済みの行は receipts_tenant_dedupe_key_uidx の対象外(doc/14 §10)。
+      // 取り消して登録し直す訂正が、重複判定に引っかからないようにするため。
       const conflict = this.rows.some(
-        (r) => r.record.tenantId === input.tenantId && r.dedupeKey === input.dedupeKey,
+        (r) =>
+          r.record.tenantId === input.tenantId &&
+          r.dedupeKey === input.dedupeKey &&
+          r.record.cancelledAt === null,
       );
       if (conflict) {
         throw Object.assign(
@@ -735,6 +751,10 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
       fileKey: input.fileKey,
       contentType: input.contentType,
       billingType: input.billingType,
+      cancelledAt: null,
+      cancellationReason: null,
+      cancelledByStaffId: null,
+      mirrorClaimedAt: null,
       createdAt: new Date(),
     };
     this.rows.push({ record, dedupeKey: input.dedupeKey });
@@ -750,9 +770,65 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
     const keys = new Set(dedupeKeys);
     return new Set(
       this.rows
-        .filter((r) => r.record.tenantId === tenantId && r.dedupeKey && keys.has(r.dedupeKey))
+        .filter(
+          (r) =>
+            r.record.tenantId === tenantId &&
+            r.dedupeKey &&
+            keys.has(r.dedupeKey) &&
+            r.record.cancelledAt === null,
+        )
         .map((r) => r.dedupeKey as string),
     );
+  }
+
+  async listByStaffInPeriod(
+    tenantId: string,
+    staffId: string,
+    from: Date,
+    to: Date,
+  ): Promise<ReceiptRecord[]> {
+    return this.rows
+      .map((r) => r.record)
+      .filter(
+        (r) =>
+          r.tenantId === tenantId &&
+          r.staffId === staffId &&
+          // DrizzleReceiptRepositoryと同じ半開区間 [from, to)。
+          r.receiptTimestamp.getTime() >= from.getTime() &&
+          r.receiptTimestamp.getTime() < to.getTime(),
+      )
+      .sort((a, b) => b.receiptTimestamp.getTime() - a.receiptTimestamp.getTime())
+      .map((r) => ({ ...r }));
+  }
+
+  async cancel(
+    tenantId: string,
+    receiptId: string,
+    input: { cancelledByStaffId: string; reason: string | null },
+  ): Promise<ReceiptRecord | null> {
+    const row = this.rows.find(
+      // DrizzleReceiptRepositoryと同じく、既に取り消し済みの行は更新しない。
+      (r) => r.record.tenantId === tenantId && r.record.id === receiptId && r.record.cancelledAt === null,
+    );
+    if (!row) return null;
+    row.record.cancelledAt = new Date();
+    row.record.cancelledByStaffId = input.cancelledByStaffId;
+    row.record.cancellationReason = input.reason;
+    return { ...row.record };
+  }
+
+  /**
+   * DrizzleReceiptRepositoryと同じく、取り消し済みの行には宣言できない。
+   * 実DBでは cancel との直列化を行ロックが担うが、ここは単一スレッドなので
+   * 「取り消し済みならnull」という結果だけを再現する。
+   */
+  async claimForMirror(tenantId: string, receiptId: string): Promise<ReceiptRecord | null> {
+    const row = this.rows.find(
+      (r) => r.record.tenantId === tenantId && r.record.id === receiptId && r.record.cancelledAt === null,
+    );
+    if (!row) return null;
+    row.record.mirrorClaimedAt = new Date();
+    return { ...row.record };
   }
 
   /** 登録順の全件を返す(billingType/amountYen等、createに渡した値の検証に使う)。 */
@@ -776,7 +852,8 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
  */
 export interface OutboxRowForTest extends OutboxJobRecord {
   idempotencyKey: string;
-  status: string;
+  // 本物のoutbox_jobs_status_checkと同じ4値に揃える(画面へ返す状態と型を一致させるため)。
+  status: MirrorJobStatus['status'];
   nextAttemptAt: Date | null;
   lastError: string | null;
 }
@@ -800,9 +877,26 @@ export class FakeOutboxRepository implements OutboxRepositoryPort, FakeTransacti
       idempotencyKey: job.idempotencyKey,
       attempts: 0,
       status: 'pending',
-      nextAttemptAt: null,
+      // DrizzleOutboxRepositoryと同じ扱い。notBeforeが無ければ即座に対象になる。
+      nextAttemptAt: job.notBefore ?? null,
       lastError: null,
     });
+  }
+
+  async listStatusByTargets(
+    tenantId: string,
+    kind: MirrorKind,
+    targetIds: string[],
+  ): Promise<MirrorJobStatus[]> {
+    const idSet = new Set(targetIds);
+    return this.rows
+      .filter((r) => r.tenantId === tenantId && r.kind === kind && idSet.has(r.targetId))
+      .map((r) => ({
+        targetId: r.targetId,
+        status: r.status,
+        nextAttemptAt: r.nextAttemptAt ?? this.now(),
+        lastError: r.lastError,
+      }));
   }
 
   async claimPending(tenantId: string, limit: number): Promise<OutboxJobRecord[]> {
@@ -1012,6 +1106,46 @@ export class FakeCouponRepository implements CouponRepositoryPort {
   }
 }
 
+/**
+ * 顧客へのクーポン割当(customer_coupons)のインメモリ実装。同じ(顧客, クーポン)は
+ * 1行しか持たない(customer_coupons_tenant_customer_coupon_uk と同じ制約)。
+ */
+export class FakeCustomerCouponRepository implements CustomerCouponRepositoryPort {
+  private readonly rows: CustomerCouponRecord[] = [];
+  private seq = 0;
+
+  async listByCustomerId(tenantId: string, customerId: string): Promise<CustomerCouponRecord[]> {
+    return this.rows
+      .filter((r) => r.tenantId === tenantId && r.customerId === customerId)
+      .map((r) => ({ ...r }));
+  }
+
+  async upsert(input: NewCustomerCouponInput): Promise<CustomerCouponRecord> {
+    const existing = this.rows.find(
+      (r) =>
+        r.tenantId === input.tenantId && r.customerId === input.customerId && r.couponId === input.couponId,
+    );
+    if (existing) {
+      existing.validFrom = input.validFrom;
+      existing.validTo = input.validTo;
+      existing.note = input.note;
+      return { ...existing };
+    }
+    const record: CustomerCouponRecord = { id: `customer-coupon-${++this.seq}`, ...input };
+    this.rows.push(record);
+    return { ...record };
+  }
+
+  async remove(tenantId: string, customerId: string, couponId: string): Promise<boolean> {
+    const index = this.rows.findIndex(
+      (r) => r.tenantId === tenantId && r.customerId === customerId && r.couponId === couponId,
+    );
+    if (index < 0) return false;
+    this.rows.splice(index, 1);
+    return true;
+  }
+}
+
 export class FakeCouponRedemptionRepository
   implements CouponRedemptionRepositoryPort, FakeTransactionParticipant
 {
@@ -1032,11 +1166,16 @@ export class FakeCouponRedemptionRepository
         id: `coupon-redemption-${++this.seq}`,
         tenantId: input.tenantId,
         dailyReportId: input.dailyReportId,
+        customerId: input.customerId,
         couponId: input.couponId,
         appliedAt: new Date(),
         discountKind: input.discountKind,
         discountAmountYen: input.discountAmountYen,
         discountPercent: input.discountPercent,
+        usageLimitKind: input.usageLimitKind,
+        usageScopeKey: input.usageScopeKey,
+        birthdaySubjectName: input.birthdaySubjectName,
+        birthdaySubjectDob: input.birthdaySubjectDob,
         note: input.note ?? null,
       }),
     );
@@ -1054,6 +1193,12 @@ export class FakeCouponRedemptionRepository
     const idSet = new Set(dailyReportIds);
     return this.rows
       .filter((r) => r.tenantId === tenantId && idSet.has(r.dailyReportId))
+      .map((r) => ({ ...r }));
+  }
+
+  async listByCustomerId(tenantId: string, customerId: string): Promise<CouponRedemptionRecord[]> {
+    return this.rows
+      .filter((r) => r.tenantId === tenantId && r.customerId === customerId)
       .map((r) => ({ ...r }));
   }
 
