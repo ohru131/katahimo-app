@@ -975,26 +975,40 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                       placeholder="店舗名"
                       className="w-full p-1 text-sm border border-gray-300 rounded text-center"
                     />
-                    {/* 請求区分(doc/14 §10)。顧客が選択されていない場合はDB制約
-                        (receipts_billable_requires_customer)と同じ制限を画面でも表現するため
-                        「顧客に請求」を選べないようにする。 */}
-                    <select
-                      value={img.billingType}
-                      disabled={!customerId}
-                      onChange={(e) =>
-                        setImages((prev) =>
-                          prev.map((i) =>
-                            i.id === img.id ? { ...i, billingType: e.target.value as ReceiptBillingType } : i,
-                          ),
-                        )
-                      }
-                      className="w-full p-1 text-[11px] border border-gray-300 rounded text-center bg-white disabled:opacity-60"
-                    >
-                      <option value="company_expense">会社立替</option>
-                      <option value="customer_billable" disabled={!customerId}>
-                        顧客に請求
-                      </option>
-                    </select>
+                    {/* 請求区分(doc/14 §10)。日時・金額・店舗名と違い、選択肢の欄には
+                        プレースホルダで「何の欄か」を書けない。ラベルを付けないと既定値の
+                        「会社立替」だけが見えている状態になり、何を選ぶ欄なのか分からないまま
+                        素通りされる(=顧客に請求すべき領収書が会社立替のまま登録される)。
+                        顧客に請求する側は色を変えて、複数枚並べたときに一目で数えられるようにする。
+
+                        顧客が選択されていない場合はDB制約(receipts_billable_requires_customer)と
+                        同じ制限を画面でも表現するため「顧客に請求」を選べないようにする。 */}
+                    <label className="w-full flex flex-col gap-0.5 text-[10px] text-gray-500">
+                      請求区分
+                      <select
+                        value={img.billingType}
+                        disabled={!customerId}
+                        onChange={(e) =>
+                          setImages((prev) =>
+                            prev.map((i) =>
+                              i.id === img.id
+                                ? { ...i, billingType: e.target.value as ReceiptBillingType }
+                                : i,
+                            ),
+                          )
+                        }
+                        className={`w-full p-1 text-xs border rounded text-center disabled:opacity-60 ${
+                          img.billingType === 'customer_billable'
+                            ? 'border-amber-400 bg-amber-50 text-amber-800 font-bold'
+                            : 'border-gray-300 bg-white text-gray-700'
+                        }`}
+                      >
+                        <option value="company_expense">会社立替</option>
+                        <option value="customer_billable" disabled={!customerId}>
+                          顧客に請求
+                        </option>
+                      </select>
+                    </label>
                     {img.ocrError && (
                       <p className="text-[10px] text-red-500 text-center leading-tight">
                         自動読取に失敗しました。金額等を手入力してください。
