@@ -10,6 +10,10 @@ import { withTenant } from '../tenantScope';
 
 type AppSettingsRow = typeof appSettings.$inferSelect;
 
+/**
+ * DBの行をドメインのレコードに直す。暗号化列は ciphertext と key_version が揃っている
+ * ときだけ EncryptedField にまとめ、片方でも欠けていれば未設定(null)として扱う。
+ */
 function toRecord(row: AppSettingsRow): AppSettingsRecord {
   return {
     tenantId: row.tenantId,

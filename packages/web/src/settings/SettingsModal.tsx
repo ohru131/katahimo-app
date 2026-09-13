@@ -109,6 +109,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  /** 文字サイズは保存ボタンを待たず即時反映する(効果を見ながら選ぶため)。 */
   const handleTextSizeChange = (size: TextSize) => {
     setTextSize(size);
     applyTextSize(size);
@@ -134,6 +135,10 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
     }
   };
 
+  /**
+   * 変わった項目だけを保存する。未変更の欄まで毎回送ると、Gemini APIキーのように
+   * 「空で保存すると既存値が消える」項目を踏む経路ができてしまう。
+   */
   const handleSave = async () => {
     if (!staff.isAdmin || !settingsQuery.data) {
       onClose();

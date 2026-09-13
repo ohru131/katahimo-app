@@ -17,14 +17,19 @@ import type { Container } from '../container';
 import { getAuthenticatedSession } from '../session';
 
 /**
- * GAS版の各getXXXForAdmin/saveXXXForAdminの `!session.isAdmin` チェックに対応。
- * 管理者以外には403を返す(GAS版は`{success:false, message:'権限がありません。'}`を200で
- * 返していたが、RESTらしく403にする)。
+ * 整数かつ指定範囲内か。JSONで来た値をそのままDBへ渡すと、範囲外はCHECK制約違反(23514)
+ * という分かりにくいエラーで初めて気付く形になるため、ここで弾いて400にする(doc/14 §1.6)。
+ * 小数や文字列も落とす(`'3'` や `3.5` を締め日として受けない)。
  */
 function isIntegerInRange(value: unknown, min: number, max: number): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
 }
 
+/**
+ * GAS版の各getXXXForAdmin/saveXXXForAdminの `!session.isAdmin` チェックに対応。
+ * 管理者以外には403を返す(GAS版は`{success:false, message:'権限がありません。'}`を200で
+ * 返していたが、RESTらしく403にする)。
+ */
 function isAdmin(session: ResolvedSession | null): session is ResolvedSession {
   return !!session && session.isAdmin;
 }
