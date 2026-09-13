@@ -759,6 +759,7 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
       cancellationReason: null,
       cancelledByStaffId: null,
       mirrorClaimedAt: null,
+      cancellableUntil: input.cancellableUntil,
       createdAt: new Date(),
     };
     this.rows.push({ record, dedupeKey: input.dedupeKey });

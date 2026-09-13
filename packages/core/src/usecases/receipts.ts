@@ -6,12 +6,12 @@ import {
   computeReceiptAmount,
   formatJstDateKey,
   formatJstDateTime,
+  jstEndOfDay,
   jstMonthRange,
   normalizeAmount,
   normalizeText,
   parseJstTimestampString,
   receiptCancellableUntil,
-  receiptMirrorSendAfter,
 } from '../domain';
 import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
 import type { ReceiptDeadlinePolicy } from '../domain/reports/receiptCancellation';
@@ -21,6 +21,7 @@ import type {
   AppSettingsRepositoryPort,
   CustomerRepositoryPort,
   ReceiptBillingType,
+  ReceiptRecord,
   ReceiptRepositoryPort,
   StaffRepositoryPort,
 } from '../ports/repositories';
@@ -197,13 +198,17 @@ export async function uploadReceipts(
     // 領収書がスプレッドシートに永久に現れない)。画像はオブジェクトストレージ側なので
     // トランザクションには入らない。ロールバックした場合は置いたファイルを消して揃える。
     try {
+      const receiptTimestamp = parseJstTimestampString(p.timestamp);
+      // 取り消し期限と送信開始時刻を、登録時の設定で一度だけ決める。以後この値は動かさない。
+      const cancellableUntil = receiptCancellableUntil(formatJstDateKey(receiptTimestamp), policy);
+
       await deps.unitOfWork.run(tenantId, async (scope) => {
         const receiptRecord = await deps.receipts.create(
           {
             tenantId,
             staffId: input.staffId,
             customerId: input.customerId,
-            receiptTimestamp: parseJstTimestampString(p.timestamp),
+            receiptTimestamp,
             dedupeKey: p.dedupeKey,
             amountYen,
             amountRaw,
@@ -212,6 +217,9 @@ export async function uploadReceipts(
             fileKey,
             contentType: decoded.contentType,
             billingType,
+            // 送信開始時刻(下の notBefore)と同じ計算から、同時に決める。片方だけ後から
+            // 動かすと「送ったあとに取り消せる」状態ができる(doc/14 §10)。
+            cancellableUntil,
           },
           scope,
         );
@@ -224,7 +232,7 @@ export async function uploadReceipts(
             // 取り消せる期間が終わるまで送信を始めない(doc/14 §10)。スプレッドシートへの追記は
             // 送ってしまうと取り消しても向こう側に残るため、「送ったあとに取り消された」状態を
             // 作れないようにする。締め日の手前で打ち切るので、締めた後に送られることもない。
-            notBefore: receiptMirrorSendAfter(formatJstDateKey(receiptRecord.receiptTimestamp), policy),
+            notBefore: jstEndOfDay(cancellableUntil),
           },
           scope,
         );
@@ -368,11 +376,26 @@ export interface ReceiptListView {
  * 揃えてあるので、「外部へ送ったあとに取り消された」状態は起きない。
  */
 export function canCancelReceiptOn(
-  receiptDateStr: string,
+  record: ReceiptRecord,
   today: string,
   policy: ReceiptDeadlinePolicy,
 ): boolean {
-  return today <= receiptCancellableUntil(receiptDateStr, policy);
+  return today <= resolveCancellableUntil(record, policy);
+}
+
+/**
+ * その領収書の取り消し期限('YYYY-MM-DD'・JST)。
+ *
+ * 登録時に確定させた `cancellable_until` を使う。締め日設定は後から変えられるが、既に
+ * outbox へ積んだ送信予定は動かないので、判定のたびに現在の設定で計算し直すと期限だけが
+ * 延びて「送ったあとに取り消せる」状態ができる(doc/14 §10)。
+ *
+ * この列を持たない古い行だけ、現在の設定から計算してフォールバックする。
+ */
+function resolveCancellableUntil(record: ReceiptRecord, policy: ReceiptDeadlinePolicy): string {
+  return (
+    record.cancellableUntil ?? receiptCancellableUntil(formatJstDateKey(record.receiptTimestamp), policy)
+  );
 }
 
 /**
@@ -482,8 +505,7 @@ export async function listReceiptsForStaff(
         : null,
       canCancel:
         record.cancelledAt === null &&
-        (options.ignoreDeadline === true ||
-          canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey, policy)),
+        (options.ignoreDeadline === true || canCancelReceiptOn(record, todayKey, policy)),
       mirrorStatus: mirrorStatusByTarget.get(record.id)?.status ?? null,
       mirrorScheduledAt:
         mirrorStatusByTarget.get(record.id)?.status === 'pending'
@@ -560,7 +582,7 @@ export async function cancelReceipt(
   if (options.ignoreDeadline !== true) {
     const todayKey = formatJstDateKey(options.today ?? new Date());
     const policy = await resolveReceiptDeadlinePolicy(deps, tenantId);
-    if (!canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey, policy)) {
+    if (!canCancelReceiptOn(record, todayKey, policy)) {
       return { ok: false, reason: 'deadline_passed' };
     }
   }

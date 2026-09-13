@@ -161,16 +161,24 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
         const result = await saveGoogleChatWebhookSettings(reportWebhook, receiptWebhook);
         if (!result.ok) throw new Error(result.message);
       }
+      // 空欄のまま保存させない。保存ボタンは type="button" でブラウザの検証を通らないため、
+      // ここで弾かないと Number('') === 0 で「0日」が黙って保存される
+      // (締め日の空欄は「月末」という正当な値なので、数値2つだけを見る)。
+      if (mirrorLeadDays === '' || cancellableDays === '') {
+        throw new Error('送信を終える日数と取り消せる日数を入力してください。');
+      }
       const nextClosingDay = closingDay === '' ? null : Number(closingDay);
+      const nextMirrorLeadDays = Number(mirrorLeadDays);
+      const nextCancellableDays = Number(cancellableDays);
       if (
         nextClosingDay !== settingsQuery.data.receiptClosingDay ||
-        Number(mirrorLeadDays) !== settingsQuery.data.receiptMirrorLeadDays ||
-        Number(cancellableDays) !== settingsQuery.data.receiptCancellableDays
+        nextMirrorLeadDays !== settingsQuery.data.receiptMirrorLeadDays ||
+        nextCancellableDays !== settingsQuery.data.receiptCancellableDays
       ) {
         const result = await saveReceiptDeadlineSettings({
           closingDay: nextClosingDay,
-          mirrorLeadDays: Number(mirrorLeadDays),
-          cancellableDays: Number(cancellableDays),
+          mirrorLeadDays: nextMirrorLeadDays,
+          cancellableDays: nextCancellableDays,
         });
         if (!result.ok) throw new Error(result.message);
       }
@@ -417,7 +425,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
                     />
                     <p className="text-[10px] text-gray-400 mt-1">
                       ※
-                      1にすると締め日の前日いっぱいで送り終えます。締める時点で当期分がすべてシートに出ている状態になります。
+                      1にすると締め日の前日が送信日になり、締める時点で当期分がすべてシートに出ている状態になります。0にすると締め日当日が送信日です。
                     </p>
 
                     <label className="block text-xs text-gray-600 mt-3 mb-1" htmlFor="receiptCancellableDays">
@@ -434,7 +442,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
                     />
                     <p className="text-[10px] text-gray-400 mt-1">
                       ※
-                      暦日で数えます(訪問保育は土日祝日も訪問があるため)。送信を終える日が先に来る場合はそちらが優先され、締め間際の領収書は取り消せる期間が短くなります。
+                      暦日で数えます(訪問保育は土日祝日も訪問があるため)。送信日の前日が先に来る場合はそちらが優先され、締め間際の領収書は取り消せる期間が短くなります。
                     </p>
                   </div>
                 </>

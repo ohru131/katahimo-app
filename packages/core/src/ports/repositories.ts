@@ -760,6 +760,11 @@ export interface ReceiptRecord {
    */
   mirrorClaimedAt: Date | null;
   /**
+   * 取り消せる最終日('YYYY-MM-DD'・JST)。登録時の締め日設定で決まり、以後動かさない
+   * (doc/14 §10)。この列が無い古い行はnull。
+   */
+  cancellableUntil: string | null;
+  /**
    * ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。
    * 領収書は追記しかしないため作成時刻。
    */
@@ -787,6 +792,12 @@ export interface NewReceiptInput {
   contentType: string;
   /** 請求区分(doc/14 §10)。customer_billableの場合customerIdがnullだとDB制約で拒否される。 */
   billingType: ReceiptBillingType;
+  /**
+   * 取り消せる最終日('YYYY-MM-DD'・JST)。登録時の締め日設定から計算した値を保存する
+   * (doc/14 §10)。ミラー送信の開始時刻(outbox の next_attempt_at)と同じ計算から
+   * 同時に決めること。片方だけ後から動くと、送ったあとに取り消せる状態ができる。
+   */
+  cancellableUntil: string;
 }
 
 export interface ReceiptRepositoryPort {

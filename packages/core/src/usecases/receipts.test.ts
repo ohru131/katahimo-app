@@ -131,6 +131,7 @@ describe('uploadReceipts', () => {
       fileKey: `${tenantId}/receipts/existing.jpg`,
       contentType: 'image/jpeg',
       billingType: 'company_expense',
+      cancellableUntil: '2026-09-01',
     });
 
     // アプリ側の事前チェックがすり抜けた状況を再現する(本来ならexistingに入っているはず)。
@@ -581,10 +582,10 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
 
     const [job] = mirror.listAllForTest();
     if (!job) throw new Error('ミラージョブが積まれていません');
-    // 既定は月末締め・送信はその1日前まで(mirrorLeadDays=1)なので送信締切は9/29。
-    // 送信開始は9/30 00:00 JST = 9/29 15:00 UTC で、登録時刻(9/30 10:00 JST)より前。
-    // つまり積んだ時点で送信可能=締め間際の分は待たずに出る(doc/14 §10)。
-    expect(job.nextAttemptAt?.toISOString()).toBe('2026-09-29T15:00:00.000Z');
+    // 既定は月末締め・送信日は締め日の1日前(mirrorLeadDays=1)なので送信日は9/29。
+    // 取り消せるのは9/28までで、送信開始は9/29 00:00 JST = 9/28 15:00 UTC。
+    // 登録時刻(9/30 10:00 JST)より前なので、積んだ時点で送信可能=待たずに出る(doc/14 §10)。
+    expect(job.nextAttemptAt?.toISOString()).toBe('2026-09-28T15:00:00.000Z');
   });
 
   it('まだ送っていない領収書の件数と送信予定を返す(締めのときに取り残しに気付けるように)', async () => {

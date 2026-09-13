@@ -38,29 +38,31 @@ describe('receiptCancellableUntil', () => {
     expect(receiptCancellableUntil('2026-09-18', DEFAULT)).toBe('2026-09-20');
   });
 
-  it('送信締切(締め日のleadDays日前)を越えない', () => {
-    // 月末締め・leadDays=1 なので送信締切は9/29。
-    expect(receiptCancellableUntil('2026-09-28', DEFAULT)).toBe('2026-09-29');
-    // 月末が31日の月でも同じ。
-    expect(receiptCancellableUntil('2026-10-29', DEFAULT)).toBe('2026-10-30');
+  it('送信日(締め日のleadDays日前)そのものは取り消せる期間に含めない', () => {
+    // 月末締め・leadDays=1 なので送信日は9/29。取り消せるのはその前日の9/28まで。
+    // 含めてしまうと送信開始が9/30 0時になり、「9/29のうちに送り終える」を破る。
+    expect(receiptCancellableUntil('2026-09-28', DEFAULT)).toBe('2026-09-28');
+    // 月末が31日の月でも同じ(送信日10/30、取り消せるのは10/29まで)。
+    expect(receiptCancellableUntil('2026-10-29', DEFAULT)).toBe('2026-10-29');
   });
 
   it('締め間際の領収書は取り消せる期間がゼロになる(領収書の日付より前の日が返る)', () => {
-    // 送信締切9/29を過ぎて登録された分。締めるまでに出ていることを優先する。
-    expect(receiptCancellableUntil('2026-09-30', DEFAULT)).toBe('2026-09-29');
+    // 取り消せる最終日(9/28)を過ぎて登録された分。締めるまでに出ていることを優先する。
+    expect(receiptCancellableUntil('2026-09-30', DEFAULT)).toBe('2026-09-28');
   });
 
   it('締め日を変えると期限も追随する', () => {
     expect(receiptCancellableUntil('2026-09-05', DAY20)).toBe('2026-09-07');
-    // 送信締切は9/19。
-    expect(receiptCancellableUntil('2026-09-18', DAY20)).toBe('2026-09-19');
+    // 送信日は9/19なので、取り消せるのは9/18まで。
+    expect(receiptCancellableUntil('2026-09-18', DAY20)).toBe('2026-09-18');
     // 締め日当日の領収書は次の締め期間(10/20締め・送信締切10/19)に入るので、通常どおり+2日。
     expect(receiptCancellableUntil('2026-09-21', DAY20)).toBe('2026-09-23');
   });
 
   it('うるう年の2月末も正しく扱う', () => {
-    expect(receiptCancellableUntil('2028-02-26', DEFAULT)).toBe('2028-02-28');
-    expect(receiptCancellableUntil('2028-02-27', DEFAULT)).toBe('2028-02-28');
+    // 締め日2/29、送信日2/28、取り消せるのは2/27まで。
+    expect(receiptCancellableUntil('2028-02-26', DEFAULT)).toBe('2028-02-27');
+    expect(receiptCancellableUntil('2028-02-27', DEFAULT)).toBe('2028-02-27');
   });
 });
 
@@ -79,16 +81,16 @@ describe('receiptMirrorSendAfter', () => {
     expect(receiptMirrorSendAfter('2026-09-14', DEFAULT).toISOString()).toBe('2026-09-16T15:00:00.000Z');
   });
 
-  it('月末近くの領収書もその月のうちに送り始める(翌月へ持ち越さない)', () => {
-    // leadDays=1 により送信締切は9/29。9/30 00:00 JST = 9/29 15:00 UTC から送る。
-    // 締め日を月末にしたまま「前月分が翌月に送られる」のを無くしているのがこの行。
-    expect(receiptMirrorSendAfter('2026-09-28', DEFAULT).toISOString()).toBe('2026-09-29T15:00:00.000Z');
-    expect(receiptMirrorSendAfter('2026-09-30', DEFAULT).toISOString()).toBe('2026-09-29T15:00:00.000Z');
+  it('送信は送信日の0時に始まり、その日のうちに終わる', () => {
+    // leadDays=1 により送信日は9/29。取り消せるのは9/28までなので、送信開始は
+    // 9/29 00:00 JST = 9/28 15:00 UTC。締め日(9/30)より前に送り終わる。
+    expect(receiptMirrorSendAfter('2026-09-28', DEFAULT).toISOString()).toBe('2026-09-28T15:00:00.000Z');
+    expect(receiptMirrorSendAfter('2026-09-30', DEFAULT).toISOString()).toBe('2026-09-28T15:00:00.000Z');
   });
 
   it('締め間際に登録された分は過去の時刻になり、ワーカーが即座に拾う', () => {
-    // 9/30に登録された領収書の送信開始は9/30 00:00 JST = その日の始まり。
-    // 登録時刻はそれより後なので、積んだ時点で既に「送ってよい」状態になる。
+    // 9/30に登録された領収書の送信開始は9/29 00:00 JST。登録時刻はそれより後なので、
+    // 積んだ時点で既に「送ってよい」状態になる。
     const sendAfter = receiptMirrorSendAfter('2026-09-30', DEFAULT);
     const registeredAt = new Date('2026-09-30T10:00:00+09:00');
     expect(sendAfter.getTime()).toBeLessThan(registeredAt.getTime());

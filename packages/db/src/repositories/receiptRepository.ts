@@ -35,6 +35,7 @@ function toRecord(row: ReceiptRow): ReceiptRecord {
     cancellationReason: row.cancellationReason,
     cancelledByStaffId: row.cancelledByStaffId,
     mirrorClaimedAt: row.mirrorClaimedAt,
+    cancellableUntil: row.cancellableUntil,
     createdAt: row.createdAt,
   };
 }
@@ -62,6 +63,7 @@ export class DrizzleReceiptRepository implements ReceiptRepositoryPort {
             fileKey: input.fileKey,
             contentType: input.contentType,
             billingType: input.billingType,
+            cancellableUntil: input.cancellableUntil,
           })
           .returning();
         const row = rows[0];
