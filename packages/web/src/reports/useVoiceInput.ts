@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { toFriendlyMessage } from '../ui';
 
 /**
  * ブラウザ標準のWeb Speech API(SpeechRecognition)の最小限の型定義。
@@ -37,7 +38,7 @@ declare global {
 }
 
 /**
- * 音声入力(GAS版index.htmlのstartVoiceInput/resetMicBtnと同じ挙動)。
+ * 話して入力(GAS版index.htmlのstartVoiceInput/resetMicBtnと同じ挙動)。
  * `ja-JP`・`continuous: true`(短い間でも止まらない)で、確定した(isFinalな)発話区間だけを
  * `onTranscript`へ渡す。呼び出し側はテキストエリアへの追記方法(改行区切りで末尾に足す等)を
  * 自由に決められる。同じ認識中に再度呼ぶと停止する、というトグル動作もGAS版と同じ。
@@ -57,7 +58,7 @@ export function useVoiceInput(onTranscript: (text: string) => void) {
 
     const SpeechRecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) {
-      setError('このブラウザはWeb Speech APIによる音声入力に対応していません。');
+      setError('この機種では、話して入力が使えません。文字で書いてください');
       return;
     }
 
@@ -80,12 +81,16 @@ export function useVoiceInput(onTranscript: (text: string) => void) {
       setListening(false);
     };
     recognition.onerror = (event) => {
+      // 画面には次にすることだけを書き、原因(event.error)はconsoleへ出す
+      // (提案書doc/16_UIUX改善提案_2026-09-03.html「英語の技術メッセージを出さない」)。
       if (event.error === 'not-allowed') {
-        setError('マイクの使用が許可されていません。ブラウザの設定で許可してください。');
+        setError('マイクが使えません。スマホの設定でマイクを許可してください');
       } else if (event.error === 'network') {
-        setError('音声認識サーバーへの接続に失敗しました。');
+        setError('電波が弱いようです。つながる場所で、もう一度押してください');
       } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
-        setError(`音声入力エラー: ${event.error}`);
+        setError(
+          toFriendlyMessage(event.error, '音声入力', 'うまく聞き取れませんでした。もう一度押してください'),
+        );
       }
       // UIのリセットはonendで行う(GAS版と同じ、onerror後に必ずonendが発火する前提)。
     };

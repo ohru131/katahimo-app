@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ReceiptBillingType, ReceiptImageUpload } from '../api';
 import {
   extractReceiptOcr,
@@ -13,11 +13,13 @@ import {
   uploadReceipts,
 } from '../api';
 import { markCustomerRecentlyUsed } from '../recentCustomers';
+import { Button, ErrorNotice, LoadingBlock, StickyActionBar, toFriendlyMessage, useFeedback } from '../ui';
 import { ASSESSMENT_DEFINITIONS, type AssessmentType } from './assessmentDefinitions';
 import {
   ACCIDENT_MEMO_PLACEHOLDER,
   ACCIDENT_WRITING_HINT,
   DAILY_MEMO_PLACEHOLDER,
+  DAILY_WRITING_HINT,
   HIYARI_WRITING_HINT,
 } from './promptDefaults';
 import { useVoiceInput } from './useVoiceInput';
@@ -30,9 +32,22 @@ const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const MINUTES = ['00', '15', '30', '45'];
 const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
 
-/** GAS版updateDateDisplay()と同じ表示形式。 */
+/** 入力欄は高さ48px・文字16px(iOSの自動ズーム防止にも必要)。全ての入力欄で同じ見た目にする。 */
+const INPUT_CLASS =
+  'w-full min-h-[48px] rounded-btn border border-gray-300 bg-white px-3 py-2 text-base text-app-text';
+const TEXTAREA_CLASS =
+  'w-full rounded-btn border border-gray-300 bg-white px-3 py-2 text-base leading-relaxed text-app-text';
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** GAS版updateDateDisplay()と同じ表示形式(折りたたみの中の日付送りで使う)。 */
 function formatDateDisplay(d: Date): string {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日(${WEEKDAY_LABELS[d.getDay()]})`;
+}
+
+/** 画面上部の1行表示用。提案書の「9月3日(水)」と同じ、年を省いた書き方。 */
+function formatDateShort(d: Date): string {
+  return `${d.getMonth() + 1}月${d.getDate()}日(${WEEKDAY_LABELS[d.getDay()]})`;
 }
 
 /** 'YYYY-MM-DD'(タイムゾーンのずれを避けるためtoLocaleDateString('sv-SE')を使う。AttendanceTabと同じ手法)。 */
@@ -41,14 +56,87 @@ function formatDateKey(d: Date): string {
 }
 
 /**
+ * AIが書き終わるまでの経過秒数。「AIが書いています…(12秒)」のように、何をどれくらい待つのかを
+ * 文字で伝えるために数える(提案書「待っている間は必ず文字で伝える」)。
+ */
+function useElapsedSeconds(active: boolean): number {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    if (!active) {
+      setSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return seconds;
+}
+
+/**
+ * 画面の1かたまり(カード)。見出しは必ず付け、必要なら「次にすること」を1文添える。
+ * 見出しを入力欄のラベルにしたいときはlabelForにその入力欄のidを渡す。
+ */
+function Section({
+  title,
+  note,
+  labelFor,
+  children,
+}: {
+  title: ReactNode;
+  note?: string;
+  labelFor?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3 rounded-card border border-gray-200 bg-white p-3.5">
+      <div>
+        {labelFor ? (
+          <label htmlFor={labelFor} className="block text-base font-bold text-app-text">
+            {title}
+          </label>
+        ) : (
+          <h3 className="text-base font-bold text-app-text">{title}</h3>
+        )}
+        {note && <p className="mt-1 text-sm leading-relaxed text-app-muted">{note}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * 入力欄の見出し。画面にはやさしい語を出し、帳票の正式名(「発生状況」など)は
+ * 括弧の中に小さく薄く添える(提案書「やさしい語(正式名)」)。
+ */
+function FieldLabel({
+  htmlFor,
+  formal,
+  children,
+}: {
+  htmlFor: string;
+  formal?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label htmlFor={htmlFor} className="mb-1 block text-base font-bold text-app-text">
+      {children}
+      {formal && <span className="ml-1 text-sm font-normal text-app-muted">({formal})</span>}
+    </label>
+  );
+}
+
+/**
  * PSI/従業員満足度(ES)の★評価。GAS版のupdateStarDisplay/setRatingと同じ挙動にしている:
  * - 選択中の★の色はtext-yellow-400、未選択はtext-gray-300。
- * - 星の右にASSESSMENT_DEFINITIONSから引いた評価ラベル(例: 「要観察」)を表示する
- *   (未評価時は空文字、GAS版のlabel-risk/label-esと同じ)。
+ * - 星の下にASSESSMENT_DEFINITIONSから引いた評価ラベル(例: 「要観察」)を16pxで表示する
+ *   (未評価時は「まだ選んでいません」。GAS版のlabel-risk/label-esと同じ場所の情報)。
  * - 左端(1番目)の★が既に選択済みの状態でもう一度押すと、全て☆(未評価=0)に戻せる
  *   (GAS版setRatingの`score === 1 && assessmentRatings[type] === 1`と同じ特別扱い。
  *   他の★を再度押しても解除はされない)。
- * - タイトル右の情報アイコンから、評価基準の一覧(AssessmentHintModal)を確認できる。
+ * - 見出しはやさしい質問文にし、略号(PSI/ES)はtext-smで薄く添える。
+ * - 星1つは40×40pxのタップ領域・文字30px(提案書「押せるものの大きさ」)。
+ * - 「ⓘ 目安を見る」から、評価基準の一覧(AssessmentHintModal)を確認できる。
  */
 function StarRating({
   type,
@@ -74,40 +162,59 @@ function StarRating({
 
   return (
     <div>
-      <div className="flex items-center gap-1 mb-1">
-        <span className="text-xs font-bold text-gray-600">{definition.title}</span>
+      <div className="mb-1 flex flex-wrap items-center gap-x-2">
+        <span className="text-base font-bold text-app-text">{definition.question}</span>
+        <span className="text-sm text-app-muted">({definition.title})</span>
         <button
           type="button"
           onClick={onShowHint}
-          className="text-gray-400 hover:text-blue-500"
-          title={`${definition.title}の評価基準を見る`}
+          className="ml-auto min-h-[44px] rounded-btn px-2 text-sm font-bold text-app-primary active:bg-app-primary-bg"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
+          ⓘ 目安を見る
         </button>
       </div>
-      <div className="flex items-center gap-2">
-        <div className="flex gap-0.5">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => handleClick(n)}
-              className={`text-2xl transition-transform hover:scale-110 focus:outline-none ${
-                value !== null && n <= value ? 'text-yellow-400' : 'text-gray-300'
-              }`}
-            >
-              ★
-            </button>
-          ))}
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => handleClick(n)}
+            aria-label={`${definition.question} ${n}`}
+            className={`flex h-10 w-10 items-center justify-center text-3xl leading-none ${
+              value !== null && n <= value ? 'text-yellow-400' : 'text-gray-300'
+            }`}
+          >
+            ★
+          </button>
+        ))}
+      </div>
+      <p className={`mt-1 text-base ${currentLevel ? 'font-bold text-app-text' : 'text-app-muted'}`}>
+        {currentLevel ? currentLevel.label : 'まだ選んでいません(星を押してください)'}
+      </p>
+    </div>
+  );
+}
+
+/** 説明だけを見せる小さなモーダル。閉じるボタンは記号だけにせず「✕ 閉じる」と書く。 */
+function InfoModal({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black bg-opacity-50 p-4">
+      <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-card bg-white">
+        <div className="flex shrink-0 items-center justify-between gap-3 rounded-t-card border-b bg-gray-50 p-4">
+          <h3 className="text-base font-bold text-app-text">{title}</h3>
+          <Button variant="subtle" size="sub" onClick={onClose}>
+            ✕ 閉じる
+          </Button>
         </div>
-        <span className="text-xs font-bold text-gray-600">{currentLevel?.label ?? ''}</span>
+        <div className="overflow-y-auto p-4">{children}</div>
       </div>
     </div>
   );
@@ -117,74 +224,36 @@ function StarRating({
 function AssessmentHintModal({ type, onClose }: { type: AssessmentType; onClose: () => void }) {
   const definition = ASSESSMENT_DEFINITIONS[type];
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-[130] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-md rounded-xl shadow-xl flex flex-col max-h-[85vh]">
-        <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
-          <h3 className="font-bold text-gray-800 text-sm">{definition.title} 指標</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-gray-200 rounded-full text-gray-500"
-          >
-            &times;
-          </button>
-        </div>
-        <div className="p-4 overflow-y-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b bg-gray-50">
-                <th className="p-2 text-xs w-10">評価</th>
-                <th className="p-2 text-xs w-20">定義</th>
-                <th className="p-2 text-xs">判断基準</th>
-              </tr>
-            </thead>
-            <tbody>
-              {definition.levels.map((l) => (
-                <tr key={l.score} className="border-b">
-                  <td className="p-2 text-lg font-bold text-center text-yellow-500">{l.score}</td>
-                  <td className="p-2 text-sm font-bold">{l.label}</td>
-                  <td className="p-2 text-xs text-gray-600 whitespace-pre-wrap">{l.desc}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+    <InfoModal title={`${definition.question}の目安`} onClose={onClose}>
+      <p className="mb-3 text-sm text-app-muted">正式な指標名: {definition.title}</p>
+      <div className="space-y-3">
+        {definition.levels.map((l) => (
+          <div key={l.score} className="rounded-card border border-gray-200 p-3">
+            <p className="text-base font-bold text-app-text">
+              <span className="text-yellow-400">{'★'.repeat(l.score)}</span> {l.label}
+            </p>
+            <p className="mt-1 whitespace-pre-wrap text-base leading-relaxed text-app-text">{l.desc}</p>
+          </div>
+        ))}
       </div>
-    </div>
+    </InfoModal>
   );
 }
 
-/**
- * 事故報告/ヒヤリハットの「💡書き方のヒント」モーダル。GAS版toggleHintと同じく、
- * 種別(reportType)がヒヤリハットの場合はHIYARI_WRITING_HINT、それ以外はACCIDENT_WRITING_HINT
- * を表示する(タイトルも切り替える)。
- */
+/** 「💡 書き方のヒント」で開く文章。日報・事故報告・ヒヤリハットで中身だけ差し替える。 */
 function WritingHintModal({
-  reportType,
+  title,
+  content,
   onClose,
 }: {
-  reportType: '事故報告' | 'ヒヤリハット';
+  title: string;
+  content: string;
   onClose: () => void;
 }) {
-  const isHiyari = reportType === 'ヒヤリハット';
-  const title = isHiyari ? 'ヒヤリハットの書き方ヒント' : '事故報告書の書き方ヒント';
-  const content = isHiyari ? HIYARI_WRITING_HINT : ACCIDENT_WRITING_HINT;
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-[130] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-md rounded-xl shadow-xl flex flex-col max-h-[85vh]">
-        <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
-          <h3 className="font-bold text-gray-800 text-sm">{title}</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-gray-200 rounded-full text-gray-500"
-          >
-            &times;
-          </button>
-        </div>
-        <div className="p-4 overflow-y-auto text-sm text-gray-700 whitespace-pre-wrap">{content}</div>
-      </div>
-    </div>
+    <InfoModal title={title} onClose={onClose}>
+      <p className="whitespace-pre-wrap text-base leading-relaxed text-app-text">{content}</p>
+    </InfoModal>
   );
 }
 
@@ -213,7 +282,7 @@ interface ReceiptImageState {
   storeName: string;
   receiptDate: string;
   ocrLoading: boolean;
-  /** OCR失敗時のエラーメッセージ(表示用)。成功時・未実行時はnull。 */
+  /** 読み取り失敗時のメッセージ(表示用)。成功時・未実行時はnull。 */
   ocrError: string | null;
   /**
    * 請求区分(doc/14 §10)。領収書1枚ごとに選べる。既定は'company_expense'
@@ -224,19 +293,19 @@ interface ReceiptImageState {
 }
 
 /**
- * AI生成・OCRのエラーコード('API Error'/'API Key Missing'。GAS版GeminiReport.jsの
+ * AI生成・写真の読み取りのエラーコード('API Error'/'API Key Missing'。GAS版GeminiReport.jsの
  * generateReportWithWarnings/generateAccidentReport/extractAmountFromImageが返す値と同じ)を、
  * スタッフ向けの分かりやすい文言に変換する。GAS版はこれらをそのまま(あるいは無言で)表示していて
- * 不親切だったため、katahimo-app側で追加した変換。
+ * 不親切だったため、katahimo-app側で追加した変換。英語・略語は画面に出さない。
  */
 function friendlyAiErrorMessage(raw: string): string {
   if (raw === 'API Key Missing') {
-    return 'AIによる自動生成が設定されていません。管理者にGemini APIキーの設定をご確認ください。';
+    return 'AIに書いてもらう準備がまだできていません。事務局にご連絡ください';
   }
   if (raw === 'API Error') {
-    return 'AIによる生成でエラーが発生しました。しばらく待ってから再度お試しください。';
+    return 'AIが書けませんでした。少し待ってから、もう一度押してください';
   }
-  return raw;
+  return toFriendlyMessage(raw, 'AIの応答');
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -283,19 +352,24 @@ function resizeReceiptImage(dataUrl: string): Promise<string> {
   });
 }
 
-/** 'yyyy/MM/dd HH:mm'形式で現在時刻を返す(OCRが日時を読み取れなかった場合のフォールバック)。GAS版getNowDatetimeLocalと同じ役割。 */
+/** 'yyyy/MM/dd HH:mm'形式で現在時刻を返す(写真から日時を読み取れなかった場合のフォールバック)。GAS版getNowDatetimeLocalと同じ役割。 */
 function formatNowForReceipt(): string {
   const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
 /**
  * 顧客カードタップで開く報告作成モーダル。GAS版index.htmlのreportModal(保育日報/事故報告の
  * 2タブ+領収書登録)に対応。「顧客情報」「活動記録」は別モーダル(CustomerDetail/HistoryModal)
  * に分かれている点もGAS版と同じ(openModal(customer)は常にこの報告モーダルを開く)。
+ *
+ * 並び順は提案書(doc/16_UIUX改善提案_2026-09-03.html)の「メモ(声)→ AI → 直す → 送る」に
+ * 合わせてある。日付と時間は上部の1行にまとめ、「変える」で折りたたみを開く。星評価・領収書は
+ * あとから足す補助情報なので後ろに置く。主ボタン(AIに書いてもらう→保存する)は画面下の
+ * 固定バーに1つだけ置く。
  */
 export function ReportModal({ customerId, onClose }: { customerId: string; onClose: () => void }) {
+  const { showSuccess, showError, confirm } = useFeedback();
   const customerQuery = useQuery({
     queryKey: ['customer', customerId],
     queryFn: () => fetchCustomerDetail(customerId),
@@ -310,8 +384,11 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [startMinute, setStartMinute] = useState(() => localStorage.getItem('last_start_minute') || '00');
   const [endHour, setEndHour] = useState('11');
   const [endMinute, setEndMinute] = useState('00');
+  /** 日付・時間の折りたたみ。既定は閉じていて、上部1行の「変える」で開く。 */
+  const [showDateTimeEditor, setShowDateTimeEditor] = useState(false);
   const [sendingVisitComplete, setSendingVisitComplete] = useState(false);
-  const [visitCompleteMessage, setVisitCompleteMessage] = useState<string | null>(null);
+  /** 「訪問おわりました」を送った時刻('HH:MM')。送信後はボタンを無効にして二重送信を防ぐ。 */
+  const [visitCompletedAt, setVisitCompletedAt] = useState<string | null>(null);
 
   /** GAS版changeDate()と同じ。未来日への変更は禁止する。 */
   const changeDate = (offsetDays: number) => {
@@ -346,9 +423,17 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     setEndMinute(value);
   };
 
+  /**
+   * 事務局へ通知が飛ぶ操作なので、押す前に確認を出す(提案書「訪問完了を緑の大ボタンにし、
+   * 確認を出す」)。送信後はボタンを「✅ 送りました HH:MM」に変えて押せなくする。
+   */
   const handleVisitComplete = async () => {
+    const ok = await confirm({
+      message: '事務局に『訪問おわりました』を送りますか?',
+      confirmLabel: '送る',
+    });
+    if (!ok) return;
     setSendingVisitComplete(true);
-    setVisitCompleteMessage(null);
     try {
       await sendVisitCompleteNotification(
         customerId,
@@ -356,9 +441,11 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
         `${startHour}:${startMinute}`,
         `${endHour}:${endMinute}`,
       );
-      setVisitCompleteMessage('訪問完了の通知を送信しました');
+      const now = new Date();
+      setVisitCompletedAt(`${pad2(now.getHours())}:${pad2(now.getMinutes())}`);
+      showSuccess('✅ 事務局に知らせました');
     } catch (e) {
-      setVisitCompleteMessage(e instanceof Error ? e.message : String(e));
+      showError(toFriendlyMessage(e, '訪問おわりましたの送信'));
     } finally {
       setSendingVisitComplete(false);
     }
@@ -368,16 +455,18 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [riskRating, setRiskRating] = useState<number | null>(null);
   const [esRating, setEsRating] = useState<number | null>(null);
   const [hintType, setHintType] = useState<AssessmentType | null>(null);
-  const [showWritingHint, setShowWritingHint] = useState(false);
+  /** 「💡 書き方のヒント」で開く文章(日報/事故報告/ヒヤリハットで中身が変わる)。 */
+  const [writingHint, setWritingHint] = useState<{ title: string; content: string } | null>(null);
   const [memoText, setMemoText] = useState('');
   const [internalText, setInternalText] = useState('');
   const [customerText, setCustomerText] = useState('');
   const [warnings, setWarnings] = useState<string[]>([]);
   const [generatingDaily, setGeneratingDaily] = useState(false);
+  const dailyElapsedSeconds = useElapsedSeconds(generatingDaily);
   const [savingDaily, setSavingDaily] = useState(false);
-  const [dailyMessage, setDailyMessage] = useState<string | null>(null);
   const [dailyError, setDailyError] = useState<string | null>(null);
-  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  /** AIを使わずに自分で書くとき用。押すと日報の文面欄を先に開く。 */
+  const [writingDailyByHand, setWritingDailyByHand] = useState(false);
   /**
    * 保存済み日報のID+保存時点の内容スナップショット(JSON文字列)。GAS版のsavedReportsState/
    * rowIndexに相当し、「保存する」を複数回押しても同じ内容の行を重複作成しないための仕組み。
@@ -417,13 +506,15 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     );
   };
 
-  /** GAS版copyToClipboard('customerResult')と同じ役割。 */
+  /** GAS版copyToClipboard('customerResult')と同じ役割。貼りつけ先(LINE)まで知らせる。 */
   const handleCopyCustomerText = async () => {
     try {
       await navigator.clipboard.writeText(customerText);
-      setCopyMessage('コピーしました');
-    } catch {
-      setCopyMessage('コピーに失敗しました');
+      showSuccess('コピーしました。LINEを開いて貼りつけてください');
+    } catch (e) {
+      showError(
+        toFriendlyMessage(e, '保護者に送る文のコピー', 'コピーできませんでした。もう一度押してください'),
+      );
     }
   };
   const dailyVoice = useVoiceInput((text) => setMemoText((prev) => (prev ? `${prev}\n${text}` : text)));
@@ -445,8 +536,8 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [diagnosisTreatment, setDiagnosisTreatment] = useState('');
   const [prevention, setPrevention] = useState('');
   const [generatingAccident, setGeneratingAccident] = useState(false);
+  const accidentElapsedSeconds = useElapsedSeconds(generatingAccident);
   const [savingAccident, setSavingAccident] = useState(false);
-  const [accidentMessage, setAccidentMessage] = useState<string | null>(null);
   const [accidentError, setAccidentError] = useState<string | null>(null);
   /** 保存済み事故報告のID+保存時点の内容スナップショット。dailySavedId/dailySavedSnapshotと同じ役割。 */
   const [accidentSavedId, setAccidentSavedId] = useState<string | null>(null);
@@ -456,7 +547,6 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [images, setImages] = useState<ReceiptImageState[]>([]);
   const [handoffText, setHandoffText] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -494,7 +584,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
       setInternalText(draft.internal);
       setCustomerText(draft.customer);
     } catch (e) {
-      setDailyError(e instanceof Error ? e.message : String(e));
+      setDailyError(toFriendlyMessage(e, '日報のAI作成'));
     } finally {
       setGeneratingDaily(false);
     }
@@ -520,15 +610,17 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     // GAS版savedReportsState/rowIndexと同じ考え方: 既に保存済みで内容が変わっていなければ
     // 再度保存ボタンを押しても何もしない(これが「複数回押すと同じ内容が重複登録される」原因だった)。
     if (dailySavedId && snapshot === dailySavedSnapshot) {
-      setDailyMessage('内容に変更がないため、保存をスキップしました');
+      showSuccess('✅ 保存しました(内容は変わっていません)');
       return;
     }
     if (dailySavedId) {
-      const confirmed = window.confirm('この日報は保存済みです。内容を上書き保存しますか?');
+      const confirmed = await confirm({
+        message: '前に保存した日報を、今の内容に書きかえますか?',
+        confirmLabel: '書きかえる',
+      });
       if (!confirmed) return;
     }
     setSavingDaily(true);
-    setDailyMessage(null);
     setDailyError(null);
     try {
       const report = await saveDailyReport({ ...payload, reportId: dailySavedId ?? undefined });
@@ -540,10 +632,10 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
       // (このモーダルは新規作成の1セッション内でしか編集できず、保存するたびにここで
       // サーバー側の状態と選択状態を合わせ直している)。
       setSelectedCouponIds(report.coupons.map((c) => c.couponId));
-      setDailyMessage('日報を保存しました');
+      showSuccess('✅ 保存しました');
       markCustomerRecentlyUsed(customerId);
     } catch (e) {
-      setDailyError(e instanceof Error ? e.message : String(e));
+      setDailyError(toFriendlyMessage(e, '日報の保存'));
     } finally {
       setSavingDaily(false);
     }
@@ -568,7 +660,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
       setDiagnosisTreatment(draft.diagnosisTreatment);
       setPrevention(draft.prevention);
     } catch (e) {
-      setAccidentError(e instanceof Error ? e.message : String(e));
+      setAccidentError(toFriendlyMessage(e, '事故報告のAI下書き'));
     } finally {
       setGeneratingAccident(false);
     }
@@ -592,24 +684,26 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     };
     const snapshot = JSON.stringify(payload);
     if (accidentSavedId && snapshot === accidentSavedSnapshot) {
-      setAccidentMessage('内容に変更がないため、保存をスキップしました');
+      showSuccess('✅ 保存しました(内容は変わっていません)');
       return;
     }
     if (accidentSavedId) {
-      const confirmed = window.confirm(`この${reportType}は保存済みです。内容を上書き保存しますか?`);
+      const confirmed = await confirm({
+        message: `前に保存した${reportType}を、今の内容に書きかえますか?`,
+        confirmLabel: '書きかえる',
+      });
       if (!confirmed) return;
     }
     setSavingAccident(true);
-    setAccidentMessage(null);
     setAccidentError(null);
     try {
       const report = await saveAccidentReport({ ...payload, reportId: accidentSavedId ?? undefined });
       setAccidentSavedId(report.id);
       setAccidentSavedSnapshot(snapshot);
-      setAccidentMessage(`${reportType}を保存しました`);
+      showSuccess('✅ 保存しました');
       markCustomerRecentlyUsed(customerId);
     } catch (e) {
-      setAccidentError(e instanceof Error ? e.message : String(e));
+      setAccidentError(toFriendlyMessage(e, `${reportType}の保存`));
     } finally {
       setSavingAccident(false);
     }
@@ -618,9 +712,9 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const MAX_RECEIPT_IMAGES = 6;
 
   /**
-   * 画像1枚をリサイズ/圧縮してプレビューに追加し、そのままOCRを自動実行する。
-   * GAS版resizeAndAddImage→runOcrと同じ流れ(手動の「OCRで自動入力」ボタンは無く、
-   * 追加した瞬間に自動でOCRが走る)。複数枚を同時に追加した場合、各画像は互いを待たず
+   * 写真1枚をリサイズ/圧縮してプレビューに追加し、そのまま金額の読み取りを実行する。
+   * GAS版resizeAndAddImage→runOcrと同じ流れ(手動の読み取りボタンは無く、追加した瞬間に
+   * 自動で読み取りが走る)。複数枚を同時に追加した場合、各写真は互いを待たず
    * 独立に処理される(GAS版がFileReader+resizeAndAddImageをファイルごとに並行して
    * 呼んでいるのと同じ)。
    */
@@ -630,7 +724,9 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     try {
       dataUrl = await resizeReceiptImage(await readFileAsDataUrl(file));
     } catch (e) {
-      setUploadMessage(e instanceof Error ? e.message : String(e));
+      showError(
+        toFriendlyMessage(e, '領収書の写真の取り込み', '写真を取り込めませんでした。もう一度撮ってください'),
+      );
       return;
     }
     setImages((prev) => [
@@ -674,7 +770,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                 ...img,
                 receiptDate: img.receiptDate || formatNowForReceipt(),
                 ocrLoading: false,
-                ocrError: e instanceof Error ? e.message : String(e),
+                ocrError: toFriendlyMessage(e, '領収書の読み取り'),
               }
             : img,
         ),
@@ -687,7 +783,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     setDuplicateWarning(null);
     const files = Array.from(fileList);
     if (images.length + files.length > MAX_RECEIPT_IMAGES) {
-      setUploadMessage(`画像は最大${MAX_RECEIPT_IMAGES}枚までです`);
+      showError(`写真は${MAX_RECEIPT_IMAGES}枚までです。いらない写真を消してから足してください`);
       return;
     }
     for (const file of files) {
@@ -697,8 +793,12 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
 
   const handleUploadReceipts = async () => {
     if (images.length === 0) return;
+    // 読み取り中の写真があると金額が空のまま送られてしまう。何を待っているのかを書いて止める。
+    if (images.some((img) => img.ocrLoading)) {
+      showError('写真から金額を読み取っています。少し待ってからもう一度押してください');
+      return;
+    }
     setUploading(true);
-    setUploadMessage(null);
     setDuplicateWarning(null);
     try {
       const payloadImages: ReceiptImageUpload[] = images.map((img) => ({
@@ -719,449 +819,351 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
         const customerName = customerQuery.data?.name ?? '';
         const lines = result.duplicates.map(
           (d, idx) =>
-            `${idx + 1}. ${d.timestamp} / 顧客名:${customerName} / 金額:${d.amount} / 名称:${d.storeName}`,
+            `${idx + 1}. ${d.timestamp} / お客様:${customerName} / 金額:${d.amount}円 / お店:${d.storeName}`,
         );
-        setDuplicateWarning(`⚠️ 既存の領収書と重複したため登録しませんでした。\n${lines.join('\n')}`);
+        setDuplicateWarning(`この領収書は前に送ってあります(送っていません)\n${lines.join('\n')}`);
       } else {
-        setUploadMessage(result.message);
+        // サーバーの文言(「領収書を2件アップロードしました」)はカタカナ英語なので、
+        // 件数だけを受け取って画面向けの言い方に置きかえる(APIの戻り値は変えない)。
+        showSuccess(`✅ 領収書を${result.uploadedCount}枚送りました`);
       }
     } catch (e) {
-      setUploadMessage(e instanceof Error ? e.message : String(e));
+      showError(toFriendlyMessage(e, '領収書の送信'));
     } finally {
       setUploading(false);
     }
   };
 
+  // ── 画面の状態(どの主ボタンを下の固定バーに出すか) ──
+  // 日報: AIの結果(または自分で書いた文)がまだ無いうちは「AIに日報を書いてもらう」、
+  //       出たら「保存する」。事故報告も同じ考え方(下書きの欄が1つでも埋まったら保存)。
+  const hasDailyResult = internalText.trim() !== '' || customerText.trim() !== '' || dailySavedId !== null;
+  const dailyResultVisible = hasDailyResult || writingDailyByHand;
+  const hasAccidentDraft =
+    accidentSavedId !== null ||
+    [
+      occurrenceTime,
+      location,
+      accidentContent,
+      situation,
+      immediateResponse,
+      parentCorrespondence,
+      diagnosisTreatment,
+      prevention,
+    ].some((v) => v.trim() !== '');
+
+  const customerName = customerQuery.data?.name ?? '';
+  const timeSummary =
+    mode === 'daily'
+      ? `${startHour}:${startMinute}〜${endHour}:${endMinute}`
+      : `${startHour}:${startMinute} ごろ`;
+
+  const dailyMainLabel = (() => {
+    if (dailyResultVisible) return savingDaily ? '保存しています…' : '保存する';
+    return generatingDaily ? 'AIが書いています…' : '✨ AIに日報を書いてもらう';
+  })();
+  const accidentMainLabel = (() => {
+    if (hasAccidentDraft) return savingAccident ? '保存しています…' : '保存する';
+    return generatingAccident ? 'AIが書いています…' : '✨ AIに報告書の下書きを作ってもらう';
+  })();
+
+  const visitCompleteLabel = (() => {
+    if (visitCompletedAt) return `✅ 送りました ${visitCompletedAt}`;
+    if (sendingVisitComplete) return '送っています…';
+    return '✅ 訪問おわりました(事務局に知らせる)';
+  })();
+
+  /**
+   * 「訪問おわりました」は事務局へ通知が飛ぶ操作。GAS版と同じく日報・事故報告のどちらのタブからでも
+   * 押せるようにしたいので、ここで組み立てて両方のタブの最後に置く。
+   */
+  const visitCompleteSection = (
+    <Section title="訪問がおわったら" note="事務局に「おわりました」を知らせます">
+      <Button
+        variant="done"
+        fullWidth
+        onClick={handleVisitComplete}
+        disabled={sendingVisitComplete || visitCompletedAt !== null}
+      >
+        {visitCompleteLabel}
+      </Button>
+    </Section>
+  );
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center justify-center">
-      <div className="bg-white w-full max-w-md h-[92vh] sm:h-auto sm:max-h-[90vh] sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col">
-        <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl shrink-0">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black bg-opacity-50 sm:items-center">
+      <div className="flex h-[92vh] w-full max-w-md flex-col rounded-t-card bg-white sm:h-auto sm:max-h-[90vh] sm:rounded-card">
+        <div className="flex shrink-0 items-center justify-between gap-3 rounded-t-card border-b bg-gray-50 p-4">
           <div>
-            <h2 className="font-bold text-lg text-gray-800">{customerQuery.data?.name ?? '読み込み中…'}</h2>
-            {customerQuery.data?.city && <p className="text-xs text-gray-500">{customerQuery.data.city}</p>}
+            <h2 className="text-lg font-bold text-app-text">{customerName || '読み込んでいます…'}</h2>
+            {customerQuery.data?.city && <p className="text-sm text-app-muted">{customerQuery.data.city}</p>}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-gray-200 rounded-full text-gray-500 text-xl leading-none"
-          >
-            &times;
-          </button>
+          <Button variant="subtle" size="sub" onClick={onClose}>
+            ✕ 閉じる
+          </Button>
         </div>
 
-        <div className="flex border-b shrink-0">
+        <div className="flex shrink-0 border-b">
           <button
             type="button"
             onClick={() => setMode('daily')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-              mode === 'daily' ? 'text-blue-600 border-blue-600' : 'text-gray-500 border-transparent'
+            className={`min-h-[48px] flex-1 border-b-4 px-2 py-3 text-base font-bold transition-colors ${
+              mode === 'daily' ? 'border-app-primary text-app-primary' : 'border-transparent text-app-muted'
             }`}
           >
-            📝 保育日報
+            📝 きょうの日報
           </button>
           <button
             type="button"
             onClick={() => setMode('accident')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-              mode === 'accident' ? 'text-blue-600 border-blue-600' : 'text-gray-500 border-transparent'
+            className={`min-h-[48px] flex-1 border-b-4 px-2 py-3 text-base font-bold transition-colors ${
+              mode === 'accident'
+                ? 'border-app-primary text-app-primary'
+                : 'border-transparent text-app-muted'
             }`}
           >
-            ⚠️ 事故報告
+            ⚠️ 事故・ヒヤリ
           </button>
         </div>
 
-        <div className="flex-grow overflow-y-auto p-4 space-y-4">
-          {customerQuery.isPending && (
-            <div className="flex justify-center py-8">
-              <div className="w-8 h-8 rounded-full border-4 border-gray-200 loading-spinner" />
-            </div>
-          )}
+        <div className="flex-grow space-y-3 overflow-y-auto bg-gray-50 p-4">
+          {customerQuery.isPending && <LoadingBlock text="読み込んでいます…" />}
 
-          {/* GAS版familySelectorContainerと同じく、事故報告タブでのみ表示する
-              (対象者氏名/生年月日の自動入力に使うため。日報タブでは非表示)。 */}
-          {mode === 'accident' && customerQuery.data && customerQuery.data.familyMembers.length > 0 && (
-            <div>
-              <label htmlFor="familySelector" className="text-xs text-gray-500 block mb-1">
-                対象者(ご家族)
-              </label>
-              <select
-                id="familySelector"
-                value={selectedFamilyId}
-                onChange={(e) => handleFamilySelect(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
+          {/* 日付と時間は1行にまとめ、直したいときだけ「変える」で折りたたみを開く
+              (提案書「日付と時間は上部に1行で見せ、『変える』で開く」)。 */}
+          <section className="space-y-3 rounded-card border border-gray-200 bg-white p-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-base font-bold leading-relaxed text-app-text">
+                {formatDateShort(visitDate)} {timeSummary}
+              </p>
+              <Button
+                variant="subtle"
+                size="sub"
+                onClick={() => setShowDateTimeEditor((prev) => !prev)}
+                className="shrink-0"
               >
-                <option value="">(選択してください)</option>
-                {customerQuery.data.familyMembers.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name} {calculateAgeLabel(f.dobDate ?? f.dobRaw)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* 日付(保育日報/事故報告で共有)。GAS版modalDateSectionと同じ。 */}
-          <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-300">
-            <button
-              type="button"
-              onClick={() => changeDate(-1)}
-              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
-            >
-              ‹
-            </button>
-            <div className="text-base font-bold text-gray-800">{formatDateDisplay(visitDate)}</div>
-            <button
-              type="button"
-              onClick={() => changeDate(1)}
-              disabled={isNextDateDisabled}
-              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              ›
-            </button>
-          </div>
-
-          {/* 時間(保育日報/事故報告で共有)。GAS版modalTimeSectionと同じ(hour/minuteセレクト)。 */}
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="startHour" className="text-xs text-gray-500 block mb-1">
-                開始時間/発生時間
-              </label>
-              <div className="flex items-center gap-2">
-                <select
-                  id="startHour"
-                  value={startHour}
-                  onChange={(e) => handleStartHourChange(e.target.value)}
-                  className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
-                >
-                  {HOURS.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-gray-400">:</span>
-                <select
-                  value={startMinute}
-                  onChange={(e) => handleStartMinuteChange(e.target.value)}
-                  className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
-                >
-                  {MINUTES.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                {showDateTimeEditor ? '閉じる' : '変える'}
+              </Button>
             </div>
 
-            {mode === 'daily' && (
-              <div>
-                <label htmlFor="endHour" className="text-xs text-gray-500 block mb-1">
-                  終了時間
-                </label>
-                <div className="flex items-center gap-2">
-                  <select
-                    id="endHour"
-                    value={endHour}
-                    onChange={(e) => setEndHour(e.target.value)}
-                    className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
+            {showDateTimeEditor && (
+              <div className="space-y-3 border-t border-gray-200 pt-3">
+                {/* 日付(保育日報/事故報告で共有)。GAS版modalDateSectionと同じ。
+                    ‹ › の細い記号は押しにくいので文字つきのボタンにしている。 */}
+                <div className="flex items-center justify-between gap-2">
+                  <Button variant="subtle" size="sub" onClick={() => changeDate(-1)}>
+                    ◀ 前の日
+                  </Button>
+                  <span className="text-base font-bold text-app-text">{formatDateDisplay(visitDate)}</span>
+                  <Button
+                    variant="subtle"
+                    size="sub"
+                    onClick={() => changeDate(1)}
+                    disabled={isNextDateDisabled}
                   >
-                    {HOURS.map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-gray-400">:</span>
-                  <select
-                    value={endMinute}
-                    onChange={(e) => setEndMinute(e.target.value)}
-                    className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
-                  >
-                    {MINUTES.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
+                    次の日 ▶
+                  </Button>
                 </div>
+
+                {/* 時間(保育日報/事故報告で共有)。GAS版modalTimeSectionと同じ(hour/minuteセレクト)。
+                    兼用ラベル「開始時間/発生時間」はやめ、タブごとの言い方にしている。 */}
+                <div>
+                  <FieldLabel htmlFor="startHour">
+                    {mode === 'daily' ? '始めた時間' : '起きた時間'}
+                  </FieldLabel>
+                  <div className="flex items-center gap-2">
+                    <select
+                      id="startHour"
+                      value={startHour}
+                      onChange={(e) => handleStartHourChange(e.target.value)}
+                      className={`flex-1 ${INPUT_CLASS}`}
+                    >
+                      {HOURS.map((h) => (
+                        <option key={h} value={h}>
+                          {h}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-base text-app-muted">:</span>
+                    <select
+                      aria-label={mode === 'daily' ? '始めた時間(分)' : '起きた時間(分)'}
+                      value={startMinute}
+                      onChange={(e) => handleStartMinuteChange(e.target.value)}
+                      className={`flex-1 ${INPUT_CLASS}`}
+                    >
+                      {MINUTES.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {mode === 'daily' && (
+                  <div>
+                    <FieldLabel htmlFor="endHour">終わった時間</FieldLabel>
+                    <div className="flex items-center gap-2">
+                      <select
+                        id="endHour"
+                        value={endHour}
+                        onChange={(e) => setEndHour(e.target.value)}
+                        className={`flex-1 ${INPUT_CLASS}`}
+                      >
+                        {HOURS.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-base text-app-muted">:</span>
+                      <select
+                        aria-label="終わった時間(分)"
+                        value={endMinute}
+                        onChange={(e) => setEndMinute(e.target.value)}
+                        className={`flex-1 ${INPUT_CLASS}`}
+                      >
+                        {MINUTES.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
+          </section>
 
-            <div className="text-right">
-              <button
-                type="button"
-                onClick={handleVisitComplete}
-                disabled={sendingVisitComplete}
-                className="text-xs bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-3 py-1.5 rounded-md font-bold transition-colors"
+          {mode === 'daily' && (
+            <>
+              {/* 1. きょうのできごとメモ → 2. 話して入力/書き方のヒント */}
+              <Section
+                title="きょうのできごと メモ"
+                note="話しことばのままでかまいません。このメモをもとにAIが日報を書きます"
+                labelFor="memoText"
               >
-                {sendingVisitComplete ? '送信中...' : '訪問完了'}
-              </button>
-              {visitCompleteMessage && <p className="text-xs text-gray-500 mt-1">{visitCompleteMessage}</p>}
-            </div>
-          </div>
-
-          {/* 領収書登録(日報タブのみ)。GAS版imageUploadSectionと同じ位置(訪問完了ボタンの直後)・
-              構成(見出し行の右に「領収書登録」ボタン、サムネイル+カメラ撮影/アルバムボタンを
-              横並びのflex-wrapで並べる)にしている。 */}
-          {mode === 'daily' && (
-            <div className="border-t pt-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-gray-500">領収書 (最大6枚)</span>
-                <button
-                  type="button"
-                  onClick={handleUploadReceipts}
-                  disabled={uploading || images.length === 0}
-                  className="text-xs bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white px-3 py-1.5 rounded-md font-bold transition-colors"
-                >
-                  {uploading ? 'アップロード中…' : '領収書登録'}
-                </button>
-              </div>
-
-              {duplicateWarning && (
-                <div className="mb-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-800 whitespace-pre-wrap">
-                  {duplicateWarning}
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-2 items-start">
-                {images.map((img) => (
-                  <div key={img.id} className="relative w-40 flex flex-col gap-1 items-center">
-                    <div className="relative w-24 h-24 rounded-xl overflow-hidden shadow-sm border border-gray-200 bg-gray-100">
-                      <img src={img.dataUrl} alt="領収書" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => setImages((prev) => prev.filter((i) => i.id !== img.id))}
-                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-80 hover:opacity-100 shadow-md"
-                      >
-                        &times;
-                      </button>
-                      {img.ocrLoading && (
-                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full loading-spinner" />
-                        </div>
-                      )}
-                    </div>
-                    <input
-                      type="text"
-                      value={img.receiptDate}
-                      onChange={(e) =>
-                        setImages((prev) =>
-                          prev.map((i) => (i.id === img.id ? { ...i, receiptDate: e.target.value } : i)),
-                        )
-                      }
-                      placeholder="日時(yyyy/MM/dd HH:mm)"
-                      className="w-full p-1 text-[11px] border border-blue-300 rounded text-center bg-blue-50 font-medium"
-                    />
-                    <input
-                      type="text"
-                      value={img.amount}
-                      onChange={(e) =>
-                        setImages((prev) =>
-                          prev.map((i) => (i.id === img.id ? { ...i, amount: e.target.value } : i)),
-                        )
-                      }
-                      placeholder="金額"
-                      className="w-full p-1 text-sm border border-gray-300 rounded text-center"
-                    />
-                    <input
-                      type="text"
-                      value={img.storeName}
-                      onChange={(e) =>
-                        setImages((prev) =>
-                          prev.map((i) => (i.id === img.id ? { ...i, storeName: e.target.value } : i)),
-                        )
-                      }
-                      placeholder="店舗名"
-                      className="w-full p-1 text-sm border border-gray-300 rounded text-center"
-                    />
-                    {/* 請求区分(doc/14 §10)。日時・金額・店舗名と違い、選択肢の欄には
-                        プレースホルダで「何の欄か」を書けない。ラベルを付けないと既定値の
-                        「会社立替」だけが見えている状態になり、何を選ぶ欄なのか分からないまま
-                        素通りされる(=顧客に請求すべき領収書が会社立替のまま登録される)。
-                        顧客に請求する側は色を変えて、複数枚並べたときに一目で数えられるようにする。
-
-                        顧客が選択されていない場合はDB制約(receipts_billable_requires_customer)と
-                        同じ制限を画面でも表現するため「顧客に請求」を選べないようにする。 */}
-                    <label className="w-full flex flex-col gap-0.5 text-[10px] text-gray-500">
-                      請求区分
-                      <select
-                        value={img.billingType}
-                        disabled={!customerId}
-                        onChange={(e) =>
-                          setImages((prev) =>
-                            prev.map((i) =>
-                              i.id === img.id
-                                ? { ...i, billingType: e.target.value as ReceiptBillingType }
-                                : i,
-                            ),
-                          )
-                        }
-                        className={`w-full p-1 text-xs border rounded text-center disabled:opacity-60 ${
-                          img.billingType === 'customer_billable'
-                            ? 'border-amber-400 bg-amber-50 text-amber-800 font-bold'
-                            : 'border-gray-300 bg-white text-gray-700'
-                        }`}
-                      >
-                        <option value="company_expense">会社立替</option>
-                        <option value="customer_billable" disabled={!customerId}>
-                          顧客に請求
-                        </option>
-                      </select>
-                    </label>
-                    {img.ocrError && (
-                      <p className="text-[10px] text-red-500 text-center leading-tight">
-                        自動読取に失敗しました。金額等を手入力してください。
-                      </p>
-                    )}
-                  </div>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={() => cameraInputRef.current?.click()}
-                  className="w-20 h-20 border-2 border-dashed border-blue-300 rounded-xl flex flex-col items-center justify-center text-blue-500 hover:bg-blue-50 transition-colors bg-white"
-                >
-                  <svg
-                    className="w-8 h-8 mb-1"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                  </svg>
-                  <span className="text-[10px] font-bold">カメラ撮影</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => galleryInputRef.current?.click()}
-                  className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors bg-gray-50"
-                >
-                  <svg
-                    className="w-8 h-8 mb-1"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
-                  <span className="text-[10px] font-bold">アルバム</span>
-                </button>
-              </div>
-
-              {/* カメラは1枚ずつ即撮影(capture属性でスマホのカメラアプリを直接起動)、アルバムは複数選択可。GAS版index.htmlのcameraInput/galleryInputと同じ使い分け。 */}
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={(e) => {
-                  handleAddImages(e.target.files);
-                  e.target.value = '';
-                }}
-                className="hidden"
-              />
-              <input
-                ref={galleryInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={(e) => {
-                  handleAddImages(e.target.files);
-                  e.target.value = '';
-                }}
-                className="hidden"
-              />
-
-              <div className="mt-3">
                 <textarea
-                  value={handoffText}
-                  onChange={(e) => setHandoffText(e.target.value)}
-                  rows={2}
-                  placeholder="領収書に関する申し送り事項があれば入力"
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
+                  id="memoText"
+                  value={memoText}
+                  onChange={(e) => setMemoText(e.target.value)}
+                  rows={5}
+                  placeholder={DAILY_MEMO_PLACEHOLDER}
+                  className={TEXTAREA_CLASS}
                 />
-              </div>
-              {uploadMessage && <p className="text-sm text-gray-700 mt-1">{uploadMessage}</p>}
-            </div>
-          )}
-
-          {/* 適用クーポン(doc/14 §9。日報タブのみ)。1回の訪問に複数適用しうるので
-              チェックボックスの複数選択にしている。クーポンを1件も登録していないテナントでは、
-              一覧が確実に空だと分かった時点でセクションごと隠す。空の一覧をそのまま見せると
-              「クーポン機能が壊れている」ように見えてしまい、登録の予定が無いテナントには
-              単なる邪魔になるため(登録は設定→クーポン管理から行う)。 */}
-          {mode === 'daily' && !(couponsQuery.data && couponsQuery.data.length === 0) && (
-            <div className="border-t pt-3">
-              <span className="text-xs font-medium text-gray-500 block mb-2">適用クーポン</span>
-              {couponsQuery.isPending && (
-                <div className="flex justify-center py-2">
-                  <div className="w-5 h-5 rounded-full border-4 border-gray-200 loading-spinner" />
-                </div>
-              )}
-              {couponsQuery.isError && (
-                <p className="text-red-500 text-xs">{(couponsQuery.error as Error).message}</p>
-              )}
-              <div className="space-y-1">
-                {(couponsQuery.data ?? []).map((coupon) => (
-                  <label
-                    key={coupon.id}
-                    className={`flex items-center gap-2 p-2 rounded-lg border text-xs ${
-                      coupon.alreadyUsed
-                        ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
-                        : selectedCouponIds.includes(coupon.id)
-                          ? 'bg-blue-50 border-blue-300 cursor-pointer'
-                          : 'border-gray-200 hover:bg-gray-50 cursor-pointer'
-                    }`}
+                {dailyVoice.error && <ErrorNotice text={dailyVoice.error} />}
+                {/* 横並びにすると「書き方のヒ/ント」のように折り返すので縦に積む。 */}
+                <div className="flex flex-col gap-3">
+                  <Button
+                    variant={dailyVoice.listening ? 'danger' : 'outline'}
+                    size="sub"
+                    fullWidth
+                    onClick={dailyVoice.toggle}
+                    className="px-2"
                   >
-                    <input
-                      type="checkbox"
-                      checked={selectedCouponIds.includes(coupon.id)}
-                      onChange={() => toggleCoupon(coupon.id)}
-                      disabled={coupon.alreadyUsed}
-                      className="w-4 h-4"
-                    />
-                    <span className={coupon.alreadyUsed ? '' : 'font-bold text-gray-700'}>{coupon.name}</span>
-                    <span className="text-gray-400">
-                      (
-                      {coupon.discountKind === 'amount'
-                        ? `${coupon.discountAmountYen}円引き`
-                        : `${coupon.discountPercent}%引き`}
-                      )
-                    </span>
-                    {/* なぜ今このクーポンが出ているのかを一目で分かるようにする
-                        (スタッフが誕生月を自分で確かめなくて済むのがこの機能の目的のため)。 */}
-                    {coupon.birthdaySubjectName && (
-                      <span className="text-pink-500">🎂 {coupon.birthdaySubjectName}さんの誕生月</span>
-                    )}
-                    {coupon.alreadyUsed && <span className="ml-auto text-gray-400">使用済み</span>}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
+                    {dailyVoice.listening ? '⏹ 止める(聞いています…)' : '🎤 話して入力'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sub"
+                    fullWidth
+                    onClick={() =>
+                      setWritingHint({ title: '日報の書き方ヒント', content: DAILY_WRITING_HINT })
+                    }
+                    className="px-2"
+                  >
+                    💡 書き方のヒント
+                  </Button>
+                </div>
+              </Section>
 
-          {mode === 'daily' && (
-            <div className="space-y-4">
-              <div className="space-y-1">
+              {/* 3. AIに書いてもらう。主ボタンは画面下の固定バーにあるので、ここには待ち時間の
+                  目安だけを常時出す(提案書「AIボタンの下に待ち時間の目安を常時表示」)。 */}
+              <section className="space-y-3">
+                {generatingDaily ? (
+                  <LoadingBlock
+                    text={`AIが書いています…(${dailyElapsedSeconds}秒)`}
+                    note="1分ほどかかることがあります"
+                    className="rounded-card border border-gray-200 bg-white py-6"
+                  />
+                ) : (
+                  !dailyResultVisible && (
+                    <div className="space-y-3 rounded-card border border-gray-200 bg-white p-3.5">
+                      <p className="text-sm leading-relaxed text-app-muted">
+                        ✨ メモが書けたら、画面の下の「AIに日報を書いてもらう」を押してください。
+                        1分ほどかかることがあります。書けたら下に出ます
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sub"
+                        fullWidth
+                        onClick={() => setWritingDailyByHand(true)}
+                      >
+                        ✏️ AIを使わず自分で書く
+                      </Button>
+                    </div>
+                  )
+                )}
+                {dailyError && <ErrorNotice text={dailyError} />}
+              </section>
+
+              {/* 4. AIの結果(事務局に送る文/保護者に送る文) */}
+              {dailyResultVisible && (
+                <Section title="✨ AIが書いた日報" note="直したいところは、そのまま書きかえられます">
+                  {warnings.length > 0 && (
+                    <p className="rounded-btn border border-app-danger bg-app-danger-bg p-3 text-base leading-relaxed text-app-text">
+                      ⚠️ 足りない情報があります:{warnings.join('、')}
+                    </p>
+                  )}
+
+                  <div>
+                    <FieldLabel htmlFor="internalText">事務局に送る文</FieldLabel>
+                    <textarea
+                      id="internalText"
+                      value={internalText}
+                      onChange={(e) => setInternalText(e.target.value)}
+                      rows={5}
+                      className={TEXTAREA_CLASS}
+                    />
+                    <p className="mt-1 text-sm text-app-muted">{internalText.length}文字</p>
+                  </div>
+
+                  <div>
+                    <FieldLabel htmlFor="customerText">保護者に送る文</FieldLabel>
+                    <textarea
+                      id="customerText"
+                      value={customerText}
+                      onChange={(e) => setCustomerText(e.target.value)}
+                      rows={5}
+                      className={TEXTAREA_CLASS}
+                    />
+                    <p className="mt-1 text-sm text-app-muted">{customerText.length}文字</p>
+                    <Button
+                      variant="outline"
+                      size="sub"
+                      fullWidth
+                      onClick={handleCopyCustomerText}
+                      className="mt-2"
+                    >
+                      📋 コピーしてLINEに貼る
+                    </Button>
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sub"
+                    fullWidth
+                    onClick={handleGenerateDaily}
+                    disabled={generatingDaily || !memoText.trim()}
+                  >
+                    ✨ AIにもう一度書いてもらう
+                  </Button>
+                </Section>
+              )}
+
+              {/* 5. 星評価(補助情報なのでAIの結果より後ろ) */}
+              <Section title="きょうの様子をふり返る" note="あてはまる星の数を押してください">
                 <StarRating
                   type="risk"
                   value={riskRating}
@@ -1174,266 +1176,501 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                   onChange={setEsRating}
                   onShowHint={() => setHintType('es')}
                 />
-              </div>
+              </Section>
 
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label htmlFor="memoText" className="text-xs text-gray-500">
-                    訪問メモ(口語でOK・音声入力可)
-                  </label>
-                  <button
-                    type="button"
-                    onClick={dailyVoice.toggle}
-                    className={`text-xs px-2 py-1 rounded-md flex items-center gap-1 transition-colors ${
-                      dailyVoice.listening
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
-                    }`}
-                  >
-                    {dailyVoice.listening ? (
-                      <>
-                        <span className="animate-pulse">🔴</span> <span>停止する</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>🎤</span> <span>音声入力</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-                <textarea
-                  id="memoText"
-                  value={memoText}
-                  onChange={(e) => setMemoText(e.target.value)}
-                  rows={4}
-                  placeholder={DAILY_MEMO_PLACEHOLDER}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
-                />
-                {dailyVoice.error && <p className="text-red-500 text-xs mt-1">{dailyVoice.error}</p>}
-              </div>
-
-              <button
-                type="button"
-                onClick={handleGenerateDaily}
-                disabled={generatingDaily || !memoText.trim()}
-                className="w-full py-2.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 text-blue-700 font-bold rounded-lg text-sm"
-              >
-                {generatingDaily ? 'AI生成中…' : '✨ AIでレポート生成'}
-              </button>
-
-              {warnings.length > 0 && (
-                <p className="text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded-lg p-2">
-                  不足している可能性がある項目: {warnings.join('、')}
-                </p>
+              {/* 適用クーポン(doc/14 §9。日報タブのみ)。1回の訪問に複数適用しうるので
+                  チェックボックスの複数選択にしている。クーポンを1件も登録していないテナントでは、
+                  一覧が確実に空だと分かった時点でセクションごと隠す。空の一覧をそのまま見せると
+                  「クーポン機能が壊れている」ように見えてしまい、登録の予定が無いテナントには
+                  単なる邪魔になるため(登録は設定→クーポン管理から行う)。 */}
+              {!(couponsQuery.data && couponsQuery.data.length === 0) && (
+                <Section title="🎁 使うクーポン" note="使うものがあれば選んでください">
+                  {couponsQuery.isPending && <LoadingBlock text="読み込んでいます…" className="py-4" />}
+                  {couponsQuery.isError && (
+                    <ErrorNotice
+                      text={toFriendlyMessage(
+                        couponsQuery.error,
+                        'クーポンの読み込み',
+                        'クーポンを読み込めませんでした。電波を確認して、もう一度開いてください',
+                      )}
+                    />
+                  )}
+                  <div className="space-y-2">
+                    {(couponsQuery.data ?? []).map((coupon) => (
+                      <label
+                        key={coupon.id}
+                        className={`flex min-h-[48px] flex-wrap items-center gap-2 rounded-btn border p-3 text-base ${
+                          coupon.alreadyUsed
+                            ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-app-muted'
+                            : selectedCouponIds.includes(coupon.id)
+                              ? 'cursor-pointer border-app-primary bg-app-primary-bg'
+                              : 'cursor-pointer border-gray-300 active:bg-gray-100'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedCouponIds.includes(coupon.id)}
+                          onChange={() => toggleCoupon(coupon.id)}
+                          disabled={coupon.alreadyUsed}
+                          className="h-6 w-6"
+                        />
+                        <span className={coupon.alreadyUsed ? '' : 'font-bold text-app-text'}>
+                          {coupon.name}
+                        </span>
+                        <span className="text-sm text-app-muted">
+                          (
+                          {coupon.discountKind === 'amount'
+                            ? `${coupon.discountAmountYen}円引き`
+                            : `${coupon.discountPercent}%引き`}
+                          )
+                        </span>
+                        {/* なぜ今このクーポンが出ているのかを一目で分かるようにする
+                            (スタッフが誕生月を自分で確かめなくて済むのがこの機能の目的のため)。 */}
+                        {coupon.birthdaySubjectName && (
+                          <span className="text-sm text-app-text">
+                            🎂 {coupon.birthdaySubjectName}さんの誕生月
+                          </span>
+                        )}
+                        {coupon.alreadyUsed && <span className="ml-auto text-sm">使用済み</span>}
+                      </label>
+                    ))}
+                  </div>
+                </Section>
               )}
 
-              <div>
-                <label htmlFor="internalText" className="text-xs text-gray-500 block mb-1">
-                  社内向けレポート
-                  <span className="text-gray-400 font-normal ml-2">{internalText.length}文字</span>
-                </label>
-                <textarea
-                  id="internalText"
-                  value={internalText}
-                  onChange={(e) => setInternalText(e.target.value)}
-                  rows={4}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
-                />
-              </div>
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label htmlFor="customerText" className="text-xs text-gray-500">
-                    保護者向けレポート
-                    <span className="text-gray-400 font-normal ml-2">{customerText.length}文字</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleCopyCustomerText}
-                    className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded"
-                  >
-                    📋 コピー
-                  </button>
-                </div>
-                <textarea
-                  id="customerText"
-                  value={customerText}
-                  onChange={(e) => setCustomerText(e.target.value)}
-                  rows={4}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
-                />
-              </div>
-
-              {copyMessage && <p className="text-gray-500 text-xs">{copyMessage}</p>}
-              {dailyError && <p className="text-red-500 text-sm">{dailyError}</p>}
-              {dailyMessage && <p className="text-green-600 text-sm">{dailyMessage}</p>}
-
-              <button
-                type="button"
-                onClick={handleSaveDaily}
-                disabled={savingDaily}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl"
+              {/* 6. レシート・領収書(あれば)。GAS版imageUploadSectionと同じ機能だが、
+                  補助の情報なので日報の後ろに置いている。 */}
+              <Section
+                title="🧾 レシート・領収書を撮る(あれば)"
+                note="6枚まで送れます。撮ると、金額とお店の名前を自動で読み取ります"
               >
-                {savingDaily ? '保存中…' : '日報を保存'}
-              </button>
-            </div>
+                {duplicateWarning && <ErrorNotice text={duplicateWarning} />}
+
+                <div className="space-y-3">
+                  {images.map((img) => (
+                    <div key={img.id} className="space-y-3 rounded-card border border-gray-200 p-3">
+                      <div className="flex items-start gap-3">
+                        <img
+                          src={img.dataUrl}
+                          alt="撮ったレシート"
+                          className="h-24 w-24 shrink-0 rounded-btn border border-gray-200 object-cover"
+                        />
+                        <div className="flex-grow space-y-2">
+                          {img.ocrLoading && (
+                            <LoadingBlock text="写真から読み取っています…" className="py-2" />
+                          )}
+                          {img.ocrError && (
+                            <p className="text-sm leading-relaxed text-app-muted">
+                              写真から読み取れませんでした。金額とお店の名前を手で入れてください
+                            </p>
+                          )}
+                          <Button
+                            variant="danger"
+                            size="sub"
+                            fullWidth
+                            onClick={() => setImages((prev) => prev.filter((i) => i.id !== img.id))}
+                          >
+                            ✕ この写真を消す
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <FieldLabel htmlFor={`receiptDate-${img.id}`}>レシートの日付</FieldLabel>
+                        <input
+                          id={`receiptDate-${img.id}`}
+                          type="text"
+                          value={img.receiptDate}
+                          onChange={(e) =>
+                            setImages((prev) =>
+                              prev.map((i) => (i.id === img.id ? { ...i, receiptDate: e.target.value } : i)),
+                            )
+                          }
+                          placeholder="2026/09/03 10:00"
+                          className={INPUT_CLASS}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel htmlFor={`receiptAmount-${img.id}`}>金額(円)</FieldLabel>
+                        <input
+                          id={`receiptAmount-${img.id}`}
+                          type="text"
+                          inputMode="numeric"
+                          value={img.amount}
+                          onChange={(e) =>
+                            setImages((prev) =>
+                              prev.map((i) => (i.id === img.id ? { ...i, amount: e.target.value } : i)),
+                            )
+                          }
+                          className={INPUT_CLASS}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel htmlFor={`receiptStore-${img.id}`}>お店の名前</FieldLabel>
+                        <input
+                          id={`receiptStore-${img.id}`}
+                          type="text"
+                          value={img.storeName}
+                          onChange={(e) =>
+                            setImages((prev) =>
+                              prev.map((i) => (i.id === img.id ? { ...i, storeName: e.target.value } : i)),
+                            )
+                          }
+                          className={INPUT_CLASS}
+                        />
+                      </div>
+                      {/* 請求区分(doc/14 §10)。日付・金額・お店の名前と違い、選択肢の欄には
+                          プレースホルダで「何の欄か」を書けない。ラベルを付けないと既定値の
+                          「会社立替」だけが見えている状態になり、何を選ぶ欄なのか分からないまま
+                          素通りされる(=お客様に請求すべき領収書が会社立替のまま登録される)。
+                          お客様に請求する側は色を変えて、複数枚並べたときに一目で数えられるようにする。
+
+                          お客様が選択されていない場合はDB制約(receipts_billable_requires_customer)と
+                          同じ制限を画面でも表現するため「お客様に請求」を選べないようにする。 */}
+                      <div>
+                        <FieldLabel htmlFor={`receiptBilling-${img.id}`} formal="請求区分">
+                          この支払いはどちら
+                        </FieldLabel>
+                        <select
+                          id={`receiptBilling-${img.id}`}
+                          value={img.billingType}
+                          disabled={!customerId}
+                          onChange={(e) =>
+                            setImages((prev) =>
+                              prev.map((i) =>
+                                i.id === img.id
+                                  ? { ...i, billingType: e.target.value as ReceiptBillingType }
+                                  : i,
+                              ),
+                            )
+                          }
+                          className={`${INPUT_CLASS} disabled:opacity-60 ${
+                            img.billingType === 'customer_billable'
+                              ? 'border-app-primary bg-app-primary-bg font-bold'
+                              : ''
+                          }`}
+                        >
+                          <option value="company_expense">会社が立てかえる</option>
+                          <option value="customer_billable" disabled={!customerId}>
+                            お客様に請求する
+                          </option>
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 横並びにすると「写真から選/ぶ」と折り返すので縦に積む。 */}
+                <div className="flex flex-col gap-3">
+                  <Button variant="outline" fullWidth onClick={() => cameraInputRef.current?.click()}>
+                    📷 撮る
+                  </Button>
+                  <Button variant="outline" fullWidth onClick={() => galleryInputRef.current?.click()}>
+                    🖼️ 写真から選ぶ
+                  </Button>
+                </div>
+
+                {/* カメラは1枚ずつ即撮影(capture属性でスマホのカメラアプリを直接起動)、アルバムは複数選択可。GAS版index.htmlのcameraInput/galleryInputと同じ使い分け。 */}
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => {
+                    handleAddImages(e.target.files);
+                    e.target.value = '';
+                  }}
+                  className="hidden"
+                />
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => {
+                    handleAddImages(e.target.files);
+                    e.target.value = '';
+                  }}
+                  className="hidden"
+                />
+
+                <div>
+                  <FieldLabel htmlFor="handoffText">事務局へのひとこと(あれば)</FieldLabel>
+                  <textarea
+                    id="handoffText"
+                    value={handoffText}
+                    onChange={(e) => setHandoffText(e.target.value)}
+                    rows={2}
+                    className={TEXTAREA_CLASS}
+                  />
+                </div>
+
+                <Button
+                  variant="outline"
+                  fullWidth
+                  onClick={handleUploadReceipts}
+                  disabled={uploading || images.length === 0}
+                >
+                  {uploading ? '送っています…' : '🧾 この領収書を送る'}
+                </Button>
+              </Section>
+
+              {/* 7. 訪問おわりました(事務局に通知が飛ぶ操作。緑の大ボタン+確認) */}
+              {visitCompleteSection}
+            </>
           )}
 
           {mode === 'accident' && (
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="reportType" className="text-xs text-gray-500 block mb-1">
-                  種別
-                </label>
+            <>
+              {/* GAS版familySelectorContainerと同じく、事故報告タブでのみ表示する
+                  (対象者氏名/生年月日の自動入力に使うため。日報タブでは非表示)。 */}
+              {customerQuery.data && customerQuery.data.familyMembers.length > 0 && (
+                <Section title="だれのことですか" labelFor="familySelector">
+                  <select
+                    id="familySelector"
+                    value={selectedFamilyId}
+                    onChange={(e) => handleFamilySelect(e.target.value)}
+                    className={INPUT_CLASS}
+                  >
+                    <option value="">お子様を選んでください</option>
+                    {customerQuery.data.familyMembers.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name} {calculateAgeLabel(f.dobDate ?? f.dobRaw)}
+                      </option>
+                    ))}
+                  </select>
+                </Section>
+              )}
+
+              <Section title="どちらの報告ですか" labelFor="reportType">
                 <select
                   id="reportType"
                   value={reportType}
                   onChange={(e) => setReportType(e.target.value as '事故報告' | 'ヒヤリハット')}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
+                  className={INPUT_CLASS}
                 >
-                  <option value="事故報告">事故報告</option>
-                  <option value="ヒヤリハット">ヒヤリハット</option>
+                  <option value="事故報告">事故報告(けがなどが起きた)</option>
+                  <option value="ヒヤリハット">ヒヤリハット(あぶなかった)</option>
                 </select>
-              </div>
+              </Section>
 
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label htmlFor="accidentMemo" className="text-xs text-gray-500">
-                    状況メモ(口語でOK・音声入力可)
-                  </label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowWritingHint(true)}
-                      className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2 py-1 rounded-md flex items-center gap-1 transition-colors"
-                    >
-                      💡 書き方のヒント
-                    </button>
-                    <button
-                      type="button"
-                      onClick={accidentVoice.toggle}
-                      className={`text-xs px-2 py-1 rounded-md flex items-center gap-1 transition-colors ${
-                        accidentVoice.listening
-                          ? 'bg-red-100 text-red-700'
-                          : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
-                      }`}
-                    >
-                      {accidentVoice.listening ? (
-                        <>
-                          <span className="animate-pulse">🔴</span> <span>停止する</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>🎤</span> <span>音声入力</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
+              <Section
+                title="何があったか メモ"
+                note="話しことばのままでかまいません。このメモをもとにAIが下書きを作ります"
+                labelFor="accidentMemo"
+              >
                 <textarea
                   id="accidentMemo"
                   value={accidentMemo}
                   onChange={(e) => setAccidentMemo(e.target.value)}
-                  rows={4}
+                  rows={5}
                   placeholder={ACCIDENT_MEMO_PLACEHOLDER}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
+                  className={TEXTAREA_CLASS}
                 />
-                {accidentVoice.error && <p className="text-red-500 text-xs mt-1">{accidentVoice.error}</p>}
-              </div>
+                {accidentVoice.error && <ErrorNotice text={accidentVoice.error} />}
+                {/* 横並びにすると折り返すので縦に積む(日報タブと同じ)。 */}
+                <div className="flex flex-col gap-3">
+                  <Button
+                    variant={accidentVoice.listening ? 'danger' : 'outline'}
+                    size="sub"
+                    fullWidth
+                    onClick={accidentVoice.toggle}
+                    className="px-2"
+                  >
+                    {accidentVoice.listening ? '⏹ 止める(聞いています…)' : '🎤 話して入力'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sub"
+                    fullWidth
+                    onClick={() =>
+                      setWritingHint({
+                        title:
+                          reportType === 'ヒヤリハット'
+                            ? 'ヒヤリハットの書き方ヒント'
+                            : '事故報告書の書き方ヒント',
+                        content: reportType === 'ヒヤリハット' ? HIYARI_WRITING_HINT : ACCIDENT_WRITING_HINT,
+                      })
+                    }
+                    className="px-2"
+                  >
+                    💡 書き方のヒント
+                  </Button>
+                </div>
+              </Section>
 
-              <button
-                type="button"
-                onClick={handleGenerateAccident}
-                disabled={generatingAccident || !accidentMemo.trim()}
-                className="w-full py-2.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 text-blue-700 font-bold rounded-lg text-sm"
+              <section className="space-y-3">
+                {generatingAccident ? (
+                  <LoadingBlock
+                    text={`AIが書いています…(${accidentElapsedSeconds}秒)`}
+                    note="1分ほどかかることがあります"
+                    className="rounded-card border border-gray-200 bg-white py-6"
+                  />
+                ) : (
+                  !hasAccidentDraft && (
+                    <p className="rounded-card border border-gray-200 bg-white p-3.5 text-sm leading-relaxed text-app-muted">
+                      ✨ メモが書けたら、画面の下の「AIに報告書の下書きを作ってもらう」を押してください。
+                      1分ほどかかることがあります。書けたら下に出ます
+                    </p>
+                  )
+                )}
+                {accidentError && <ErrorNotice text={accidentError} />}
+              </section>
+
+              {hasAccidentDraft && (
+                <Button
+                  variant="outline"
+                  size="sub"
+                  fullWidth
+                  onClick={handleGenerateAccident}
+                  disabled={generatingAccident || !accidentMemo.trim()}
+                >
+                  ✨ AIにもう一度下書きを作ってもらう
+                </Button>
+              )}
+
+              {/* 事故報告書の入力欄。帳票の項目はそのままに、画面の見出しだけ
+                  「やさしい語(正式名)」にしている。 */}
+              <Section
+                title="事故報告書(AIの下書き)"
+                note="内容を確認して直してください。空いているところは手で書き足せます"
               >
-                {generatingAccident ? 'AI生成中…' : '✨ AIで項目に整理'}
-              </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel htmlFor="accTargetName" formal="対象者氏名">
+                      お子様の名前
+                    </FieldLabel>
+                    <input
+                      id="accTargetName"
+                      type="text"
+                      value={accTargetName}
+                      onChange={(e) => setAccTargetName(e.target.value)}
+                      className={INPUT_CLASS}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="accTargetDob" formal="生年月日">
+                      生まれた日
+                    </FieldLabel>
+                    <input
+                      id="accTargetDob"
+                      type="text"
+                      value={accTargetDob}
+                      onChange={(e) => setAccTargetDob(e.target.value)}
+                      className={INPUT_CLASS}
+                    />
+                  </div>
+                </div>
 
-              {accidentError && <p className="text-red-500 text-sm">{accidentError}</p>}
-
-              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label htmlFor="accTargetName" className="text-xs text-gray-500 block mb-1">
-                    対象者氏名
-                  </label>
+                  <FieldLabel htmlFor="accOccurrenceTime" formal="発生日時">
+                    起きた日時
+                  </FieldLabel>
                   <input
-                    id="accTargetName"
+                    id="accOccurrenceTime"
                     type="text"
-                    value={accTargetName}
-                    onChange={(e) => setAccTargetName(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
+                    value={occurrenceTime}
+                    onChange={(e) => setOccurrenceTime(e.target.value)}
+                    className={INPUT_CLASS}
                   />
                 </div>
-                <div>
-                  <label htmlFor="accTargetDob" className="text-xs text-gray-500 block mb-1">
-                    生年月日
-                  </label>
-                  <input
-                    id="accTargetDob"
-                    type="text"
-                    value={accTargetDob}
-                    onChange={(e) => setAccTargetDob(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
-                  />
-                </div>
-              </div>
 
-              <div>
-                <label htmlFor="accOccurrenceTime" className="text-xs text-gray-500 block mb-1">
-                  発生日時
-                </label>
-                <input
-                  id="accOccurrenceTime"
-                  type="text"
-                  value={occurrenceTime}
-                  onChange={(e) => setOccurrenceTime(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
-                />
-              </div>
+                {/* 画面の見出しはやさしい語、括弧の中は帳票の正式名(そのまま残す)。 */}
+                {(
+                  [
+                    ['location', '起きた場所', '発生場所', location, setLocation],
+                    ['accidentContent', '何が起きたか', '事故内容', accidentContent, setAccidentContent],
+                    ['situation', 'くわしい状況', '発生状況', situation, setSituation],
+                    [
+                      'immediateResponse',
+                      'その場でしたこと',
+                      '発生時の対応',
+                      immediateResponse,
+                      setImmediateResponse,
+                    ],
+                    [
+                      'parentCorrespondence',
+                      '保護者に伝えたこと',
+                      '保護者への対応',
+                      parentCorrespondence,
+                      setParentCorrespondence,
+                    ],
+                    [
+                      'diagnosisTreatment',
+                      '病院での診断・手当て',
+                      '診断名および処置状況',
+                      diagnosisTreatment,
+                      setDiagnosisTreatment,
+                    ],
+                    ['prevention', 'これからの対策', '今後の対応', prevention, setPrevention],
+                  ] as const
+                ).map(([id, label, formal, value, setter]) => (
+                  <div key={id}>
+                    <FieldLabel htmlFor={id} formal={formal}>
+                      {label}
+                    </FieldLabel>
+                    <textarea
+                      id={id}
+                      value={value}
+                      onChange={(e) => setter(e.target.value)}
+                      rows={3}
+                      className={TEXTAREA_CLASS}
+                    />
+                  </div>
+                ))}
+              </Section>
 
-              {(
-                [
-                  ['location', '発生場所', location, setLocation],
-                  ['accidentContent', '事故内容', accidentContent, setAccidentContent],
-                  ['situation', '発生状況', situation, setSituation],
-                  ['immediateResponse', '発生時の対応', immediateResponse, setImmediateResponse],
-                  ['parentCorrespondence', '保護者への対応', parentCorrespondence, setParentCorrespondence],
-                  ['diagnosisTreatment', '診断名および処置状況', diagnosisTreatment, setDiagnosisTreatment],
-                  ['prevention', '事故防止に向けた今後の対応', prevention, setPrevention],
-                ] as const
-              ).map(([id, label, value, setter]) => (
-                <div key={id}>
-                  <label htmlFor={id} className="text-xs text-gray-500 block mb-1">
-                    {label}
-                  </label>
-                  <textarea
-                    id={id}
-                    value={value}
-                    onChange={(e) => setter(e.target.value)}
-                    rows={2}
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
-                  />
-                </div>
-              ))}
-
-              {accidentMessage && <p className="text-green-600 text-sm">{accidentMessage}</p>}
-
-              <button
-                type="button"
-                onClick={handleSaveAccident}
-                disabled={savingAccident}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl"
-              >
-                {savingAccident ? '保存中…' : `${reportType}を保存`}
-              </button>
-            </div>
+              {visitCompleteSection}
+            </>
           )}
         </div>
+
+        {/* 主ボタンは下に固定し、1モーダルに青は1つだけ。取り消しは左・グレー、進むは右・青。
+            AIの結果がまだ無いうちは「AIに書いてもらう」、出たら「保存する」に切りかわる。 */}
+        {/* 主ボタンは横に割らず全幅にする。「閉じる」と横並びにすると、狭い端末では
+            「✨ AIに日報を書いてもらう」が2行に折り返して読みにくい。閉じる導線は
+            ヘッダーの「✕ 閉じる」と、このバーの下段の両方に残してある。 */}
+        <StickyActionBar>
+          <div className="space-y-2">
+            {mode === 'daily' ? (
+              <Button
+                variant="primary"
+                fullWidth
+                className="px-2"
+                onClick={dailyResultVisible ? handleSaveDaily : handleGenerateDaily}
+                disabled={
+                  dailyResultVisible
+                    ? savingDaily || !customerQuery.data
+                    : generatingDaily || !memoText.trim()
+                }
+              >
+                {dailyMainLabel}
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                fullWidth
+                className="px-2"
+                onClick={hasAccidentDraft ? handleSaveAccident : handleGenerateAccident}
+                disabled={hasAccidentDraft ? savingAccident : generatingAccident || !accidentMemo.trim()}
+              >
+                {accidentMainLabel}
+              </Button>
+            )}
+            <Button variant="subtle" size="sub" fullWidth onClick={onClose}>
+              閉じる
+            </Button>
+          </div>
+        </StickyActionBar>
       </div>
 
       {hintType && <AssessmentHintModal type={hintType} onClose={() => setHintType(null)} />}
-      {showWritingHint && (
-        <WritingHintModal reportType={reportType} onClose={() => setShowWritingHint(false)} />
+      {writingHint && (
+        <WritingHintModal
+          title={writingHint.title}
+          content={writingHint.content}
+          onClose={() => setWritingHint(null)}
+        />
       )}
     </div>
   );

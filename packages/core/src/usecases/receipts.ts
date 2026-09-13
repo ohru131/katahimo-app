@@ -261,8 +261,12 @@ export async function uploadReceipts(
     uploadedCount++;
   }
 
-  let message = `領収書を${uploadedCount}件アップロードしました`;
-  if (duplicates.length > 0) message += `(重複${duplicates.length}件は登録しませんでした)`;
+  // 画面にそのまま出る文なので、カタカナ英語(アップロード)や「重複」を使わない
+  // (doc/16_UIUX改善提案_2026-09-03.html の言いかえ表「領収書」)。
+  let message = `領収書を${uploadedCount}枚送りました`;
+  if (duplicates.length > 0) {
+    message += `(${duplicates.length}枚は前に送ってあるので、送っていません)`;
+  }
 
   if (uploadedCount > 0) {
     const staffRecord = await deps.staff.findById(tenantId, input.staffId);

@@ -1,6 +1,10 @@
 /**
  * PSI(リスク)/従業員満足度(ES)評価の定義。GAS版Main.jsのASSESSMENT_DEFINITIONSをそのまま移植
  * (GAS版でもScript Properties等の管理画面設定ではなく、コード内の固定値として持っている)。
+ *
+ * titleは帳票・指標表で使われている正式名で、GAS版から変えていない。画面に大きく出すのは
+ * questionのやさしい質問文で、titleはその右にtext-smで薄く添える
+ * (提案書doc/16_UIUX改善提案_2026-09-03.html「略語だけでは意味不明」)。
  */
 export interface AssessmentLevel {
   score: number;
@@ -9,7 +13,10 @@ export interface AssessmentLevel {
 }
 
 export interface AssessmentDefinition {
+  /** 帳票・指標表で使う正式名(画面では括弧の中に小さく添える)。 */
   title: string;
+  /** 画面に出すやさしい質問文。絵文字は1つの意味に1つだけ使う(⚠️=事故・危険、😊=気持ち)。 */
+  question: string;
   levels: AssessmentLevel[];
 }
 
@@ -18,6 +25,7 @@ export type AssessmentType = 'risk' | 'es';
 export const ASSESSMENT_DEFINITIONS: Record<AssessmentType, AssessmentDefinition> = {
   risk: {
     title: 'PSI',
+    question: '⚠️ きょうヒヤッとした度合い',
     levels: [
       {
         score: 5,
@@ -48,11 +56,12 @@ export const ASSESSMENT_DEFINITIONS: Record<AssessmentType, AssessmentDefinition
   },
   es: {
     title: '従業員満足度(ES)',
+    question: '😊 きょうの働きやすさ',
     levels: [
       {
         score: 5,
         label: '最高',
-        desc: 'ぜひまた担当したい(優先希望)。\n顧客の態度が非常に良く、感謝されており、環境も快適。\n精神的にも報酬以上のやりがいを感じる。',
+        desc: 'ぜひまた担当したい(優先希望)。\nお客様の態度が非常に良く、感謝されており、環境も快適。\n精神的にも報酬以上のやりがいを感じる。',
       },
       {
         score: 4,
