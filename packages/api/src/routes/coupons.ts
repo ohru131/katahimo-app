@@ -125,12 +125,13 @@ export function createCouponRoutes(container: Container) {
 
     const result = await assignCouponToCustomer(container, session.tenantId, customerId, parsed.data);
     if (!result.ok) {
-      const status = result.reason === 'coupon_not_found' ? 404 : 400;
-      const message =
-        result.reason === 'coupon_not_found'
-          ? 'クーポンが見つかりません'
-          : '有効期間の終了日は開始日以降にしてください';
-      return c.json({ success: false, message }, status);
+      if (result.reason === 'coupon_not_found') {
+        return c.json({ success: false, message: 'クーポンが見つかりません' }, 404);
+      }
+      if (result.reason === 'customer_not_found') {
+        return c.json({ success: false, message: '顧客が見つかりません' }, 404);
+      }
+      return c.json({ success: false, message: '有効期間の終了日は開始日以降にしてください' }, 400);
     }
     return c.json({ success: true });
   });

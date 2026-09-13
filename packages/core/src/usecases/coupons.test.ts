@@ -383,6 +383,14 @@ describe('顧客ごとの配布(customer_coupons)', () => {
     expect(assigned[0]?.validTo).toBe('2026-12-31');
   });
 
+  it('存在しない顧客には割り当てられない(複合FK違反で500にしない)', async () => {
+    const coupon = await h.coupons.create(amountCoupon({ audience: 'assigned' }));
+    const result = await assignCouponToCustomer(h.deps, tenantId, 'nonexistent-customer', {
+      couponId: coupon.id,
+    });
+    expect(result).toEqual({ ok: false, reason: 'customer_not_found' });
+  });
+
   it('存在しないクーポンは割り当てられない', async () => {
     const result = await assignCouponToCustomer(h.deps, tenantId, h.customerId, {
       couponId: 'nonexistent',

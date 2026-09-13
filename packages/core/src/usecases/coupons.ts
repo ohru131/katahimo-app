@@ -584,14 +584,14 @@ export interface AssignCouponInput {
 
 export type AssignCouponResult =
   | { ok: true }
-  | { ok: false; reason: 'coupon_not_found' | 'valid_period_reversed' };
+  | { ok: false; reason: 'coupon_not_found' | 'customer_not_found' | 'valid_period_reversed' };
 
 /**
  * 顧客にクーポンを割り当てる(既に割り当て済みなら有効期間・メモを上書きする)。
  *
- * クーポンの存在確認をここでするのは、DBの複合FK違反(23503)をそのまま画面に出すと
- * 何が悪いのか伝わらないため。findByIdはテナントスコープ(RLS)で引くので、他テナントの
- * クーポンIDは「見つからない」扱いになる。
+ * クーポンと顧客の存在確認をここでするのは、DBの複合FK違反(23503)をそのまま画面に出すと
+ * 何が悪いのか伝わらないため(顧客側を見落とすと、存在しない顧客IDで404ではなく500になる)。
+ * findByIdはどちらもテナントスコープ(RLS)で引くので、他テナントのIDは「見つからない」扱いになる。
  */
 export async function assignCouponToCustomer(
   deps: CouponDeps,
@@ -603,8 +603,12 @@ export async function assignCouponToCustomer(
   const validTo = input.validTo ?? null;
   if (validFrom && validTo && validTo < validFrom) return { ok: false, reason: 'valid_period_reversed' };
 
-  const coupon = await deps.coupons.findById(tenantId, input.couponId);
+  const [coupon, customer] = await Promise.all([
+    deps.coupons.findById(tenantId, input.couponId),
+    deps.customers.findById(tenantId, customerId),
+  ]);
   if (!coupon) return { ok: false, reason: 'coupon_not_found' };
+  if (!customer) return { ok: false, reason: 'customer_not_found' };
 
   await deps.customerCoupons.upsert({
     tenantId,

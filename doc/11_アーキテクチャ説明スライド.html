@@ -588,7 +588,7 @@
         <ul style="margin:0">
           <li>参照はすべて複合FK <code>(tenant_id, xxx_id) → (tenant_id, id)</code>。単一FKだとRLSをバイパスしてテナントを跨げるため</li>
           <li>一意制約・検索インデックスは<b>全部 <code>tenant_id</code> 先頭</b>(例: <code>staff(tenant_id, email)</code>、<code>customers(tenant_id, family_name)</code>)</li>
-          <li>領収書の重複検出は <code>(tenant_id, dedupe_key)</code> の<b>部分一意インデックス</b>(<code>WHERE dedupe_key IS NOT NULL</code>)。同時登録が事前チェックをすり抜けてもDB側で止める</li>
+          <li>領収書の重複検出は <code>(tenant_id, dedupe_key)</code> の<b>部分一意インデックス</b>(<code>WHERE dedupe_key IS NOT NULL AND cancelled_at IS NULL</code>)。同時登録が事前チェックをすり抜けてもDB側で止める</li>
           <li><code>ON DELETE</code> はすべて <code>no action</code>。親を消せないのは書き忘れではなく方針(廃棄はテナント単位の物理DELETE + バックアップ保持期間の満了で行う)</li>
           <li>初期化SQLで <code>btree_gist</code> を有効化済み。将来の予約テーブルの二重予約防止(<code>EXCLUDE USING gist</code>)用の仕込み</li>
         </ul>
@@ -621,9 +621,10 @@
         <tr><td>識別子 <span class="muted">4</span></td><td><code>id</code> / <code>tenant_id</code> / <code>external_source</code> / <code>external_id</code></td><td class="muted">識別子そのもの</td></tr>
         <tr><td>氏名 <span class="muted">5</span></td><td>姓・名・かな2種・表示名</td><td class="muted">姓は <code>(tenant_id, family_name)</code> のインデックスで検索</td></tr>
         <tr><td>連絡先・住所 <span class="muted">7</span></td><td>メール・電話・市区・住所・駐車場2種・第2住所</td><td class="muted">分析・報告時は除外/座標化の対象(NDA 第3条2・第4条)</td></tr>
-        <tr><td class="warn">第三者情報・位置・自由記述 <span class="muted">5</span></td><td>緊急連絡先・続柄・避難場所・メモ・緯度経度</td><td class="warn">検索性とAI活用のため平文</td></tr>
+        <tr><td class="warn">第三者情報・位置・自由記述 <span class="muted">7</span></td><td>緊急連絡先・続柄・避難場所・メモ・緯度・経度・元表記</td><td class="warn">検索性とAI活用のため平文</td></tr>
         <tr><td>他システムの会員証 <span class="muted">1</span></td><td>Benefit会員ID</td><td class="warn">同上</td></tr>
         <tr><td>運用区分 <span class="muted">6</span></td><td>会員種別・状態・支払方法・支払状況・性別・年齢層</td><td class="muted">個人特定に直結しない</td></tr>
+        <tr><td>生年月日 <span class="muted">2</span></td><td>日付型・元表記</td><td class="muted">誕生月クーポンの判定に使う。CSVに列が無く手入力で入る</td></tr>
         <tr><td>日時 <span class="muted">7</span></td><td>登録日・外部更新日・第2住所期間2・退会日・作成/更新</td><td class="muted"></td></tr>
       </table>
       <p class="muted" style="font-size:.85em;margin-top:.4em">取り込まない列が1つだけある: RESERVA側のログインパスワード。本アプリの認証に使わないため、他システムの資格情報を複製しない。</p>
