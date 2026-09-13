@@ -106,7 +106,7 @@ export function DemoBanner() {
 
   return (
     <>
-      <div className="bg-amber-100 border-b border-amber-300 text-amber-900 text-xs">
+      <div className="bg-amber-100 border-b border-amber-300 text-amber-900 text-sm">
         <div className="px-3 py-2 flex items-center gap-2">
           <span className="font-bold shrink-0 bg-amber-500 text-white rounded px-1.5 py-0.5">DEMO</span>
           <button
@@ -120,7 +120,7 @@ export function DemoBanner() {
             type="button"
             onClick={handleReset}
             disabled={resetting}
-            className="shrink-0 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white rounded px-2 py-1"
+            className="shrink-0 bg-amber-500 active:bg-amber-600 disabled:opacity-60 text-white rounded px-2 py-1"
           >
             {resetting ? 'リセット中…' : 'リセット'}
           </button>
@@ -153,7 +153,7 @@ export function DemoBanner() {
         // 保存した内容が失われうるという警告なので、読み上げ環境にも即座に伝わるようにする。
         <div
           role="alert"
-          className="bg-red-50 border-b border-red-300 text-red-800 text-xs px-3 py-2 flex items-start gap-2"
+          className="bg-red-50 border-b border-red-300 text-red-800 text-sm px-3 py-2 flex items-start gap-2"
         >
           <span className="flex-1 leading-relaxed">{warning}</span>
           <button type="button" onClick={() => setWarning(null)} className="shrink-0 underline">
@@ -163,7 +163,7 @@ export function DemoBanner() {
       )}
 
       {mails.length > 0 && (
-        <div className="bg-sky-50 border-b border-sky-300 text-sky-900 text-xs">
+        <div className="bg-sky-50 border-b border-sky-300 text-sky-900 text-sm">
           <div className="px-3 py-2 flex items-center gap-2">
             <span className="font-bold shrink-0">📧 デモの受信箱</span>
             <span className="flex-1 text-sky-700">
@@ -172,7 +172,7 @@ export function DemoBanner() {
             <button
               type="button"
               onClick={() => setMails([])}
-              className="shrink-0 underline hover:text-sky-950"
+              className="shrink-0 underline active:text-sky-950"
             >
               消す
             </button>
@@ -204,7 +204,7 @@ export function DemoBanner() {
           {toasts.map((toast) => (
             <div
               key={toast.id}
-              className="bg-gray-900/95 text-white rounded-xl shadow-lg p-3 text-xs whitespace-pre-wrap"
+              className="bg-gray-900/95 text-white rounded-xl shadow-lg p-3 text-sm whitespace-pre-wrap"
             >
               <div className="font-bold text-emerald-300 mb-1">
                 {CHANNEL_LABEL[toast.channel] ?? toast.channel}(本来はGoogle Chatへ送信)

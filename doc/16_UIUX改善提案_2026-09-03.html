@@ -1,0 +1,965 @@
+<title>保育日報アプリ やさしい画面化プラン</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+  :root {
+    --bg: #FFFBF8;
+    --surface: #FFFFFF;
+    --surface-2: #F6EFF1;
+    --ink: #2A2630;
+    --ink-2: #5C5563;
+    --muted: #7A7380;
+    --line: #E8DDE1;
+    --accent: #E4638F;
+    --accent-soft: #FCE7EE;
+    --app-blue: #2F6FE4;
+    --before: #B85C4A;
+    --before-soft: #F8E6E1;
+    --after: #2F8F6A;
+    --after-soft: #E1F2EA;
+    --warn: #C98A1B;
+    --warn-soft: #FBF1DC;
+    --code-bg: #2A2630;
+    --code-ink: #F5EFF2;
+    --shadow: 0 10px 30px rgba(60, 30, 45, 0.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1B181E;
+      --surface: #252129;
+      --surface-2: #2E2933;
+      --ink: #F2ECEF;
+      --ink-2: #C9C0C6;
+      --muted: #A399A1;
+      --line: #3D3642;
+      --accent: #F08AAE;
+      --accent-soft: #3D2530;
+      --app-blue: #6C9BF5;
+      --before: #E08C7A;
+      --before-soft: #3B2823;
+      --after: #6BC59A;
+      --after-soft: #1F3A2E;
+      --warn: #E5B04F;
+      --warn-soft: #3A3120;
+      --code-bg: #120F14;
+      --code-ink: #EDE6EA;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1B181E;
+    --surface: #252129;
+    --surface-2: #2E2933;
+    --ink: #F2ECEF;
+    --ink-2: #C9C0C6;
+    --muted: #A399A1;
+    --line: #3D3642;
+    --accent: #F08AAE;
+    --accent-soft: #3D2530;
+    --app-blue: #6C9BF5;
+    --before: #E08C7A;
+    --before-soft: #3B2823;
+    --after: #6BC59A;
+    --after-soft: #1F3A2E;
+    --warn: #E5B04F;
+    --warn-soft: #3A3120;
+    --code-bg: #120F14;
+    --code-ink: #EDE6EA;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    font-size: 16px;
+    line-height: 1.8;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, h4 {
+    font-family: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", "BIZ UDPGothic", sans-serif;
+    line-height: 1.35;
+    text-wrap: balance;
+    margin: 0;
+  }
+  p { margin: 0; }
+  a { color: var(--accent); }
+  button { font-family: inherit; }
+
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 20px 96px; }
+
+  /* ---- header ---- */
+  .masthead { padding: 48px 0 28px; display: grid; gap: 14px; }
+  .ribbon {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--accent); color: #fff;
+    font-family: "Zen Maru Gothic", sans-serif; font-weight: 700; font-size: 13px;
+    letter-spacing: .08em; padding: 5px 14px 5px 12px; border-radius: 4px 999px 999px 4px;
+    width: fit-content;
+  }
+  .masthead h1 { font-size: 34px; font-weight: 900; }
+  .lede { font-size: 17px; color: var(--ink-2); max-width: 40em; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 13px; color: var(--muted); }
+  .meta b { color: var(--ink-2); font-weight: 700; }
+
+  /* ---- section nav ---- */
+  .secnav {
+    position: sticky; top: 0; z-index: 5;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+    margin: 0 -20px; padding: 8px 20px;
+    display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;
+  }
+  .secnav a {
+    text-decoration: none; color: var(--ink-2); font-size: 13px; font-weight: 700;
+    padding: 6px 12px; border-radius: 999px; white-space: nowrap;
+  }
+  .secnav a:hover, .secnav a:focus-visible { background: var(--accent-soft); color: var(--accent); outline: none; }
+
+  section { padding-top: 56px; }
+  .sec-head { display: grid; gap: 6px; margin-bottom: 22px; }
+  .sec-head h2 { font-size: 26px; font-weight: 900; display: flex; align-items: center; gap: 12px; }
+  .sec-head h2::before {
+    content: ""; width: 10px; height: 28px; border-radius: 3px; background: var(--accent); flex: none;
+  }
+  .sec-head p { color: var(--ink-2); max-width: 44em; }
+
+  /* ---- summary ---- */
+  .summary { display: grid; gap: 16px; }
+  .verdict {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+    padding: 22px 24px; box-shadow: var(--shadow);
+    display: grid; gap: 12px;
+  }
+  .verdict h3 { font-size: 19px; font-weight: 700; }
+  .verdict ul { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; }
+  .persona {
+    background: var(--accent-soft); border-radius: 16px; padding: 20px 22px;
+    display: grid; grid-template-columns: 64px 1fr; gap: 18px; align-items: start;
+  }
+  .persona .face {
+    width: 64px; height: 64px; border-radius: 50%; background: var(--surface);
+    display: grid; place-items: center; font-size: 34px; border: 2px solid var(--accent);
+  }
+  .persona h3 { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+  .persona p { font-size: 15px; color: var(--ink-2); }
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .rule {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px;
+    display: grid; gap: 4px;
+  }
+  .rule .k { font-family: "Zen Maru Gothic", sans-serif; font-weight: 700; font-size: 16px; color: var(--accent); }
+  .rule p { font-size: 14px; color: var(--ink-2); }
+
+  /* ---- before / after ---- */
+  .screen-block { margin-bottom: 44px; }
+  .screen-block h3 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .screen-block > p { color: var(--ink-2); font-size: 15px; margin-bottom: 16px; max-width: 46em; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  .phone-col { display: grid; gap: 10px; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700;
+    padding: 3px 10px; border-radius: 999px; letter-spacing: .06em; width: fit-content;
+  }
+  .tag.before { background: var(--before-soft); color: var(--before); }
+  .tag.after { background: var(--after-soft); color: var(--after); }
+  .phone {
+    border: 8px solid #2B2730; border-radius: 34px; background: #2B2730;
+    box-shadow: var(--shadow); overflow: hidden; width: 100%; max-width: 340px; margin: 0 auto;
+  }
+  .screen {
+    background: #F3F4F6; color: #1F2937; border-radius: 26px; overflow: hidden;
+    min-height: 560px; display: flex; flex-direction: column; position: relative;
+  }
+  /* current app look: system font, small text */
+  .screen.b { font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif; font-size: 12px; line-height: 1.4; }
+  .screen.b .txs { font-size: 10px; color: #9CA3AF; }
+  /* proposal look: UD font, 16px */
+  .screen.a { font-family: "BIZ UDPGothic", "Hiragino Sans", sans-serif; font-size: 16px; line-height: 1.5; background: #F7F5F2; }
+  .sbar { background: #2F6FE4; color: #fff; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; }
+  .screen.b .sbar { font-size: 16px; font-weight: 700; }
+  .screen.b .sbar small { font-size: 9px; font-family: monospace; opacity: .7; display: block; font-weight: 400; }
+  .screen.a .sbar { font-family: "Zen Maru Gothic", sans-serif; font-weight: 700; font-size: 17px; }
+  .ico { width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,.25); display: inline-grid; place-items: center; font-size: 13px; }
+  .abtn { background: rgba(255,255,255,.22); border-radius: 8px; padding: 4px 10px; font-size: 13px; font-weight: 700; display: inline-flex; gap: 4px; align-items: center; }
+  .body { padding: 12px; flex: 1; display: grid; gap: 10px; align-content: start; }
+  .card { background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; padding: 10px 12px; }
+  .screen.a .card { border-radius: 14px; padding: 14px; }
+  .pill { border: 1px solid #D1D5DB; border-radius: 10px; padding: 6px; text-align: center; font-weight: 700; flex: 1; }
+  .pill.on { background: #2F6FE4; color: #fff; border-color: #2F6FE4; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .btn-b { border-radius: 10px; padding: 8px; text-align: center; font-weight: 700; font-size: 12px; }
+  .btn-a { border-radius: 12px; padding: 13px 12px; text-align: center; font-weight: 700; font-size: 16px; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .blue-soft { background: #EAF1FF; color: #2557C2; border: 1px solid #C7D8FB; }
+  .blue { background: #2F6FE4; color: #fff; }
+  .grey { background: #E9E7EA; color: #3F3A45; }
+  .green-soft { background: #E3F4EA; color: #1F6B47; border: 1px solid #BFE3CE; }
+  .amber { background: #D97706; color: #fff; }
+  .indigo { background: #4F46E5; color: #fff; }
+  .nav { display: flex; border-top: 1px solid #E5E7EB; background: #fff; }
+  .nav div { flex: 1; text-align: center; padding: 6px 0 8px; color: #9CA3AF; font-weight: 700; }
+  .nav div.on { color: #2F6FE4; border-top: 2px solid #2F6FE4; }
+  .screen.b .nav div { font-size: 11px; }
+  .screen.b .nav span { font-size: 18px; display: block; }
+  .screen.a .nav div { font-size: 13px; }
+  .screen.a .nav span { font-size: 24px; display: block; line-height: 1.1; }
+  .leg { background: #F3F4F6; border-radius: 8px; padding: 6px 8px; }
+  .screen.a .leg { background: #EEF2F7; border-radius: 12px; padding: 10px 12px; }
+  .callouts { display: grid; gap: 6px; font-size: 14px; }
+  .callouts li { list-style: none; padding-left: 22px; position: relative; color: var(--ink-2); }
+  .callouts li::before { content: "●"; position: absolute; left: 4px; font-size: 10px; top: 2px; }
+  .callouts.before li::before { color: var(--before); }
+  .callouts.after li::before { color: var(--after); }
+  .callouts ul { padding: 0; margin: 0; display: grid; gap: 6px; }
+  .field { border: 1px solid #D1D5DB; border-radius: 8px; padding: 7px 10px; background: #fff; color: #6B7280; }
+  .screen.a .field { border-radius: 12px; padding: 12px; font-size: 16px; border-color: #C9CDD3; color: #1F2937; }
+  .label-b { font-size: 11px; color: #6B7280; margin-bottom: 2px; }
+  .label-a { font-size: 14px; color: #4B5563; font-weight: 700; margin-bottom: 4px; }
+  .stars { color: #D1D5DB; letter-spacing: 1px; }
+  .screen.b .stars { font-size: 18px; }
+  .screen.a .stars { font-size: 30px; letter-spacing: 3px; }
+  .stars b { color: #F5B301; }
+  .hint { font-size: 12px; color: #6B7280; }
+  .tiny-link { font-size: 10px; color: #3B82F6; text-decoration: underline; }
+  .weekgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .weekgrid div { background: #fff; border: 1px solid #E5E7EB; height: 52px; border-radius: 4px; font-size: 8px; color: #9CA3AF; text-align: center; padding-top: 2px; }
+  .weekgrid div i { display: block; margin: 4px 2px 0; height: 12px; background: #DBEAFE; border-radius: 2px; }
+  .daylist { display: grid; gap: 8px; }
+  .daylist .d { display: grid; grid-template-columns: 56px 1fr auto; gap: 10px; align-items: center; background: #fff; border-radius: 12px; padding: 10px 12px; border: 1px solid #E5E7EB; }
+  .daylist .d .n { font-family: "Zen Maru Gothic", sans-serif; font-weight: 700; font-size: 20px; line-height: 1; }
+  .daylist .d .n small { display: block; font-size: 12px; color: #6B7280; font-weight: 400; margin-top: 2px; }
+  .daylist .d .t { font-size: 14px; color: #374151; }
+  .daylist .d .t b { display: block; font-size: 15px; color: #1F2937; }
+  .daylist .d .h { font-size: 15px; font-weight: 700; color: #2557C2; white-space: nowrap; }
+  .notice-b { background: #FFFBEB; border: 1px solid #FDE68A; color: #92400E; font-size: 10px; border-radius: 6px; padding: 6px 8px; }
+  .notice-a { background: #FFF7E6; border: 1px solid #F9D98B; color: #7A4B00; font-size: 14px; border-radius: 12px; padding: 10px 12px; }
+
+  /* ---- wording table ---- */
+  .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .filters button {
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
+    border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
+  }
+  .filters button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .filters button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  th { background: var(--surface-2); font-size: 12px; letter-spacing: .06em; color: var(--muted); font-weight: 700; position: sticky; top: 0; }
+  td.now { color: var(--before); font-family: "Hiragino Sans", "Yu Gothic", sans-serif; }
+  td.now s { text-decoration-color: var(--before); text-decoration-thickness: 1.5px; }
+  td.new { font-weight: 700; color: var(--ink); }
+  td.why { color: var(--ink-2); font-size: 13px; }
+  .pri { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+  .pri.h { background: var(--accent-soft); color: var(--accent); }
+  .pri.m { background: var(--warn-soft); color: var(--warn); }
+  .pri.l { background: var(--surface-2); color: var(--muted); }
+  .scr { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  tr[hidden] { display: none; }
+  .count { font-size: 13px; color: var(--muted); margin: 8px 2px 0; }
+
+  /* ---- layout proposals ---- */
+  .props { display: grid; gap: 12px; }
+  .prop {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px;
+    display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; align-items: start;
+  }
+  .prop h4 { font-size: 16px; font-weight: 700; }
+  .prop p { grid-column: 1 / -1; font-size: 14px; color: var(--ink-2); }
+  .prop .where { font-size: 12px; color: var(--muted); }
+
+  /* ---- tokens ---- */
+  .tokens { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .tok { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 10px; }
+  .tok h4 { font-size: 16px; font-weight: 700; }
+  .tok dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; }
+  .tok dt { color: var(--muted); white-space: nowrap; }
+  .tok dd { margin: 0; }
+  .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sw { display: grid; gap: 3px; font-size: 11px; color: var(--muted); text-align: center; }
+  .sw i { display: block; width: 44px; height: 32px; border-radius: 8px; border: 1px solid rgba(0,0,0,.08); }
+  .fontdemo { display: grid; gap: 6px; }
+  .fontdemo .b { font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif; font-size: 12px; color: var(--muted); }
+  .fontdemo .a { font-family: "BIZ UDPGothic", sans-serif; font-size: 16px; }
+  .fontdemo .h { font-family: "Zen Maru Gothic", sans-serif; font-weight: 700; font-size: 18px; }
+  .sizes { display: grid; gap: 2px; }
+  .sizes span { display: flex; align-items: baseline; gap: 10px; }
+  .sizes small { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; width: 8em; }
+
+  /* ---- roadmap ---- */
+  .steps { display: grid; gap: 0; counter-reset: step; }
+  .step { display: grid; grid-template-columns: 44px 1fr; gap: 14px; padding: 14px 0; border-bottom: 1px dashed var(--line); }
+  .step .no {
+    counter-increment: step; width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: #fff;
+    font-family: "Zen Maru Gothic", sans-serif; font-weight: 900; display: grid; place-items: center; font-size: 18px;
+  }
+  .step .no::before { content: counter(step); }
+  .step h4 { font-size: 16px; font-weight: 700; }
+  .step p { font-size: 14px; color: var(--ink-2); }
+  .step .when { font-size: 12px; color: var(--muted); }
+
+  /* ---- prompt ---- */
+  .promptbox { background: var(--code-bg); color: var(--code-ink); border-radius: 16px; padding: 18px 20px; display: grid; gap: 12px; }
+  .promptbox .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .promptbox .top p { font-size: 13px; color: color-mix(in srgb, var(--code-ink) 70%, transparent); }
+  .copybtn {
+    background: var(--accent); color: #fff; border: none; border-radius: 999px; padding: 10px 18px;
+    font-weight: 700; font-size: 14px; cursor: pointer;
+  }
+  .copybtn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  textarea.prompt {
+    width: 100%; min-height: 420px; resize: vertical; background: transparent; color: inherit; border: 1px solid rgba(255,255,255,.15);
+    border-radius: 10px; padding: 14px; font-family: "BIZ UDPGothic", monospace; font-size: 13.5px; line-height: 1.7;
+  }
+  textarea.prompt:focus { outline: 2px solid var(--accent); }
+
+  footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .filters button, .copybtn { transition: background .15s, color .15s; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <span class="ribbon">Family Sitter 仙台 ／ 保育日報アプリ Ver.1.0.1</span>
+    <h1>スマホでLINEが使える人なら、誰でも迷わない画面にする</h1>
+    <p class="lede">スタッフ用アプリ「保育日報」の文言・ボタン配置・文字を、ITに慣れていないスタッフが毎日使い続けられる形に直すための提案書です。かたひも 松浦さんと、実装を手伝うAIに渡すことを前提にまとめています。</p>
+    <div class="meta">
+      <span>作成 <b>2026-09-03</b></span>
+      <span>作成者 <b>株式会社キューテスト 中原</b></span>
+      <span>対象 <b>index.html（GAS Webアプリ／Tailwind）</b></span>
+      <span>宛先 <b>かたひも 松浦さん・実装AI</b></span>
+    </div>
+  </header>
+
+  <nav class="secnav" aria-label="ページ内の見出し">
+    <a href="#summary">まとめ</a>
+    <a href="#screens">画面の前後比較</a>
+    <a href="#words">文言の言いかえ表</a>
+    <a href="#layout">配置の変更</a>
+    <a href="#tokens">文字・色のきまり</a>
+    <a href="#roadmap">直す順番</a>
+    <a href="#prompt">AIへの指示文</a>
+  </nav>
+
+  <!-- ================= まとめ ================= -->
+  <section id="summary">
+    <div class="sec-head">
+      <h2>まとめ</h2>
+      <p>機能は十分そろっています。問題は「機能の名前がシステム側の言葉になっている」「押せるものが小さくてアイコンだけ」「文字が10〜12pxで薄い」の3点に集中しています。</p>
+    </div>
+    <div class="summary">
+      <div class="verdict">
+        <h3>診断：機能は足りている。言葉と大きさが、スタッフ向けになっていない</h3>
+        <ul>
+          <li><b>言葉</b>：「取得」「反映」「読込」「勤怠シート」「PSI」「ES」など、開発者・事務局の言葉がそのまま画面に出ています。同じものが「勤怠」「出勤簿」「過去の予定」「勤怠シート」と4通りの名前で呼ばれています。</li>
+          <li><b>大きさ</b>：本文の既定が12px（text-xs）、注意書きは8〜11px。設定に「文字サイズ」があるものの、初期値が一番小さい「小」です。ボタンの多くが高さ30px前後で、指で押しにくい大きさです。</li>
+          <li><b>フォント</b>：指定されている Outfit は英数字専用フォントで、日本語は端末まかせになっています。日本語の見た目が端末ごとに変わり、細く見える原因です。</li>
+          <li><b>入口の重なり</b>：「領収書登録」ボタンが2か所、「更新」に相当するボタンが3種類（ルート再取得／カレンダーから取得／勤怠シートから読込）あり、どれを押せばいいか分かりません。</li>
+          <li><b>アイコンだけのボタン</b>：ヘッダーの歯車とログアウトは文字がなく、ログアウトは1タップで即実行されます。</li>
+        </ul>
+      </div>
+
+      <div class="persona">
+        <div class="face" aria-hidden="true">👩</div>
+        <div>
+          <h3>想定ユーザー：「スマホはLINEと写真がメイン」のスタッフ</h3>
+          <p>50〜60代、家族との連絡はLINE。スタンプ・写真送信・電話はできる。「取得」「同期」「反映」という言葉は日常で使わない。小さい文字は老眼鏡がないと読めない。訪問先に着く前に、道順と時間だけ確認したい。訪問が終わったら、その場で声を吹き込んで日報を送りたい。</p>
+        </div>
+      </div>
+
+      <div class="rules">
+        <div class="rule"><span class="k">1. LINEにある言葉で言う</span><p>「送信」「コピー」「削除」「キャンセル」「保存」はそのまま。それ以外の動詞は「見る」「取り込む」「最新にする」「書く」に置きかえる。</p></div>
+        <div class="rule"><span class="k">2. 1画面に「主役のボタン」は1つ</span><p>青い大きなボタンは画面に1つだけ。取り消し系は左・グレー、進む系は右・青、危ない操作は赤。この並びを全画面で固定する。</p></div>
+        <div class="rule"><span class="k">3. アイコンだけのボタンを作らない</span><p>絵文字やアイコンには必ず文字を添える。「⚙️」ではなく「⚙️ 設定」。</p></div>
+        <div class="rule"><span class="k">4. 文字は16px以上、ボタンは48px以上</span><p>10px・11pxの注意書きをやめる。押せるものは高さ48px、間隔12px以上。</p></div>
+        <div class="rule"><span class="k">5. 待っている間は必ず文字で伝える</span><p>くるくる（スピナー）だけにしない。「AIが書いています…（12秒）1分ほどかかることがあります」のように、何をどれくらい待つかを書く。</p></div>
+        <div class="rule"><span class="k">6. 失敗は消えない・次の一手を書く</span><p>エラーの吹き出しは3秒で消さない。「うまくいきませんでした。電波を確認して、もう一度押してください」とだけ書く。「Error: ...」は出さない。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 画面の前後比較 ================= -->
+  <section id="screens">
+    <div class="sec-head">
+      <h2>画面の前後比較</h2>
+      <p>左が今のコードを読み取って描いた現状、右が提案です。右の画面はこのページ上で実際に提案フォント（BIZ UDPゴシック／Zen丸ゴシック）と16pxで描いているので、大きさの違いはこのまま実物に近い感覚です。</p>
+    </div>
+
+    <!-- 1. ホーム -->
+    <div class="screen-block">
+      <h3>1. ホーム（きょうの予定）</h3>
+      <p>一番よく開く画面。今は「予定を見る」画面ですが、ここから「道順を見る」「日報を書く」まで一気に行ける画面にします。</p>
+      <div class="pair">
+        <div class="phone-col">
+          <span class="tag before">いま</span>
+          <div class="phone"><div class="screen b">
+            <div class="sbar"><div>保育日報<small>Ver. 1.0.1</small></div><div class="row"><span style="font-size:11px">土居 さん</span><span class="ico">⚙</span><span class="ico">⇥</span></div></div>
+            <div class="body">
+              <div class="row"><div class="pill on">☀️ 今日</div><div class="pill">🌙 明日</div></div>
+              <div class="txs">2026-09-03 (今日)</div>
+              <div class="btn-b blue-soft">🔄 ルート・移動時間を再取得</div>
+              <div class="txs" style="text-align:center">取得時刻: 2026/09/03 10:02</div>
+              <div class="leg"><div style="font-weight:700;color:#4B5563;font-size:11px">🚗 出勤: 12分 / 5.2km</div><div class="row" style="margin-top:4px"><div class="btn-b blue-soft" style="flex:1;font-size:10px">🗺️ 地図で見る</div><div class="btn-b green-soft" style="flex:1;font-size:10px">📍 現在地から</div></div></div>
+              <div class="card row" style="border-left:4px solid #60A5FA"><div style="text-align:center;width:48px"><b>10:00</b><div class="txs">〜12:00</div></div><div><b>📍 佐藤 様</b><div class="txs">仙台市青葉区… <span style="background:#DBEAFE;color:#2563EB;padding:0 4px;border-radius:3px">Map</span></div></div></div>
+              <div class="leg"><div style="font-weight:700;color:#4B5563;font-size:11px">🚗 移動: 18分 / 7.1km</div></div>
+              <div class="card row" style="border-left:4px solid #60A5FA"><div style="text-align:center;width:48px"><b>13:00</b><div class="txs">〜15:00</div></div><div><b>📍 高橋 様</b><div class="txs">仙台市泉区…</div></div></div>
+            </div>
+            <div class="nav"><div class="on"><span>📅</span>予定</div><div><span>🏠</span>訪問先一覧</div><div><span>🕒</span>勤怠</div></div>
+          </div></div>
+          <ul class="callouts before">
+            <li>歯車・ログアウトがアイコンだけ。ログアウトは1タップで即実行。</li>
+            <li>「再取得」「取得時刻」はシステムの言葉。日付が「2026-09-03」表記。</li>
+            <li>カード全体を押すと「訪問先一覧」に飛ぶが、どこにも書いていない。</li>
+            <li>説明文が10px（text-[10px]）。</li>
+          </ul>
+        </div>
+        <div class="phone-col">
+          <span class="tag after">提案</span>
+          <div class="phone"><div class="screen a">
+            <div class="sbar"><div>保育日報</div><div class="row"><span class="abtn">Aa</span><span class="abtn">⚙️ 設定</span></div></div>
+            <div class="body">
+              <div class="row"><div class="pill on">☀️ きょう</div><div class="pill">🌙 あす</div></div>
+              <div style="font-weight:700;color:#4B5563">9月3日（水）・土居さん　<span style="font-weight:400;color:#6B7280;font-size:14px">10:02 時点</span></div>
+              <div class="leg"><div style="font-weight:700">🏠 家から 12分（5.2km）</div><div class="row" style="margin-top:8px"><div class="btn-a blue-soft" style="flex:1;font-size:15px">🗺️ 道順を見る</div><div class="btn-a green-soft" style="flex:1;font-size:15px">📍 今いる場所から</div></div></div>
+              <div class="card" style="border-left:6px solid #2F6FE4"><div class="row" style="align-items:flex-start"><div style="text-align:center;width:64px"><b style="font-size:20px">10:00</b><div style="font-size:13px;color:#6B7280">〜12:00</div></div><div><b style="font-size:18px">佐藤 様</b><div style="font-size:14px;color:#4B5563">青葉区上杉 3-2</div></div></div><div class="btn-a blue" style="margin-top:10px">✏️ この訪問の日報を書く</div></div>
+              <div class="leg" style="font-weight:700">🚗 次へ 18分（7.1km）</div>
+              <div class="card" style="border-left:6px solid #2F6FE4"><div class="row"><div style="text-align:center;width:64px"><b style="font-size:20px">13:00</b><div style="font-size:13px;color:#6B7280">〜15:00</div></div><div><b style="font-size:18px">高橋 様</b><div style="font-size:14px;color:#4B5563">泉区南光台 1-8</div></div></div></div>
+              <div class="btn-a grey" style="font-size:15px">🔄 最新にする</div>
+            </div>
+            <div class="nav"><div class="on"><span>📅</span>きょうの予定</div><div><span>👪</span>お客様</div><div><span>🕒</span>出勤簿</div></div>
+          </div></div>
+          <ul class="callouts after">
+            <li>ヘッダーに「Aa（文字の大きさ）」「⚙️ 設定」を文字つきで。ログアウトは設定の中へ移し、確認を出す。</li>
+            <li>日付は「9月3日（水）」、時刻は「10:02 時点」。「取得」を使わない。</li>
+            <li>各訪問カードに「✏️ この訪問の日報を書く」を置き、そのまま日報画面を開く。</li>
+            <li>更新は一番下に灰色で1つ。自動で読み込むので、目立たせない。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. お客様一覧 -->
+    <div class="screen-block">
+      <h3>2. お客様一覧（訪問先一覧）</h3>
+      <p>1枚のカードに「顧客情報」「活動記録」「矢印」と3つの押し場所があり、しかも本命（日報を書く）が矢印だけ。「領収書登録」の大きな橙ボタンが一覧の上にあり、何のためか分かりません。</p>
+      <div class="pair">
+        <div class="phone-col">
+          <span class="tag before">いま</span>
+          <div class="phone"><div class="screen b">
+            <div class="sbar"><div>保育日報<small>Ver. 1.0.1</small></div><div class="row"><span class="ico">⚙</span><span class="ico">⇥</span></div></div>
+            <div class="body">
+              <div class="btn-b amber" style="padding:10px">📄 領収書登録</div>
+              <div class="field">🔍 顧客名で検索...</div>
+              <div class="field">全ての地域 ▾</div>
+              <div class="card row" style="justify-content:space-between"><div><b style="font-size:15px">佐藤 様</b><div><span style="background:#F3F4F6;padding:0 6px;border-radius:3px;font-size:10px">青葉区</span></div></div><div class="row"><div style="display:grid;gap:4px"><div class="btn-b blue-soft" style="font-size:10px;padding:4px 8px">顧客情報</div><div class="btn-b" style="font-size:10px;padding:4px 8px;background:#FFF7ED;color:#C2410C;border:1px solid #FED7AA">活動記録</div></div><span style="color:#3B82F6;font-size:18px">›</span></div></div>
+              <div class="card row" style="justify-content:space-between"><div><b style="font-size:15px">高橋 様</b><div><span style="background:#F3F4F6;padding:0 6px;border-radius:3px;font-size:10px">泉区</span></div></div><div class="row"><div style="display:grid;gap:4px"><div class="btn-b blue-soft" style="font-size:10px;padding:4px 8px">顧客情報</div><div class="btn-b" style="font-size:10px;padding:4px 8px;background:#FFF7ED;color:#C2410C;border:1px solid #FED7AA">活動記録</div></div><span style="color:#3B82F6;font-size:18px">›</span></div></div>
+              <div class="card row" style="justify-content:space-between"><div><b style="font-size:15px">鈴木 様</b><div><span style="background:#F3F4F6;padding:0 6px;border-radius:3px;font-size:10px">太白区</span></div></div><div class="row"><div style="display:grid;gap:4px"><div class="btn-b blue-soft" style="font-size:10px;padding:4px 8px">顧客情報</div><div class="btn-b" style="font-size:10px;padding:4px 8px;background:#FFF7ED;color:#C2410C;border:1px solid #FED7AA">活動記録</div></div><span style="color:#3B82F6;font-size:18px">›</span></div></div>
+            </div>
+            <div class="nav"><div><span>📅</span>予定</div><div class="on"><span>🏠</span>訪問先一覧</div><div><span>🕒</span>勤怠</div></div>
+          </div></div>
+          <ul class="callouts before">
+            <li>「顧客」はスタッフの言葉ではない（日報では「保護者」「お子様」と呼んでいる）。</li>
+            <li>本命の「日報を書く」が矢印1本。小ボタンは10pxで高さ26px。</li>
+            <li>「領収書登録」は"お客様に関係ない経費"用だが、一番上にあるので毎回目に入る。</li>
+          </ul>
+        </div>
+        <div class="phone-col">
+          <span class="tag after">提案</span>
+          <div class="phone"><div class="screen a">
+            <div class="sbar"><div>保育日報</div><div class="row"><span class="abtn">Aa</span><span class="abtn">⚙️ 設定</span></div></div>
+            <div class="body">
+              <div class="field">🔍 お客様の名前で探す</div>
+              <div class="field" style="color:#4B5563">すべての地域 ▾</div>
+              <div class="card"><div class="row" style="justify-content:space-between"><b style="font-size:19px">佐藤 様</b><span style="font-size:13px;color:#6B7280">青葉区</span></div><div class="btn-a blue" style="margin-top:10px">✏️ 日報を書く</div><div class="row" style="margin-top:8px"><div class="btn-a grey" style="flex:1;font-size:14px;min-height:44px">👤 お客様の情報</div><div class="btn-a grey" style="flex:1;font-size:14px;min-height:44px">📖 これまでの記録</div></div></div>
+              <div class="card"><div class="row" style="justify-content:space-between"><b style="font-size:19px">高橋 様</b><span style="font-size:13px;color:#6B7280">泉区</span></div><div class="btn-a blue" style="margin-top:10px">✏️ 日報を書く</div><div class="row" style="margin-top:8px"><div class="btn-a grey" style="flex:1;font-size:14px;min-height:44px">👤 お客様の情報</div><div class="btn-a grey" style="flex:1;font-size:14px;min-height:44px">📖 これまでの記録</div></div></div>
+              <div class="btn-a" style="background:#fff;border:2px dashed #C9CDD3;color:#4B5563;font-size:15px">🧾 お客様に関係ない領収書を登録</div>
+            </div>
+            <div class="nav"><div><span>📅</span>きょうの予定</div><div class="on"><span>👪</span>お客様</div><div><span>🕒</span>出勤簿</div></div>
+          </div></div>
+          <ul class="callouts after">
+            <li>「顧客」→「お客様」に全面置きかえ。</li>
+            <li>本命の「✏️ 日報を書く」を青い大ボタンに。補助の2つは灰色で下に。</li>
+            <li>お客様に関係ない領収書は一覧の一番下に、点線の控えめなボタンで。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. 日報作成 -->
+    <div class="screen-block">
+      <h3>3. 日報を書く画面</h3>
+      <p>この画面が一番長く、要素が多い画面です。並び順は「時間 → 領収書 → 評価 → メモ → AIボタン → 結果 → 保存」ですが、スタッフの頭の順番は「メモ（声）→ AI → 直す → 送る」です。領収書と評価は補助なので後ろへ。</p>
+      <div class="pair">
+        <div class="phone-col">
+          <span class="tag before">いま</span>
+          <div class="phone"><div class="screen b">
+            <div style="background:#F9FAFB;padding:10px 12px;border-bottom:1px solid #E5E7EB"><b style="font-size:15px">佐藤 様</b><div class="txs">仙台市青葉区上杉3-2</div></div>
+            <div class="row" style="border-bottom:1px solid #E5E7EB"><div style="flex:1;text-align:center;padding:8px;color:#2563EB;border-bottom:2px solid #2563EB;font-size:12px">📝 保育日報</div><div style="flex:1;text-align:center;padding:8px;color:#6B7280;font-size:12px">⚠️ 事故報告</div></div>
+            <div class="body" style="gap:8px">
+              <div class="field" style="text-align:center;font-weight:700;color:#1F2937">‹ 2026年9月3日(水) ›</div>
+              <div><div class="label-b">開始時間/発生時間</div><div class="row"><div class="field" style="flex:1">10 ▾</div>:<div class="field" style="flex:1">00 ▾</div></div></div>
+              <div><div class="label-b">終了時間</div><div class="row"><div class="field" style="flex:1">12 ▾</div>:<div class="field" style="flex:1">00 ▾</div></div></div>
+              <div style="text-align:right"><span class="btn-b indigo" style="display:inline-block;font-size:10px;padding:5px 10px">訪問完了</span></div>
+              <div class="row" style="justify-content:space-between;border-top:1px solid #E5E7EB;padding-top:6px"><span class="label-b">領収書 (最大6枚)</span><span class="btn-b amber" style="font-size:10px;padding:5px 10px">領収書登録</span></div>
+              <div class="row"><div style="width:56px;height:56px;border:2px dashed #93C5FD;border-radius:10px;font-size:9px;color:#3B82F6;display:grid;place-items:center;text-align:center">📷<br>カメラ撮影</div><div style="width:56px;height:56px;border:2px dashed #D1D5DB;border-radius:10px;font-size:9px;color:#9CA3AF;display:grid;place-items:center">アルバム</div></div>
+              <div class="leg row" style="justify-content:space-between"><div><div class="label-b" style="font-weight:700">PSI ⓘ</div><div class="stars">★★★★★</div></div><div><div class="label-b" style="font-weight:700">従業員満足度(ES) ⓘ</div><div class="stars">★★★★★</div></div></div>
+              <div class="row" style="justify-content:space-between"><span class="label-b">メモ (音声入力などで入力)</span><span class="btn-b grey" style="font-size:10px;padding:3px 8px">🎤 音声入力</span></div>
+              <div class="field" style="height:56px"></div>
+              <div class="btn-b blue" style="padding:10px">日報を作成する</div>
+            </div>
+          </div></div>
+          <ul class="callouts before">
+            <li>「PSI」「従業員満足度(ES)」は業界用語。ⓘを押さないと意味が分からない。</li>
+            <li>「訪問完了」は事務局に通知が飛ぶ大事なボタンなのに、10pxで右端。</li>
+            <li>「開始時間/発生時間」は2つのタブ用のラベルを兼ねている。</li>
+            <li>「日報を作成する」がAI生成だと分からない。待ち時間は最大90秒。</li>
+          </ul>
+        </div>
+        <div class="phone-col">
+          <span class="tag after">提案</span>
+          <div class="phone"><div class="screen a">
+            <div style="background:#fff;padding:12px 14px;border-bottom:1px solid #E5E7EB"><b style="font-size:19px">佐藤 様</b><div style="font-size:14px;color:#6B7280">9月3日（水）10:00〜12:00　<span style="color:#2557C2">変える</span></div></div>
+            <div class="row" style="border-bottom:1px solid #E5E7EB;background:#fff"><div style="flex:1;text-align:center;padding:12px;color:#2557C2;border-bottom:3px solid #2557C2;font-weight:700">📝 きょうの日報</div><div style="flex:1;text-align:center;padding:12px;color:#6B7280;font-weight:700">⚠️ 事故・ヒヤリ</div></div>
+            <div class="body">
+              <div><div class="label-a">きょうのできごとメモ</div><div class="field" style="min-height:96px;color:#9CA3AF;font-size:15px">例）公園で30分あそび、昼はうどんを完食。お昼寝は13時から…</div></div>
+              <div class="row"><div class="btn-a grey" style="flex:1">🎤 話して入力</div><div class="btn-a grey" style="flex:1;font-size:15px">💡 書き方のヒント</div></div>
+              <div class="btn-a blue" style="font-size:17px">✨ AIに日報を書いてもらう</div>
+              <div class="hint" style="font-size:13px;text-align:center">1分ほどかかることがあります。書けたら下に出ます</div>
+              <div class="card" style="background:#F9FAFB"><div class="label-a">⚠️ きょうヒヤッとした度合い <span style="font-weight:400;color:#6B7280">(PSI)</span></div><div class="stars"><b>★★</b>★★★</div><div class="label-a" style="margin-top:8px">😊 きょうの働きやすさ <span style="font-weight:400;color:#6B7280">(ES)</span></div><div class="stars"><b>★★★★</b>★</div></div>
+              <div class="btn-a" style="background:#fff;border:2px dashed #C9CDD3;color:#4B5563;font-size:15px">🧾 レシート・領収書を撮る（あれば）</div>
+              <div class="btn-a green-soft" style="font-size:16px">✅ 訪問おわりました（事務局に知らせる）</div>
+            </div>
+          </div></div>
+          <ul class="callouts after">
+            <li>並びを「メモ → 話す/ヒント → AI → 評価 → 領収書 → 訪問完了」に。時間は上部に1行で見せ、「変える」で開く。</li>
+            <li>星の項目は日本語の質問文にし、略語は小さく添える（正式名は残す）。星は30pxに。</li>
+            <li>AIボタンに「✨ AIに〜してもらう」と書き、下に待ち時間の目安を常時表示。</li>
+            <li>「訪問完了」は緑の大ボタンにし、押すと「事務局に『訪問おわりました』を送りますか？」の確認を出す。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 出勤簿 -->
+    <div class="screen-block">
+      <h3>4. 出勤簿（勤怠タブ）</h3>
+      <p>週間グリッドはGoogleカレンダー風で分かりやすい一方、更新ボタンが2種類、注意書きが10pxで3行、月次集計が7列の表で、スマホでは読めません。</p>
+      <div class="pair">
+        <div class="phone-col">
+          <span class="tag before">いま</span>
+          <div class="phone"><div class="screen b">
+            <div class="sbar"><div>保育日報<small>Ver. 1.0.1</small></div><div class="row"><span class="ico">⚙</span><span class="ico">⇥</span></div></div>
+            <div class="body" style="gap:8px">
+              <div class="row"><div class="btn-b" style="flex:1;background:#FAF5FF;color:#7E22CE;border:1px solid #E9D5FF">📊 月次集計</div></div>
+              <div class="card">
+                <div class="notice-b">⚠️毎晩自動更新しています、最新の情報にするには、１日表示の更新ボタン(📅 カレンダーから取得 / 🔄 勤怠シートから読込)を押してください。</div>
+                <div class="row" style="justify-content:space-between;margin:6px 0"><span style="color:#6B7280">‹</span><div style="text-align:center"><b style="font-size:11px">2026/8/31 〜 9/6</b><div class="tiny-link">今日</div><div class="txs">更新: 10:02</div></div><span style="color:#6B7280">›</span></div>
+                <div class="row" style="flex-wrap:wrap;gap:4px;margin-bottom:6px"><span class="btn-b green-soft" style="font-size:10px;padding:3px 6px">📅 カレンダーから取得</span><span class="btn-b grey" style="font-size:10px;padding:3px 6px">🔄 勤怠シートから読込</span><span class="btn-b blue-soft" style="font-size:10px;padding:3px 6px">✏️ 勤怠を編集</span></div>
+                <div class="weekgrid"><div>日31</div><div>月1<i></i></div><div>火2<i></i><i></i></div><div>水3<i></i><i></i></div><div>木4<i></i></div><div>金5<i></i></div><div>土6</div></div>
+                <div class="txs" style="margin-top:6px">日をタップすると1日表示になります。予定をタップすると内容を編集できます。</div>
+              </div>
+              <div class="card"><div class="label-b" style="font-weight:700">移動・距離・その他</div><div class="leg"><div class="txs" style="font-weight:700">出勤(自宅→佐藤 様)</div><div class="row"><div><div class="txs">距離(km)</div><div class="field" style="padding:4px 8px">5.2</div></div><div><div class="txs">天候</div><span class="btn-b" style="border:1px solid #D1D5DB;font-size:10px;padding:3px 6px">晴れ 曇り 雨 ❄️雪</span></div></div></div></div>
+            </div>
+            <div class="nav"><div><span>📅</span>予定</div><div><span>🏠</span>訪問先一覧</div><div class="on"><span>🕒</span>勤怠</div></div>
+          </div></div>
+          <ul class="callouts before">
+            <li>「勤怠」「出勤簿」「勤怠シート」「過去の予定」が同じものを指す。</li>
+            <li>「カレンダーから取得」「勤怠シートから読込」の違いはスタッフには判断できない。</li>
+            <li>注意書き・説明・週ラベルが8〜11px。‹ › が細くて押しにくい。</li>
+          </ul>
+        </div>
+        <div class="phone-col">
+          <span class="tag after">提案</span>
+          <div class="phone"><div class="screen a">
+            <div class="sbar"><div>保育日報</div><div class="row"><span class="abtn">Aa</span><span class="abtn">⚙️ 設定</span></div></div>
+            <div class="body">
+              <div class="row"><div class="btn-a grey" style="flex:1;font-size:15px">📊 今月のまとめ</div></div>
+              <div class="notice-a">毎晩、自動で最新になります。今すぐ直したいときは、日にちを押してください。</div>
+              <div class="card">
+                <div class="row" style="justify-content:space-between"><span class="btn-a grey" style="min-height:44px;font-size:14px;padding:8px 12px">◀ 前の週</span><b style="font-size:15px">8月31日〜9月6日</b><span class="btn-a grey" style="min-height:44px;font-size:14px;padding:8px 12px">次の週 ▶</span></div>
+                <div class="daylist" style="margin-top:12px">
+                  <div class="d"><div class="n">1<small>月</small></div><div class="t"><b>佐藤 様 → 高橋 様</b>10:00〜15:00</div><div class="h">5.0h</div></div>
+                  <div class="d" style="border:2px solid #2F6FE4"><div class="n">3<small>水</small></div><div class="t"><b>佐藤 様 → 高橋 様</b>10:00〜15:00 ・ 移動 18分</div><div class="h">5.0h</div></div>
+                  <div class="d"><div class="n">5<small>金</small></div><div class="t"><b>事務作業</b>13:00〜15:00</div><div class="h">2.0h</div></div>
+                </div>
+                <div class="hint" style="font-size:13px;margin-top:8px">日にちを押すと、その日の記録を直せます</div>
+              </div>
+              <div class="btn-a grey" style="font-size:15px">🔄 最新にする</div>
+            </div>
+            <div class="nav"><div><span>📅</span>きょうの予定</div><div><span>👪</span>お客様</div><div class="on"><span>🕒</span>出勤簿</div></div>
+          </div></div>
+          <ul class="callouts after">
+            <li>呼び名を「出勤簿」に統一。</li>
+            <li>週の一覧は「予定のある日だけのリスト」を既定にし、Googleカレンダー風のグリッドは「表で見る」に切りかえ式で残す。</li>
+            <li>更新ボタンは「🔄 最新にする」1つ。押すと、出勤簿を読み直したうえで、カレンダーと違いがあれば「カレンダーと違うところがあります。取り込みますか？」と聞く。</li>
+            <li>「◀ 前の週」「次の週 ▶」は文字つき・高さ44px。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 文言の言いかえ表 ================= -->
+  <section id="words">
+    <div class="sec-head">
+      <h2>文言の言いかえ表</h2>
+      <p>コード中の文字列を、そのまま置きかえられる形で並べました。「優先 高」はスタッフが意味を取り違える・見つけられない箇所です。LINEで使われている言葉（送信・コピー・削除・キャンセル・保存・ログイン）はそのまま残しています。</p>
+    </div>
+    <div class="filters" role="group" aria-label="画面で絞り込む">
+      <button aria-pressed="true" data-f="all">すべて</button>
+      <button aria-pressed="false" data-f="共通">共通</button>
+      <button aria-pressed="false" data-f="ログイン">ログイン</button>
+      <button aria-pressed="false" data-f="ホーム">ホーム</button>
+      <button aria-pressed="false" data-f="お客様">お客様一覧</button>
+      <button aria-pressed="false" data-f="日報">日報</button>
+      <button aria-pressed="false" data-f="事故">事故報告</button>
+      <button aria-pressed="false" data-f="領収書">領収書</button>
+      <button aria-pressed="false" data-f="出勤簿">出勤簿</button>
+      <button aria-pressed="false" data-f="設定">設定</button>
+    </div>
+    <div class="tablewrap">
+      <table id="wordtable">
+        <thead><tr><th>画面</th><th>いまの文言</th><th>言いかえ案</th><th>理由</th><th>優先</th></tr></thead>
+        <tbody>
+          <tr data-s="共通"><td class="scr">共通</td><td class="now">取得（ルート・移動時間を取得／カレンダーから取得）</td><td class="new">見る／取り込む</td><td class="why">「取得」は日常語でない。何が起きるかを動詞で言う</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="共通"><td class="scr">共通</td><td class="now">反映／読込／再取得</td><td class="new">取り込む／最新にする</td><td class="why">3語を2語に統一。読み直しは全部「最新にする」</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="共通"><td class="scr">共通</td><td class="now">勤怠／出勤簿／勤怠シート／過去の予定</td><td class="new">出勤簿（に統一）</td><td class="why">同じものが4通りの名前。紙の時代から馴染みのある「出勤簿」に</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="共通"><td class="scr">共通</td><td class="now">顧客／顧客名／顧客情報</td><td class="new">お客様／お客様の名前／お客様の情報</td><td class="why">日報側は「保護者」「お子様」。呼び方をそろえる</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="共通"><td class="scr">共通</td><td class="now">Error: （英文メッセージ）</td><td class="new">うまくいきませんでした。電波を確認して、もう一度押してください</td><td class="why">英語の技術メッセージはスタッフには読めない。詳細はconsoleへ</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="共通"><td class="scr">共通</td><td class="now">(名称未設定)</td><td class="new">（名前なし）</td><td class="why">漢語を減らす</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="共通"><td class="scr">共通</td><td class="now">対象スタッフ(管理者用)</td><td class="new">表示するスタッフ</td><td class="why">管理者にしか見えない欄なので「管理者用」は不要</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="共通"><td class="scr">共通</td><td class="now">くるくるだけの読み込み表示</td><td class="new">読み込んでいます…</td><td class="why">待っているのか壊れたのか分からない。必ず文字を添える</td><td><span class="pri m">中</span></td></tr>
+
+          <tr data-s="ログイン"><td class="scr">ログイン</td><td class="now">ex: staff@example.com</td><td class="new">例）staff@example.com</td><td class="why">「ex:」は英語略語</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="ログイン"><td class="scr">ログイン</td><td class="now">パスワードを忘れた場合（10px下線）</td><td class="new">パスワードを忘れたときはこちら（ボタン化）</td><td class="why">下線リンクが押せると気づかない</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="ログイン"><td class="scr">ログイン</td><td class="now">認証コード (6桁)／コードを送信</td><td class="new">メールに届いた6けたの番号／番号をメールで受け取る</td><td class="why">「認証コード」より「番号」</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="ログイン"><td class="scr">ログイン</td><td class="now">再設定する</td><td class="new">このパスワードにする</td><td class="why">結果が分かる動詞に</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="ログイン"><td class="scr">ログイン</td><td class="now">セッションの有効期限が切れました</td><td class="new">しばらく使っていなかったので、もう一度ログインしてください</td><td class="why">「セッション」は分からない</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="ログイン"><td class="scr">ログイン</td><td class="now">セキュリティ強化のため、再ログインが必要です</td><td class="new">安全のため、もう一度ログインしてください</td><td class="why">やわらかく</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="ログイン"><td class="scr">ログイン</td><td class="now">パスワード欄（伏せ字のみ）</td><td class="new">「👁 見る」ボタンを追加</td><td class="why">打ち間違いに気づけない</td><td><span class="pri m">中</span></td></tr>
+
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">⚙（アイコンのみ）</td><td class="new">⚙️ 設定</td><td class="why">文字を添える</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">⇥ ログアウト（アイコンのみ・即実行）</td><td class="new">設定の中に「ログアウト」→「ログアウトしますか？」確認</td><td class="why">誤タップで即ログアウトし、パスワードを覚えていないスタッフが困る</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">Ver. 1.0.1（ヘッダー）</td><td class="new">設定画面の一番下へ移動</td><td class="why">スタッフには不要な情報</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">予定／訪問先一覧／勤怠（下タブ）</td><td class="new">きょうの予定／お客様／出勤簿</td><td class="why">タブ名だけで中身が分かるように</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">☀️ 今日／🌙 明日</td><td class="new">☀️ きょう／🌙 あす</td><td class="why">読みやすさ（任意）</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">2026-09-03 (今日)</td><td class="new">9月3日（水）きょう</td><td class="why">ハイフン区切りはコンピュータの表記</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">🚗 ルート・移動時間を取得／🔄 ルート・移動時間を再取得</td><td class="new">🔄 最新にする（自動読込なので一番下・灰色）</td><td class="why">自動で読み込むので主役にしない</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">取得中...(数秒かかります)</td><td class="new">調べています…（10秒ほど）</td><td class="why">具体的な秒数</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">取得時刻: 2026/09/03 10:02</td><td class="new">10:02 時点</td><td class="why">同じ日なので日付は不要</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">🚗 出勤: 12分 / 5.2km</td><td class="new">🏠 家から 12分（5.2km）</td><td class="why">「出勤」より「家から」</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">🚗 移動: 18分 / 7.1km</td><td class="new">🚗 次へ 18分（7.1km）</td><td class="why">どこへの移動かを短く</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">🚗 退勤: 15分 / 6.0km</td><td class="new">🏠 家へ 15分（6.0km）</td><td class="why">同上</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">🗺️ 地図で見る／📍 現在地から</td><td class="new">🗺️ 道順を見る／📍 今いる場所から</td><td class="why">「現在地」は地図アプリの言葉</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">住所未登録</td><td class="new">住所が登録されていません（事務局へ連絡）</td><td class="why">次にすることを書く</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="ホーム"><td class="scr">ホーム</td><td class="now">カード全体タップ → 訪問先一覧へ移動</td><td class="new">カード内に「✏️ この訪問の日報を書く」ボタン</td><td class="why">飛び先が予想できない。1タップで日報画面へ</td><td><span class="pri h">高</span></td></tr>
+
+          <tr data-s="お客様"><td class="scr">お客様</td><td class="now">顧客名で検索...</td><td class="new">お客様の名前で探す</td><td class="why">「検索」より「探す」</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="お客様"><td class="scr">お客様</td><td class="now">全ての地域</td><td class="new">すべての地域</td><td class="why">ひらく</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="お客様"><td class="scr">お客様</td><td class="now">顧客情報／活動記録</td><td class="new">👤 お客様の情報／📖 これまでの記録</td><td class="why">「活動記録」は何の活動か分からない</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="お客様"><td class="scr">お客様</td><td class="now">›（矢印のみで日報画面へ）</td><td class="new">✏️ 日報を書く（青の大ボタン）</td><td class="why">本命の操作が矢印だけ</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="お客様"><td class="scr">お客様</td><td class="now">領収書登録（一覧の一番上・橙）</td><td class="new">🧾 お客様に関係ない領収書を登録（一覧の一番下・点線）</td><td class="why">用途を書く。毎回目に入る位置から外す</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="お客様"><td class="scr">お客様</td><td class="now">該当する顧客がいません</td><td class="new">見つかりませんでした。名前の一部だけで探せます</td><td class="why">対処法を添える</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="お客様"><td class="scr">お客様</td><td class="now">顧客詳細情報／ご家族情報／基本情報</td><td class="new">お客様の情報／お子様・ご家族／住所・連絡先</td><td class="why">中身で見出しを付ける</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="お客様"><td class="scr">お客様</td><td class="now">過去の活動記録／タイムライン／原本</td><td class="new">これまでの記録／（見出し削除）／書いたメモ</td><td class="why">「原本」「タイムライン」は分からない</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="お客様"><td class="scr">お客様</td><td class="now">もっと見る</td><td class="new">さらに前の記録を見る</td><td class="why">何が出るかを書く</td><td><span class="pri l">低</span></td></tr>
+
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">📝 保育日報／⚠️ 事故報告（タブ）</td><td class="new">📝 きょうの日報／⚠️ 事故・ヒヤリ</td><td class="why">ヒヤリハットも入ることを示す</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">(選択してください)</td><td class="new">お子様を選んでください</td><td class="why">何を選ぶか</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">開始時間/発生時間</td><td class="new">日報：始めた時間／事故：起きた時間（タブで切替）</td><td class="why">兼用ラベルをやめる</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">終了時間</td><td class="new">終わった時間</td><td class="why">やわらかく</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">訪問完了（10px・右端）</td><td class="new">✅ 訪問おわりました（事務局に知らせる）＋確認ダイアログ</td><td class="why">通知が飛ぶ操作。大きく・確認つき</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">PSI</td><td class="new">⚠️ きょうヒヤッとした度合い（PSI）</td><td class="why">略語だけでは意味不明。※定義は事務局の指標表に合わせて最終確定</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">従業員満足度(ES)</td><td class="new">😊 きょうの働きやすさ（ES）</td><td class="why">「従業員満足度」は会社側の言葉</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">★（18px・灰）</td><td class="new">★（30px以上）＋押した数の説明文</td><td class="why">押しにくい・押せると分からない</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">メモ (音声入力などで入力)</td><td class="new">きょうのできごとメモ</td><td class="why">ラベルは中身を言う。入力手段はボタンで示す</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">🎤 音声入力／🔴 停止する</td><td class="new">🎤 話して入力／⏹ 止める（聞いています…）</td><td class="why">状態を文で示す</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">日報を作成する</td><td class="new">✨ AIに日報を書いてもらう</td><td class="why">AIが書くことを伝える。「自分で作る」と誤解しない</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">生成中... (12秒)</td><td class="new">AIが書いています…（12秒）　1分ほどかかることがあります</td><td class="why">「生成」を使わない。待ち時間の目安</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">⚠️ 情報不足:</td><td class="new">⚠️ 足りない情報があります：</td><td class="why">文にする</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">社内向け／保護者向け</td><td class="new">事務局に送る文／保護者に送る文</td><td class="why">誰に届くかを書く</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">📋 コピー → 「コピーしました」</td><td class="new">📋 コピーしてLINEに貼る → 「コピーしました。LINEを開いて貼りつけてください」</td><td class="why">次の手順まで言う</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">保存する／保存済み</td><td class="new">保存する／✅ 保存しました</td><td class="why">完了を明るく</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">上書き保存の確認／以前保存した内容を上書きしますか？(OKで上書き、キャンセルで中止)／OK</td><td class="new">前に保存した日報を、今の内容に書きかえますか？／書きかえる・キャンセル</td><td class="why">ボタン自体に動詞を書けば括弧の説明は不要</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">保存されていない入力内容があります(○○様分)。内容を確認し保存してください。</td><td class="new">前回の○○様の日報が保存されていません。続きを書いて保存してください</td><td class="why">主語をはっきり</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="日報"><td class="scr">日報</td><td class="now">未登録顧客名（空白で顧客指定なし）</td><td class="new">お客様の名前（登録がないとき。なければ空欄でOK）</td><td class="why">「顧客指定なし」が難しい</td><td><span class="pri m">中</span></td></tr>
+
+          <tr data-s="事故"><td class="scr">事故</td><td class="now">事故報告書ドラフト</td><td class="new">事故報告書（AIの下書き）— 内容を確認して直してください</td><td class="why">「ドラフト」は英語</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="事故"><td class="scr">事故</td><td class="now">対象者氏名</td><td class="new">お子様の名前</td><td class="why">正式名は帳票側に残し、画面はやさしく</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="事故"><td class="scr">事故</td><td class="now">発生日時／発生場所</td><td class="new">起きた日時／起きた場所</td><td class="why">同上</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="事故"><td class="scr">事故</td><td class="now">事故内容</td><td class="new">何が起きたか（事故内容）</td><td class="why">やさしい語＋正式名を小さく併記</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="事故"><td class="scr">事故</td><td class="now">発生状況</td><td class="new">くわしい状況</td><td class="why">同上</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="事故"><td class="scr">事故</td><td class="now">発生時の対応</td><td class="new">その場でしたこと</td><td class="why">同上</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="事故"><td class="scr">事故</td><td class="now">診断名および処置状況</td><td class="new">病院での診断・手当て</td><td class="why">同上</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="事故"><td class="scr">事故</td><td class="now">今後の対応</td><td class="new">これからの対策</td><td class="why">同上</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="事故"><td class="scr">事故</td><td class="now">事故報告書を作成する</td><td class="new">✨ AIに報告書の下書きを作ってもらう</td><td class="why">AI生成を明示</td><td><span class="pri h">高</span></td></tr>
+
+          <tr data-s="領収書"><td class="scr">領収書</td><td class="now">領収書 (最大6枚)</td><td class="new">レシート・領収書（6枚まで）</td><td class="why">スタッフは「レシート」と言う</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="領収書"><td class="scr">領収書</td><td class="now">領収書登録（日報画面内・小）</td><td class="new">この領収書を送る（大ボタン）</td><td class="why">一覧画面の「領収書登録」と区別</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="領収書"><td class="scr">領収書</td><td class="now">カメラ撮影／アルバム（9px）</td><td class="new">📷 撮る／🖼️ 写真から選ぶ（14px）</td><td class="why">読めない大きさ</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="領収書"><td class="scr">領収書</td><td class="now">領収日時／金額／名称</td><td class="new">レシートの日付／金額（円）／お店の名前</td><td class="why">「名称」だけでは何の名前か分からない</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="領収書"><td class="scr">領収書</td><td class="now">申し送り（領収書に関する申し送り事項があれば入力）</td><td class="new">事務局へのひとこと（あれば）</td><td class="why">「申し送り」は職場ごとに意味が違う</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="領収書"><td class="scr">領収書</td><td class="now">OCR処理中の画像があります。完了後に再実行してください</td><td class="new">写真から金額を読み取っています。少し待ってからもう一度押してください</td><td class="why">「OCR」を出さない</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="領収書"><td class="scr">領収書</td><td class="now">⚠️ 既存の領収書と重複したため登録しませんでした。</td><td class="new">この領収書は前に送ってあります（送っていません）</td><td class="why">短く、結果を先に</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="領収書"><td class="scr">領収書</td><td class="now">アップロード中...</td><td class="new">送っています…</td><td class="why">カタカナ英語を避ける</td><td><span class="pri m">中</span></td></tr>
+
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">📊 月次集計</td><td class="new">📊 今月のまとめ</td><td class="why">「集計」は事務の言葉</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">📅 一括反映(管理者用)</td><td class="new">📅 まとめて取り込む（管理者のみ表示）</td><td class="why">「反映」を使わない</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">⚠️毎晩自動更新しています、最新の情報にするには、１日表示の更新ボタン(📅 カレンダーから取得 / 🔄 勤怠シートから読込)を押してください。</td><td class="new">毎晩、自動で最新になります。今すぐ直したいときは、日にちを押してください。</td><td class="why">3行→1行。ボタン名を文中に書かない</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">‹ ›（週送り）</td><td class="new">◀ 前の週／次の週 ▶</td><td class="why">細い記号は押しにくい</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">← 週間表示に戻る</td><td class="new">← 週の一覧へ</td><td class="why">短く</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">📅 カレンダーから取得／🔄 勤怠シートから読込</td><td class="new">🔄 最新にする（1つに統合。違いがあれば取り込むか聞く）</td><td class="why">2つの違いはスタッフには判断できない</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">✏️ 勤怠を編集</td><td class="new">✏️ 記録を直す・足す</td><td class="why">「編集」より具体的に</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">訪問1／訪問先等／事務作業1／作業内容</td><td class="new">1件目の訪問／お客様・内容／事務作業（1つ目）／したこと</td><td class="why">「等」を避ける</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">移動・距離・その他</td><td class="new">移動と距離・買い物代行・備考</td><td class="why">「その他」の中身を書く</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">出勤(自宅→佐藤 様)／佐藤 様→自宅 退勤</td><td class="new">🏠 家 → 佐藤 様／佐藤 様 → 🏠 家</td><td class="why">矢印と家の絵で十分</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">買物代行(回数)</td><td class="new">買い物代行をした回数</td><td class="why">文にする</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">当月(…)以外の記録は閲覧のみで、修正できません。</td><td class="new">先月より前の記録は見るだけです。直したいときは事務局（齋野・土居）へ連絡してください。</td><td class="why">次にすることを書く</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">confirm：出勤簿スプレッドシートの最新の内容を再読み込みします(Googleカレンダーへの問い合わせは行いません)。実行しますか？</td><td class="new">（確認なしで実行）</td><td class="why">読むだけの操作に確認は不要</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">confirm：Googleカレンダーの最新の予定を確認します(Maps APIを使うため数秒かかることがあります)。差分があれば…</td><td class="new">カレンダーの予定と見くらべます（10秒ほど）／見くらべる・キャンセル</td><td class="why">「Maps API」「差分」を出さない</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">カレンダーの内容を確認／出勤簿の内容と異なる項目です。取り込むと、以下の項目だけが上書きされます(それ以外の項目は変更されません)。</td><td class="new">カレンダーと違うところ／「取り込む」を押すと、下の項目だけが書きかわります。</td><td class="why">短く</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">カレンダーの予定(3件)と出勤簿の内容は一致しています(変更なし)</td><td class="new">出勤簿はカレンダーと同じです。直すところはありません</td><td class="why">結果を先に</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">月次集計：労働(分)／残業(分)／移動(分)／距離(km)／超過回数（7列の表）</td><td class="new">日ごとのカード：働いた時間 7時間30分／残業 30分／移動 45分／52km。超過回数は定義を確認のうえ「○○を超えた回数」と書く</td><td class="why">スマホで7列は読めない。分表記は暗算が要る</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">対象月／表示／🔄</td><td class="new">月をえらぶ／見る／🔄 最新にする</td><td class="why">アイコンだけを避ける</td><td><span class="pri m">中</span></td></tr>
+          <tr data-s="出勤簿"><td class="scr">出勤簿</td><td class="now">領収書月集計</td><td class="new">今月の領収書 合計</td><td class="why">やわらかく</td><td><span class="pri l">低</span></td></tr>
+
+          <tr data-s="設定"><td class="scr">設定</td><td class="now">文字サイズ設定：小 (標準)／中 (少し大きく)／大 (大きく)　※既定＝小</td><td class="new">文字の大きさ：ふつう／大きい／とても大きい　※既定＝「大きい」（現「中」相当）</td><td class="why">一番小さいのが既定なのは逆。新規ログイン時の初期値を上げる</td><td><span class="pri h">高</span></td></tr>
+          <tr data-s="設定"><td class="scr">設定</td><td class="now">管理者設定／Gemini APIキー／Webhook URL</td><td class="new">詳細設定（管理者のみ）として折りたたみ。項目名はそのまま</td><td class="why">管理者向けなので言葉は変えず、目に入らないようにする</td><td><span class="pri l">低</span></td></tr>
+          <tr data-s="設定"><td class="scr">設定</td><td class="now">（ログアウトはヘッダー）</td><td class="new">設定の一番下に「ログアウト」＋確認</td><td class="why">誤タップ防止</td><td><span class="pri h">高</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="count" id="wordcount"></p>
+  </section>
+
+  <!-- ================= 配置の変更 ================= -->
+  <section id="layout">
+    <div class="sec-head">
+      <h2>配置・操作の変更</h2>
+      <p>文言だけでは直らない、ボタンの場所と数の話です。ロジック（GAS側の関数）は変えず、HTMLの並びとハンドラの呼び方だけで実現できる範囲に絞っています。</p>
+    </div>
+    <div class="props">
+      <div class="prop"><h4>ホームの訪問カードに「日報を書く」を置く</h4><span class="pri h">高</span><p>今はカードを押すと「訪問先一覧」に飛んで検索欄に名前が入るだけで、もう一度カードを押す必要があります。カード内のボタンから <code>openModal(customer)</code> を直接呼び、1タップで日報画面へ。お客様データは <code>allCustomers</code> を名前で引けます。</p><span class="where">tabSchedule / renderScheduleWithRoute</span></div>
+      <div class="prop"><h4>主ボタンを画面下に固定し、1画面に1つ</h4><span class="pri h">高</span><p>日報画面の「AIに書いてもらう」→ 結果が出たら「保存する」に切りかわる、を画面下部の固定バーで。スクロールしてボタンを探す必要をなくします。取り消し系は左・グレー、進む系は右・青、の並びを全モーダルで統一。</p><span class="where">reportModal 下部</span></div>
+      <div class="prop"><h4>日報画面の並び順を「メモ → AI → 結果 → 評価 → 領収書 → 訪問完了」に</h4><span class="pri h">高</span><p>領収書と評価はあとから足す補助情報なので後ろへ。日付と時間は上部に「9月3日（水）10:00〜12:00 変える」の1行にまとめ、押すと今のセレクトが開く形に。</p><span class="where">reportModal 本文</span></div>
+      <div class="prop"><h4>「訪問完了」を緑の大ボタンにし、確認を出す</h4><span class="pri h">高</span><p>事務局へ通知が飛ぶ操作です。誤タップ防止に「事務局に『訪問おわりました』を送りますか？」→「送る／キャンセル」。送ったあとはボタンを「✅ 送りました 12:05」に変えて二重送信を防ぎます。</p><span class="where">visitCompleteContainer</span></div>
+      <div class="prop"><h4>アイコンだけのボタンを全廃</h4><span class="pri h">高</span><p>ヘッダーの歯車・ログアウト、月次集計の🔄、履歴の更新アイコン、週送りの‹ ›。すべてに文字を添えるか、文字ボタンに置きかえます。ログアウトは設定の中へ。</p><span class="where">header / attendanceMonthlyModal / customerHistoryModal</span></div>
+      <div class="prop"><h4>出勤簿の更新ボタンを1つに統合</h4><span class="pri h">高</span><p>「🔄 最新にする」1つで、<code>reloadPastScheduleFromSpreadsheet_</code>（確認なし）を実行し、続けて <code>previewCalendarSyncForStaffOnDate</code> を呼んで違いがあるときだけ差分モーダルを出します。違いがなければトーストで「出勤簿はカレンダーと同じです」。</p><span class="where">calBackToWeekRow</span></div>
+      <div class="prop"><h4>週の表示を「予定のある日のリスト」を既定に</h4><span class="pri m">中</span><p>7列のグリッドは8pxの文字でしか入りません。既定は日ごとの行（日にち・お客様・時間・時間数）、「表で見る」で今のグリッドに切りかえ。日にちを押すと今の1日表示へ。</p><span class="where">renderCalWeekGrid</span></div>
+      <div class="prop"><h4>月次集計を表からカードへ</h4><span class="pri m">中</span><p>1日1枚のカードに「働いた時間 5時間0分／残業 0分／移動 45分／52km」。合計は一番上に大きく。分は「○時間○分」に変換して表示（保存値は分のまま）。</p><span class="where">renderAttendanceMonthly</span></div>
+      <div class="prop"><h4>トーストの出しかたを変える</h4><span class="pri m">中</span><p>成功は4秒で消える。失敗は消えず「閉じる」を付ける（今は3秒で消えるため、読む前に消えます）。位置は画面下タブの上（今はタブと重なる z-50/bottom-4）。</p><span class="where">showToast</span></div>
+      <div class="prop"><h4>読み込み中は文字を添える</h4><span class="pri m">中</span><p>スピナー単体の箇所（予定・お客様一覧・出勤簿・履歴）に「読み込んでいます…」を添える。AI生成は秒数と「1分ほどかかることがあります」を表示。</p><span class="where">各 loading-spinner</span></div>
+      <div class="prop"><h4>文字サイズの切りかえをヘッダーに常設</h4><span class="pri m">中</span><p>設定の奥にある3段階を、ヘッダーの「Aa」ボタンで順送り。初回ログイン時の既定を1段上げる（現「中」を新しい「ふつう」とし、現「小」は廃止）。</p><span class="where">header / applyTextSize</span></div>
+      <div class="prop"><h4>空の状態に「次にすること」を書く</h4><span class="pri l">低</span><p>「この日の予定はありません」→「この日の予定はありません。あすの予定は上の『🌙 あす』で見られます」。履歴なし→「まだ記録がありません。日報を保存するとここに並びます」。小さなイラスト（線画）を添えると空欄が壊れているように見えません。</p><span class="where">各 empty state</span></div>
+      <div class="prop"><h4>hover（マウス）前提のスタイルをやめる</h4><span class="pri l">低</span><p>スマホには hover がありません。<code>hover:</code> を <code>active:</code> に置きかえ、押した瞬間に色が変わるようにします。天候トグルの hover 問題（コメントにある白文字が消える件）も同時に解消します。</p><span class="where">全体</span></div>
+    </div>
+  </section>
+
+  <!-- ================= 文字・色のきまり ================= -->
+  <section id="tokens">
+    <div class="sec-head">
+      <h2>文字・色・大きさのきまり</h2>
+      <p>Tailwind のクラスで指定できる範囲でまとめています。実装AIにはこの表を「デザイントークン」として渡してください。</p>
+    </div>
+    <div class="tokens">
+      <div class="tok">
+        <h4>フォント</h4>
+        <div class="fontdemo">
+          <div class="b">いま：Outfit（英数字のみ）→ 日本語は端末まかせ 12px</div>
+          <div class="a">提案 本文：BIZ UDPゴシック 16px</div>
+          <div class="h">提案 見出し・ボタン：Zen丸ゴシック 700</div>
+        </div>
+        <dl>
+          <dt>読み込み</dt><dd><code>fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Zen+Maru+Gothic:wght@700</code></dd>
+          <dt>理由</dt><dd>UD（ユニバーサルデザイン）フォントは濁点・「ー」「一」の区別がはっきりし、老眼でも読み違えにくい。丸ゴシックは会社資料の様式と同じ</dd>
+          <dt>行間</dt><dd>1.6（Tailwind <code>leading-relaxed</code>）</dd>
+        </dl>
+      </div>
+      <div class="tok">
+        <h4>文字の大きさ</h4>
+        <div class="sizes">
+          <span><small>見出し 20px</small><b style="font-size:20px;font-family:'Zen Maru Gothic'">佐藤 様</b></span>
+          <span><small>ボタン 17px</small><b style="font-size:17px">✏️ 日報を書く</b></span>
+          <span><small>本文 16px</small>公園で30分あそびました</span>
+          <span><small>補足 14px（最小）</small><span style="font-size:14px;color:var(--muted)">10:02 時点</span></span>
+        </div>
+        <dl>
+          <dt>廃止</dt><dd><code>text-[8px]</code> <code>text-[9px]</code> <code>text-[10px]</code> <code>text-[11px]</code> <code>text-xs</code>（12px）</dd>
+          <dt>切りかえ</dt><dd>ふつう 16 ／ 大きい 18 ／ とても大きい 20px（本文基準）</dd>
+        </dl>
+      </div>
+      <div class="tok">
+        <h4>色（役割で決める）</h4>
+        <div class="swatches">
+          <div class="sw"><i style="background:#2F6FE4"></i>進む・保存</div>
+          <div class="sw"><i style="background:#2E8B57"></i>完了・送った</div>
+          <div class="sw"><i style="background:#D64545"></i>削除・事故</div>
+          <div class="sw"><i style="background:#E9E7EA"></i>戻る・補助</div>
+          <div class="sw"><i style="background:#1F2933"></i>文字</div>
+          <div class="sw"><i style="background:#5F6B7A"></i>補足文字</div>
+        </div>
+        <dl>
+          <dt>やめる</dt><dd>役割のない紫・エメラルド・琥珀・インディゴ・ティール。今は8色が意味なく混在</dd>
+          <dt>補足文字</dt><dd><code>text-gray-400</code>（#9CA3AF）は白地でコントラスト2.5:1で不合格。<code>text-gray-600</code> 以上に</dd>
+          <dt>訪問の種類</dt><dd>お客様＝青の左帯、事務作業＝灰、イベント＝緑。この3つだけ</dd>
+        </dl>
+      </div>
+      <div class="tok">
+        <h4>押せるものの大きさ</h4>
+        <dl>
+          <dt>ボタン高さ</dt><dd>48px以上（<code>min-h-12 py-3</code>）。補助ボタンでも44px</dd>
+          <dt>間隔</dt><dd>ボタン同士 12px以上（<code>gap-3</code>）</dd>
+          <dt>星評価</dt><dd>1つ 40×40px、文字 30px</dd>
+          <dt>下タブ</dt><dd>高さ 64px、絵文字 24px、文字 13px</dd>
+          <dt>入力欄</dt><dd>高さ 48px、文字 16px（iOSの自動ズーム防止にも必要）</dd>
+        </dl>
+      </div>
+      <div class="tok">
+        <h4>形・余白</h4>
+        <dl>
+          <dt>角丸</dt><dd>カード 14px、ボタン 12px、入力欄 12px。<code>rounded-full</code> はタブのバッジのみ</dd>
+          <dt>影</dt><dd>カードは薄い枠線だけ。影は画面下の固定ボタンバーだけに使う</dd>
+          <dt>画面の余白</dt><dd>左右 16px、カード内 14px、要素間 12px</dd>
+          <dt>強調</dt><dd>1画面に青いボタン1つ。それ以外は灰色か白＋枠線</dd>
+        </dl>
+      </div>
+      <div class="tok">
+        <h4>絵文字・イラスト</h4>
+        <dl>
+          <dt>絵文字</dt><dd>今のまま使ってよい。ただし1つの意味に1つの絵文字（📅＝予定、👪＝お客様、🕒＝出勤簿、✏️＝書く、🔄＝最新にする、🧾＝領収書、🏠＝家）</dd>
+          <dt>SVGアイコン</dt><dd>単体では使わない。使う場合は必ず文字を右に添える</dd>
+          <dt>空の状態</dt><dd>線画1点（例：閉じた手帳）＋一言。写真やカラフルなイラストは不要</dd>
+          <dt>スタッフ名</dt><dd>ヘッダーに「土居さん」と表示（「さん」付きは今のままでよい）</dd>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 直す順番 ================= -->
+  <section id="roadmap">
+    <div class="sec-head">
+      <h2>直す順番</h2>
+      <p>コードの変更量が少なく効果が大きい順です。1は文字列とクラスの置きかえだけなので、ロジックに触れずに済みます。</p>
+    </div>
+    <div class="steps">
+      <div class="step"><span class="no" aria-hidden="true"></span><div><h4>フォント・文字サイズ・文言の置きかえ</h4><p>Google Fonts の差しかえ、<code>text-[10px]</code> 系の一掃、言いかえ表の「高」「中」をすべて反映。既定の文字サイズを1段上げる。ログアウトを設定内へ移し確認を付ける。</p><span class="when">変更範囲：HTML文字列とクラス名のみ。動作確認は各画面を1周</span></div></div>
+      <div class="step"><span class="no" aria-hidden="true"></span><div><h4>ボタンの場所と数</h4><p>ホームカードに「日報を書く」、日報画面の並びかえと下部固定バー、「訪問完了」の大型化と確認、出勤簿の更新ボタン統合、アイコンだけのボタン全廃、トーストの改善。</p><span class="when">変更範囲：HTML構造＋既存関数の呼び出し順。GAS側は変更なし</span></div></div>
+      <div class="step"><span class="no" aria-hidden="true"></span><div><h4>一覧の見せかた</h4><p>出勤簿の週リスト表示、月次集計のカード化、空の状態の文とイラスト、hover→active の置きかえ。</p><span class="when">変更範囲：描画関数（render系）の書きかえ</span></div></div>
+      <div class="step"><span class="no" aria-hidden="true"></span><div><h4>スタッフ2名で試して直す</h4><p>ITに慣れていないスタッフ2名に「あすの1件目の道順を見る」「日報を声で入れて保存する」「先週水曜の終了時間を直す」の3つを、説明なしでやってもらう。詰まった箇所だけ再修正。</p><span class="when">所要：1人15分。事務局（齋野・土居）同席</span></div></div>
+    </div>
+  </section>
+
+  <!-- ================= AIへの指示文 ================= -->
+  <section id="prompt">
+    <div class="sec-head">
+      <h2>AIへの指示文</h2>
+      <p>実装を手伝うAI（Claude Code など）にそのまま貼れる指示文です。上の言いかえ表・配置の変更・きまりを読ませたうえで作業させる前提で書いています。このページ自体を添付するか、表の内容を続けて貼ってください。</p>
+    </div>
+    <div class="promptbox">
+      <div class="top"><p>下の枠の中を全部コピーして、AIの入力欄に貼ります。</p><button class="copybtn" id="copyPrompt" type="button">📋 指示文をコピー</button></div>
+      <textarea class="prompt" id="promptText" readonly spellcheck="false">あなたはスマホ向け業務アプリのUIライター兼フロントエンド実装者です。
+添付の index.html（Google Apps Script の Webアプリ。Tailwind CDN、単一HTML、google.script.run でサーバー関数を呼ぶ）を、ITに慣れていないスタッフが迷わず使える画面に直してください。
+
+## 利用者
+Family Sitter 仙台（ベビーシッター・家事代行）の訪問スタッフ。50〜60代が中心で、スマホは LINE と写真が主な用途。「取得」「反映」「同期」「セッション」「OCR」「API」などの言葉は通じません。小さい文字は読めません。
+
+## 絶対に守ること
+1. サーバー側の関数名・引数・戻り値は変えない（google.script.run で呼ぶ関数はそのまま）。localStorage のキー名も変えない。
+2. 機能を減らさない。見え方・言葉・並び・大きさだけを変える。
+3. 文言は添付の「文言の言いかえ表」のとおりに置きかえる。表にない文言も同じ方針（LINEにある言葉はそのまま／それ以外は「見る・取り込む・最新にする・書く」に言いかえ／英語・略語・システム用語を出さない）で直す。
+4. アイコンだけのボタンを作らない。必ず文字を添える。
+5. 文字は最小14px、本文16px。text-[8px]〜text-[11px] と text-xs は使わない。
+6. 押せるものは高さ48px以上（補助でも44px）、間隔12px以上。
+7. 1画面に青い主ボタンは1つ。取り消しは左・グレー、進むは右・青、削除・事故は赤。全モーダルで同じ並び。
+8. hover: は使わず active: にする（スマホ前提）。
+9. エラーは「うまくいきませんでした。電波を確認して、もう一度押してください」に統一し、e.message は console.error に出すだけにする。失敗トーストは自動で消さず「閉じる」を付ける。成功トーストは4秒。
+10. 読み込み中は必ず文字を添える（「読み込んでいます…」「AIが書いています…（12秒）1分ほどかかることがあります」）。
+
+## フォント・色（デザイントークン）
+- フォント：本文 "BIZ UDPGothic"、見出しとボタン "Zen Maru Gothic" 700。Google Fonts から読み込み、Outfit は削除。フォールバックは "Hiragino Sans","Yu Gothic","Meiryo",sans-serif。
+- 行間 1.6。
+- 色：進む・保存 #2F6FE4／完了・送った #2E8B57／削除・事故 #D64545／戻る・補助 #E9E7EA／文字 #1F2933／補足文字 #5F6B7A。役割のない紫・エメラルド・琥珀・インディゴ・ティールは使わない。text-gray-400 は text-gray-600 以上に。
+- 訪問の種類の色：お客様＝青の左帯、事務作業＝灰、イベント＝緑。
+- 角丸：カード14px、ボタン・入力欄12px。影は画面下の固定ボタンバーだけ。
+- 文字サイズ切りかえ：ふつう16／大きい18／とても大きい20px。既定は「大きい」（現在の medium 相当）。現在の small は廃止。
+
+## 作業の順番（順番どおりに、1つ終わるごとに差分を見せてください）
+### ステップ1：文字列とクラスの置きかえだけ
+- フォント差しかえ、小さい文字クラスの一掃、言いかえ表の「高」「中」をすべて反映。
+- ヘッダー：歯車→「⚙️ 設定」（文字つき）。ログアウトボタンをヘッダーから外し、設定モーダルの一番下に「ログアウト」を置き、押したら「ログアウトしますか？」→「ログアウトする／キャンセル」。
+- ヘッダーに「Aa」ボタンを追加し、押すたびに文字サイズを順送り（applyTextSize を使う）。
+- 下タブ：「きょうの予定」「お客様」「出勤簿」。
+- Ver. 表示は設定モーダルの一番下へ。
+- 「顧客」を全て「お客様」に。「勤怠／勤怠シート／過去の予定」を全て「出勤簿」に。
+- confirm() の文を短くし、読むだけの操作（reloadPastScheduleFromSpreadsheet_）の confirm は削除。
+
+### ステップ2：ボタンの場所と数
+- ホームの各訪問カードに「✏️ この訪問の日報を書く」ボタンを追加。押したら allCustomers から名前で該当のお客様を探して openModal(customer) を直接呼ぶ（訪問先一覧を経由しない）。
+- 「🚗 ルート・移動時間を取得／再取得」は「🔄 最新にする」に改名し、予定一覧の一番下に灰色で置く。
+- 日報モーダルの並びを「日付と時間の1行表示（押すと今のセレクトが開く）→ できごとメモ → 話して入力／ヒント → AIに日報を書いてもらう → 結果 → 星評価 → レシート・領収書 → 訪問おわりました」に変える。
+- 主ボタン（AIに書いてもらう→結果が出たら保存する）はモーダル下部に固定バーとして置く。
+- 「訪問完了」は「✅ 訪問おわりました（事務局に知らせる）」の緑の大ボタンにし、確認ダイアログ「事務局に『訪問おわりました』を送りますか？」→「送る／キャンセル」を出す。送信後はボタンを「✅ 送りました HH:MM」にして無効化。
+- 訪問先一覧の各カード：「✏️ 日報を書く」を青の大ボタン、「👤 お客様の情報」「📖 これまでの記録」を灰色ボタンで下に。矢印は削除。
+- 訪問先一覧の「領収書登録」は一覧の一番下に「🧾 お客様に関係ない領収書を登録」（点線枠・白）として移動。
+- 出勤簿の「📅 カレンダーから取得」「🔄 勤怠シートから読込」を「🔄 最新にする」1つに統合。処理：まず出勤簿を読み直す（確認なし）→ 続けて previewCalendarSyncForStaffOnDate を呼び、違いがあれば既存の差分モーダル（文言は言いかえ表どおり）を出す。違いがなければトースト「出勤簿はカレンダーと同じです」。
+- 週送りの ‹ › を「◀ 前の週」「次の週 ▶」の文字ボタン（高さ44px）に。
+- showToast：isError のときは自動で消さず「閉じる」ボタンを付ける。表示位置を下タブの上（bottom-20）に。
+- スピナー単体の箇所すべてに「読み込んでいます…」を添える。
+
+### ステップ3：一覧の見せかた
+- 出勤簿の週表示：既定を「予定のある日だけのリスト」（日にち・曜日／お客様名を「→」でつないだ1行／開始〜終了／合計時間）にし、「表で見る」ボタンで今のグリッド表示に切りかえられるようにする。日にちを押したら既存の drillToDay を呼ぶ。
+- 月次集計：7列の表をやめ、日ごとのカード（働いた時間・残業・移動・距離を「○時間○分」で表示）に。合計はモーダル上部に大きく。保存値（分）はそのまま。
+- 空の状態に「次にすること」を1文添える（例：「この日の予定はありません。あすの予定は上の『🌙 あす』で見られます」）。
+- 事故報告の入力欄ラベルは「やさしい語（正式名）」の形式（例：「何が起きたか（事故内容）」）。正式名は text-sm で薄く。
+- 星評価の項目名：「⚠️ きょうヒヤッとした度合い（PSI）」「😊 きょうの働きやすさ（ES）」。星は1つ40×40px、文字30px。押した数に応じて uiConfig.assessments の label を星の下に16pxで表示。
+
+## 出力の形
+- ステップごとに、変更した箇所の一覧（要素ID／変更前→変更後）と、完成した index.html を出してください。
+- 迷ったら「LINEならこう書くか？」「60代の人が説明なしで押せるか？」で判断してください。
+- 変えていいか判断できない文言（PSI の定義、超過回数の定義）は、仮の文言で進め、最後に「確認が必要な文言」として一覧にしてください。</textarea>
+    </div>
+  </section>
+
+  <footer>
+    株式会社キューテスト ／ Family Sitter 仙台 ／ 保育日報アプリ UI/UX 改善提案 ／ 2026-09-03。文言の最終確定は事務局（齋野・土居）とスタッフ2名のテストを経て行う。
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var buttons = document.querySelectorAll('.filters button');
+    var rows = document.querySelectorAll('#wordtable tbody tr');
+    var count = document.getElementById('wordcount');
+    function apply(f) {
+      var n = 0;
+      rows.forEach(function (r) {
+        var show = f === 'all' || r.getAttribute('data-s') === f;
+        r.hidden = !show;
+        if (show) n++;
+      });
+      count.textContent = n + ' 件を表示（全 ' + rows.length + ' 件）';
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        buttons.forEach(function (x) { x.setAttribute('aria-pressed', 'false'); });
+        b.setAttribute('aria-pressed', 'true');
+        apply(b.getAttribute('data-f'));
+      });
+    });
+    apply('all');
+
+    var copy = document.getElementById('copyPrompt');
+    var ta = document.getElementById('promptText');
+    copy.addEventListener('click', function () {
+      var done = function () { copy.textContent = '✅ コピーしました'; setTimeout(function () { copy.textContent = '📋 指示文をコピー'; }, 2500); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ta.value).then(done, function () { ta.select(); document.execCommand('copy'); done(); });
+      } else { ta.select(); document.execCommand('copy'); done(); }
+    });
+  })();
+</script>

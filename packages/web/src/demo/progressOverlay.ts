@@ -21,10 +21,10 @@ export function createProgressOverlay(): ProgressOverlay {
     <div style="width:100%;max-width:22rem;text-align:center">
       <div style="font-size:1.125rem;font-weight:700;margin-bottom:1rem">katahimo 訪問管理 デモ</div>
       <div style="height:0.5rem;width:100%;border-radius:9999px;background:#374151;overflow:hidden">
-        <div data-bar style="height:100%;width:4%;background:#3b82f6;transition:width .3s"></div>
+        <div data-bar style="height:100%;width:4%;background:#2F6FE4;transition:width .3s"></div>
       </div>
-      <div data-message style="font-size:.875rem;opacity:.85;margin-top:1rem">読み込んでいます…</div>
-      <div data-hint style="font-size:.75rem;opacity:.5;margin-top:1rem;line-height:1.7">
+      <div data-message style="font-size:1rem;opacity:.9;margin-top:1rem">読み込んでいます…</div>
+      <div data-hint style="font-size:.875rem;opacity:.65;margin-top:1rem;line-height:1.7">
         ブラウザの中でPostgreSQLを起動し、架空のデモデータを作成します。<br />
         初回は十数秒かかります(2回目以降は保存済みのデータを使います)。<br />
         入力した内容は既定では端末の中だけに保存され、サーバーへは送信されません。

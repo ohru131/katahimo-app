@@ -6,7 +6,14 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/dist", "!**/node_modules", "!**/drizzle", "!reference"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/node_modules",
+      "!**/drizzle",
+      "!reference",
+      "!doc/16_UIUX改善提案_2026-09-03.html"
+    ]
   },
   "formatter": {
     "enabled": true,
