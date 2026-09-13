@@ -5,8 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1789269018101,
+      "when": 1789082884624,
       "tag": "0000_baseline_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789269856773,
+      "tag": "0001_birthday_coupons_and_receipt_cancellation",
       "breakpoints": true
     }
   ]

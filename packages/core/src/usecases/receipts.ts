@@ -487,8 +487,39 @@ export async function listReceiptsForStaff(
 }
 
 export type CancelReceiptResult =
-  | { ok: true }
+  | {
+      ok: true;
+      /**
+       * 取り消した時点で、その領収書が**既に外部(スプレッドシート)へ送られていた**か。
+       *
+       * 通常の取り消しは送信開始(`receiptMirrorSendAfter`)より前にしか通らないので必ずfalseになる。
+       * trueになるのは管理者が `ignoreDeadline` で期限後に取り消したときで、あちら側の行は
+       * こちらからは消せない(Bridge.jsに取り消し用のactionが無い。doc/14 §10)。呼び出し側は
+       * 「シート側を手で直す必要がある」ことを操作した人に伝えるために使う。
+       *
+       * 送信中(`processing`)もtrueに含める。ワーカーが掴んだあとHTTP送信を終えるまでの間は
+       * 送られたかどうかを外から判別できず、「送られていない」と言い切る方が危険なため。
+       */
+      mirrorAlreadySent: boolean;
+    }
   | { ok: false; reason: 'not_found' | 'forbidden' | 'already_cancelled' | 'deadline_passed' };
+
+/**
+ * その領収書のミラー送信が既に走ったか(送信済み or 送信中)を返す。
+ *
+ * 状態を読めない実装(NoopMirrorPort・ミラー無効)ではジョブ自体が無いのでfalse。
+ */
+async function wasReceiptMirrorSent(
+  deps: ReceiptDeps,
+  tenantId: string,
+  receiptId: string,
+): Promise<boolean> {
+  if (!('listStatusByTargets' in deps.mirror)) return false;
+  const [status] = await (deps.mirror as OutboxRepositoryPort).listStatusByTargets(tenantId, 'receipt', [
+    receiptId,
+  ]);
+  return status?.status === 'done' || status?.status === 'processing';
+}
 
 /**
  * 領収書を取り消す(論理削除。doc/14 §10)。行は消さず cancelled_at を立てるだけ。
@@ -540,7 +571,10 @@ export async function cancelReceipt(
     reason: options.reason?.trim() ? options.reason.trim() : null,
   });
   if (!cancelled) return { ok: false, reason: 'not_found' };
-  return { ok: true };
+
+  // 取り消しを確定させてから見る。先に見ると、見たあと・取り消す前に送信が走った場合に
+  // 「送っていない」と答えてしまう。
+  return { ok: true, mirrorAlreadySent: await wasReceiptMirrorSent(deps, tenantId, receiptId) };
 }
 
 /**

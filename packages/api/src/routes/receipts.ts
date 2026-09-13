@@ -112,7 +112,9 @@ export function createReceiptRoutes(container: Container) {
           : '取り消せる期間(領収書の日付+2日)を過ぎています';
       return c.json({ success: false, message }, 400);
     }
-    return c.json({ success: true });
+    // 管理者が期限後に取り消したときは、既にスプレッドシートへ送られていることがある。
+    // あちら側の行はこちらからは消せないので、黙って成功にせず画面へ伝える(doc/14 §10)。
+    return c.json({ success: true, mirrorAlreadySent: result.mirrorAlreadySent });
   });
 
   /**

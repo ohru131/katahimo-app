@@ -260,7 +260,10 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     customerId = (await createCustomer(customerDeps, { tenantId, name: '田中 一郎' })).id;
 
     receiptRepository = new FakeReceiptRepository();
-    mirror = new FakeOutboxRepository();
+    // outboxの時計を取り消し期限の後ろに置く。領収書のジョブは next_attempt_at が
+    // 9/17 00:00 JSTなので、実時刻のままだと claimPending が1件も掴めず
+    // 「送信中に取り消された」場面を再現できない。
+    mirror = new FakeOutboxRepository(() => AFTER_DEADLINE);
     deps = {
       receipts: receiptRepository,
       staff,
@@ -377,7 +380,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
       reason: '二重に登録したため',
       today: WITHIN_DEADLINE,
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, mirrorAlreadySent: false });
 
     const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', { today: WITHIN_DEADLINE });
     // 行は消えない。
@@ -465,7 +468,43 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
       reason: '経理の締め処理で戻す',
       today: AFTER_DEADLINE,
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, mirrorAlreadySent: false });
+  });
+
+  it('送信済みの領収書を管理者が期限後に取り消すと、送信済みだったことを返す', async () => {
+    await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
+    const receiptId = latestReceiptId();
+
+    // 期限を過ぎている=送信開始時刻も過ぎているので、この時点でシートには行が出ている。
+    const [job] = mirror.listAllForTest();
+    if (!job) throw new Error('ミラージョブが積まれていません');
+    await mirror.markDone(tenantId, job.id);
+
+    const result = await cancelReceipt(deps, tenantId, receiptId, {
+      requesterStaffId: staffId,
+      allowOtherStaff: true,
+      ignoreDeadline: true,
+      reason: '経理の締め処理で戻す',
+      today: AFTER_DEADLINE,
+    });
+    // 取り消し自体は通る。ただしシート側の行は消せないので、黙って成功にしない(doc/14 §10)。
+    expect(result).toEqual({ ok: true, mirrorAlreadySent: true });
+  });
+
+  it('送信中(processing)も送信済み扱いにする(送られたか外から判別できないため)', async () => {
+    await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
+    const receiptId = latestReceiptId();
+    // claimPendingでprocessingへ遷移させる(ワーカーが掴んだ直後の状態)。
+    await mirror.claimPending(tenantId, 10);
+
+    const result = await cancelReceipt(deps, tenantId, receiptId, {
+      requesterStaffId: staffId,
+      allowOtherStaff: true,
+      ignoreDeadline: true,
+      reason: '経理の締め処理で戻す',
+      today: AFTER_DEADLINE,
+    });
+    expect(result).toEqual({ ok: true, mirrorAlreadySent: true });
   });
 
   it('管理者でも、取り消し済みの行は二重に取り消せない', async () => {
@@ -478,7 +517,10 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
       reason: '1回目',
       today: AFTER_DEADLINE,
     };
-    expect(await cancelReceipt(deps, tenantId, receiptId, adminOptions)).toEqual({ ok: true });
+    expect(await cancelReceipt(deps, tenantId, receiptId, adminOptions)).toEqual({
+      ok: true,
+      mirrorAlreadySent: false,
+    });
     expect(await cancelReceipt(deps, tenantId, receiptId, adminOptions)).toEqual({
       ok: false,
       reason: 'already_cancelled',
@@ -524,7 +566,10 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
       reason: '1回目',
       today: WITHIN_DEADLINE,
     };
-    expect(await cancelReceipt(deps, tenantId, receiptId, options)).toEqual({ ok: true });
+    expect(await cancelReceipt(deps, tenantId, receiptId, options)).toEqual({
+      ok: true,
+      mirrorAlreadySent: false,
+    });
     expect(await cancelReceipt(deps, tenantId, receiptId, { ...options, reason: '2回目' })).toEqual({
       ok: false,
       reason: 'already_cancelled',
@@ -565,7 +610,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
       reason: null,
       today: WITHIN_DEADLINE,
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, mirrorAlreadySent: false });
   });
 
   it('存在しない領収書IDはnot_found', async () => {

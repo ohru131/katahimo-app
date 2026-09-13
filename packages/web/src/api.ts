@@ -909,16 +909,28 @@ export async function fetchReceipts(yearMonth: string, staffId?: string): Promis
 /**
  * 領収書を取り消す(論理削除。doc/14 §10)。
  * 会計の記録なので編集はできない。訂正は「取り消して登録し直す」。
+ *
+ * 戻り値の `mirrorAlreadySent` は「取り消した時点で既に外部シートへ送られていた」ことを表す。
+ * 管理者が期限後に取り消したときだけ起こりうる。シート側の行はこちらからは消せないので、
+ * 呼び出し側は操作した人へ伝える必要がある。
  */
-export async function cancelReceipt(receiptId: string, reason: string): Promise<void> {
+export async function cancelReceipt(
+  receiptId: string,
+  reason: string,
+): Promise<{ mirrorAlreadySent: boolean }> {
   const res = await fetch(`/api/receipts/${encodeURIComponent(receiptId)}/cancel`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ reason }),
   });
-  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  const body = await parseJsonOrThrow<{
+    success: boolean;
+    message?: string;
+    mirrorAlreadySent?: boolean;
+  }>(res);
   if (!body.success) throw new Error(body.message || '領収書の取り消しに失敗しました');
+  return { mirrorAlreadySent: body.mirrorAlreadySent === true };
 }
 
 /**

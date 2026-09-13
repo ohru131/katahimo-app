@@ -48,9 +48,11 @@ describe('applyPendingMigrations', () => {
     client = new PGlite();
     await client.waitReady;
     migrations = loadMigrations();
-    // マイグレーションは1本(0000_baseline_schema)に統合されている。増える方向の変更
-    // (次のリリースで0001が足される)はテスト内で合成のマイグレーションを足して再現する。
-    expect(migrations.length).toBe(1);
+    // 実ファイルは 0000_baseline_schema + 0001 以降の差分(doc/09 第1.9節)。ここを固定値で
+    // 見ているのは、globの取りこぼしで0件・1件になっていないことを確かめるため。増える方向の
+    // 変更はテスト内で合成のマイグレーションを足して再現する。
+    expect(migrations.length).toBeGreaterThanOrEqual(2);
+    expect(migrations[0]?.tag).toBe('0000_baseline_schema');
   });
 
   it('空のDBには全て当てて、台帳に記録する', async () => {
