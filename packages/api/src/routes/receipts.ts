@@ -65,7 +65,7 @@ export function createReceiptRoutes(container: Container) {
    * 領収書を取り消す(論理削除。doc/14 §10)。
    *
    * 会計の記録なので編集は用意していない。訂正は「取り消して登録し直す」の一択で、
-   * 取り消した行も一覧に残る。期限(領収書の日付+2日)はここでも見る
+   * 取り消した行も一覧に残る。期限(テナントごとの締め日設定から決まる。doc/14 §10)はここでも見る
    * (画面はボタンを出さないが、APIを直接叩けば通ってしまうため)。管理者だけは期限後も
    * 取り消せる(経理が締め処理で戻すことがあるため)。
    */
@@ -109,7 +109,7 @@ export function createReceiptRoutes(container: Container) {
       const message =
         result.reason === 'already_cancelled'
           ? 'この領収書は既に取り消されています'
-          : '取り消せる期間(領収書の日付+2日)を過ぎています';
+          : '取り消せる期限を過ぎています';
       return c.json({ success: false, message }, 400);
     }
     // 管理者が期限後に取り消したときは、既にスプレッドシートへ送られていることがある。

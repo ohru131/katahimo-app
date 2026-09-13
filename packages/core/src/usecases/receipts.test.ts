@@ -7,6 +7,7 @@ import { createCustomer } from './customers';
 import type { ReceiptDeps } from './receipts';
 import { cancelReceipt, listReceiptsForStaff, uploadReceipts } from './receipts';
 import {
+  FakeAppSettingsRepository,
   FakeCustomerRepository,
   FakeFamilyMemberRepository,
   FakeNotifierPort,
@@ -67,6 +68,7 @@ describe('uploadReceipts', () => {
       notifier: new FakeNotifierPort(),
       mirror,
       unitOfWork: new FakeUnitOfWork([receiptRepository, mirror]),
+      appSettings: new FakeAppSettingsRepository(),
     };
   });
 
@@ -129,6 +131,7 @@ describe('uploadReceipts', () => {
       fileKey: `${tenantId}/receipts/existing.jpg`,
       contentType: 'image/jpeg',
       billingType: 'company_expense',
+      cancellableUntil: '2026-09-01',
     });
 
     // アプリ側の事前チェックがすり抜けた状況を再現する(本来ならexistingに入っているはず)。
@@ -272,6 +275,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
       notifier: new FakeNotifierPort(),
       mirror,
       unitOfWork: new FakeUnitOfWork([receiptRepository, mirror]),
+      appSettings: new FakeAppSettingsRepository(),
     };
   });
 
@@ -507,6 +511,79 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     expect(await receiptRepository.claimForMirror(tenantId, receiptId)).toBeNull();
   });
 
+  it('同時に2つの取り消しが走っても、負けたほうは404ではなく「取り消し済み」を返す', async () => {
+    await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
+    const receiptId = latestReceiptId();
+    const options = {
+      requesterStaffId: staffId,
+      allowOtherStaff: true,
+      ignoreDeadline: true,
+      reason: null,
+      today: AFTER_DEADLINE,
+    };
+
+    // 二重取り消しチェックを両方が抜けた状態を作る(先に取り消しを確定させてから、
+    // 取り消し前のレコードを読んだ体で cancel だけを呼ぶのと同じ状況)。
+    await receiptRepository.cancel(tenantId, receiptId, {
+      cancelledByStaffId: staffId,
+      reason: '先に確定したほう',
+    });
+
+    // cancel の UPDATE は0行になるが、行自体は存在する。存在しないのと同じ404にしない。
+    expect(await cancelReceipt(deps, tenantId, receiptId, options)).toEqual({
+      ok: false,
+      reason: 'already_cancelled',
+    });
+  });
+
+  it('2つの取り消しがユースケース経由で競合しても、負けたほうは already_cancelled', async () => {
+    await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
+    const receiptId = latestReceiptId();
+    const options = {
+      requesterStaffId: staffId,
+      allowOtherStaff: true,
+      ignoreDeadline: true,
+      reason: '負けるほう',
+      today: AFTER_DEADLINE,
+    };
+
+    // 二重取り消しチェック(findById)を抜けたあと、自分のUPDATEが走る直前に
+    // もう一方の取り消しが確定する、という割り込みを作る。実DBなら行ロックが決める順序を、
+    // 単一スレッドのフェイクでは明示的に差し込むしかない。
+    const original = receiptRepository.cancel.bind(receiptRepository);
+    let interleaved = false;
+    receiptRepository.cancel = async (t, id, input) => {
+      if (!interleaved) {
+        interleaved = true;
+        const winner = await original(t, id, { cancelledByStaffId: staffId, reason: '勝つほう' });
+        expect(winner).not.toBeNull();
+      }
+      return original(t, id, input);
+    };
+
+    // 負けたほうのUPDATEは0行になる。行は存在するので、404ではなく400を返す。
+    expect(await cancelReceipt(deps, tenantId, receiptId, options)).toEqual({
+      ok: false,
+      reason: 'already_cancelled',
+    });
+    expect(interleaved).toBe(true);
+    // 勝ったほうの理由が残っていること(負けたほうに上書きされていない)。
+    const stored = receiptRepository.listAllForTest().find((r) => r.id === receiptId);
+    expect(stored?.cancellationReason).toBe('勝つほう');
+  });
+
+  it('存在しない領収書は取り消し済みと区別して not_found を返す', async () => {
+    expect(
+      await cancelReceipt(deps, tenantId, '00000000-0000-4000-8000-000000000000', {
+        requesterStaffId: staffId,
+        allowOtherStaff: true,
+        ignoreDeadline: true,
+        reason: null,
+        today: AFTER_DEADLINE,
+      }),
+    ).toEqual({ ok: false, reason: 'not_found' });
+  });
+
   it('管理者でも、取り消し済みの行は二重に取り消せない', async () => {
     await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
     const receiptId = latestReceiptId();
@@ -536,13 +613,15 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     expect(job.nextAttemptAt?.toISOString()).toBe('2026-09-16T15:00:00.000Z');
   });
 
-  it('月末の領収書は翌月へ持ち越さず、その月のうちに送る', async () => {
+  it('月末の領収書は締め日の前日までに送る(翌月へ持ち越さない)', async () => {
     await upload({ at: '2026/09/30 10:00:00', amount: '1000', storeName: '月末の店' });
 
     const [job] = mirror.listAllForTest();
     if (!job) throw new Error('ミラージョブが積まれていません');
-    // 9/30いっぱいで取り消し期限が切れ、10/1 00:00 JST に送られる(9月分が10月にずれ込まない)。
-    expect(job.nextAttemptAt?.toISOString()).toBe('2026-09-30T15:00:00.000Z');
+    // 既定は月末締め・送信日は締め日の1日前(mirrorLeadDays=1)なので送信日は9/29。
+    // 取り消せるのは9/28までで、送信開始は9/29 00:00 JST = 9/28 15:00 UTC。
+    // 登録時刻(9/30 10:00 JST)より前なので、積んだ時点で送信可能=待たずに出る(doc/14 §10)。
+    expect(job.nextAttemptAt?.toISOString()).toBe('2026-09-28T15:00:00.000Z');
   });
 
   it('まだ送っていない領収書の件数と送信予定を返す(締めのときに取り残しに気付けるように)', async () => {

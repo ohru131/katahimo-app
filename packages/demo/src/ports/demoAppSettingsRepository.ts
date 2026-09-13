@@ -1,3 +1,4 @@
+import { DEFAULT_RECEIPT_DEADLINE_POLICY } from '@katahimo/core/domain';
 import type {
   AppSettingsPatchInput,
   AppSettingsRecord,
@@ -43,6 +44,11 @@ export class DemoAppSettingsRepository implements AppSettingsRepositoryPort {
       tenantId,
       geminiReportModel: stored?.geminiReportModel ?? null,
       geminiOcrModel: stored?.geminiOcrModel ?? null,
+      // 締め日設定は秘密ではないので、そのまま永続層の値を通す(未保存なら既定値)。
+      receiptClosingDay: stored?.receiptClosingDay ?? DEFAULT_RECEIPT_DEADLINE_POLICY.closingDay,
+      receiptMirrorLeadDays: stored?.receiptMirrorLeadDays ?? DEFAULT_RECEIPT_DEADLINE_POLICY.mirrorLeadDays,
+      receiptCancellableDays:
+        stored?.receiptCancellableDays ?? DEFAULT_RECEIPT_DEADLINE_POLICY.cancellableDays,
       ...EMPTY_SECRETS,
       ...secrets,
     };
@@ -66,6 +72,9 @@ export class DemoAppSettingsRepository implements AppSettingsRepositoryPort {
       tenantId,
       geminiReportModel: stored.geminiReportModel,
       geminiOcrModel: stored.geminiOcrModel,
+      receiptClosingDay: stored.receiptClosingDay,
+      receiptMirrorLeadDays: stored.receiptMirrorLeadDays,
+      receiptCancellableDays: stored.receiptCancellableDays,
       ...(this.secretsByTenant.get(tenantId) ?? EMPTY_SECRETS),
     };
   }

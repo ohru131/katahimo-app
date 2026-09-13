@@ -17,16 +17,23 @@ class FakePersistentRepository implements AppSettingsRepositoryPort {
 
   async upsert(tenantId: string, patch: AppSettingsPatchInput): Promise<AppSettingsRecord> {
     this.receivedPatches.push(patch);
-    this.record = {
+    const next: AppSettingsRecord = {
       tenantId,
       geminiApiKey: null,
       geminiReportModel: null,
       geminiOcrModel: null,
       gchatReportWebhookUrl: null,
       gchatReceiptWebhookUrl: null,
+      receiptClosingDay: null,
+      receiptMirrorLeadDays: 1,
+      receiptCancellableDays: 2,
       ...this.record,
-      ...patch,
     };
+    // patchは渡されたキーだけ上書きするので、undefinedで既存値を潰さないよう個別に当てる。
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== undefined) (next as unknown as Record<string, unknown>)[key] = value;
+    }
+    this.record = next;
     return this.record;
   }
 }

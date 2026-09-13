@@ -4,11 +4,26 @@ import {
   saveGeminiApiKey,
   saveGeminiModelSettings,
   saveGoogleChatWebhookSettings,
+  saveReceiptDeadlineSettings,
 } from '@katahimo/core';
 import type { ResolvedSession } from '@katahimo/core/usecases';
+import {
+  RECEIPT_CANCELLABLE_DAYS_MAX,
+  RECEIPT_CLOSING_DAY_MAX,
+  RECEIPT_MIRROR_LEAD_DAYS_MAX,
+} from '@katahimo/db/schema';
 import { Hono } from 'hono';
 import type { Container } from '../container';
 import { getAuthenticatedSession } from '../session';
+
+/**
+ * 整数かつ指定範囲内か。JSONで来た値をそのままDBへ渡すと、範囲外はCHECK制約違反(23514)
+ * という分かりにくいエラーで初めて気付く形になるため、ここで弾いて400にする(doc/14 §1.6)。
+ * 小数や文字列も落とす(`'3'` や `3.5` を締め日として受けない)。
+ */
+function isIntegerInRange(value: unknown, min: number, max: number): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
+}
 
 /**
  * GAS版の各getXXXForAdmin/saveXXXForAdminの `!session.isAdmin` チェックに対応。
@@ -85,6 +100,50 @@ export function createSettingsRoutes(container: Container) {
       body.reportWebhookUrl,
       body.receiptWebhookUrl,
     );
+    return c.json(result);
+  });
+
+  /**
+   * 領収書の締め日設定(doc/14 §10)。取り消し期限とミラー送信の開始時刻がここから導かれる。
+   *
+   * 値域はDBのCHECK制約でも縛っているが、ここでも見る。23514で返すと利用者には
+   * 何が悪いのか分からないため(doc/14 §1.6の方針)。
+   */
+  app.post('/admin/receipt-deadline', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const body = await c.req.json().catch(() => null);
+    const closingDay = body?.closingDay;
+    // nullは「月末」という意味を持つ正当な値なので、未指定(undefined)とは区別する。
+    if (closingDay !== null && !isIntegerInRange(closingDay, 1, RECEIPT_CLOSING_DAY_MAX)) {
+      return c.json(
+        {
+          ok: false,
+          message: `締め日は1〜${RECEIPT_CLOSING_DAY_MAX}の整数か、月末(null)で指定してください。`,
+        },
+        400,
+      );
+    }
+    if (!isIntegerInRange(body?.mirrorLeadDays, 0, RECEIPT_MIRROR_LEAD_DAYS_MAX)) {
+      return c.json(
+        { ok: false, message: `送信を終える日数は0〜${RECEIPT_MIRROR_LEAD_DAYS_MAX}で指定してください。` },
+        400,
+      );
+    }
+    if (!isIntegerInRange(body?.cancellableDays, 0, RECEIPT_CANCELLABLE_DAYS_MAX)) {
+      return c.json(
+        { ok: false, message: `取り消せる日数は0〜${RECEIPT_CANCELLABLE_DAYS_MAX}で指定してください。` },
+        400,
+      );
+    }
+
+    const result = await saveReceiptDeadlineSettings(container, session.tenantId, {
+      closingDay,
+      mirrorLeadDays: body.mirrorLeadDays,
+      cancellableDays: body.cancellableDays,
+    });
     return c.json(result);
   });
 
