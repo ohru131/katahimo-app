@@ -130,8 +130,8 @@
         <dl class="kv">
           <dt>パッケージ</dt><dd>9(pnpm workspace)</dd>
           <dt>TypeScript</dt><dd>229ファイル / 約27,500行(テスト除く)</dd>
-          <dt>テスト</dt><dd>57ファイル / 769件、CIで毎回実行</dd>
-          <dt>DB</dt><dd>34テーブル、マイグレーション3本</dd>
+          <dt>テスト</dt><dd>57ファイル / 766件、CIで毎回実行</dd>
+          <dt>DB</dt><dd>34テーブル、マイグレーション4本</dd>
         </dl>
       </div>
     </div>
@@ -351,7 +351,7 @@
 </section>
 <!-- 6 data model -->
 <section class="slide">
-  <h2>データモデル全体像 <small>34テーブル / マイグレーション3本</small></h2>
+  <h2>データモデル全体像 <small>34テーブル / マイグレーション4本</small></h2>
   <div class="fig">
   <svg viewBox="0 0 960 420" role="img" aria-label="テーブル関連図">
     <defs>
@@ -914,7 +914,7 @@
   <h2>品質の担保 <small>何をテストし、何をしていないか</small></h2>
   <div class="cols">
     <div>
-      <div class="card"><h3>やっていること <span class="tag">57ファイル / 769件</span></h3>
+      <div class="card"><h3>やっていること <span class="tag">57ファイル / 766件</span></h3>
         <ul style="margin:0">
           <li><b>ドメイン純関数の回帰</b>: 勤怠計算は GAS版をNodeで実行した結果を正解に、合成データ19ケース+月次集計で<b>完全一致</b>。CSV解析は実サンプル398行で一致</li>
           <li><b>usecase 単体</b>: インメモリfakeで、失敗すべきときに失敗することを中心に(列挙防止・試行上限・割り込み・部分更新なし)</li>

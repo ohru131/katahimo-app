@@ -25,7 +25,6 @@ class FakePersistentRepository implements AppSettingsRepositoryPort {
       gchatReportWebhookUrl: null,
       gchatReceiptWebhookUrl: null,
       receiptClosingDay: null,
-      receiptMirrorLeadDays: 1,
       receiptCancellableDays: 2,
       ...this.record,
     };

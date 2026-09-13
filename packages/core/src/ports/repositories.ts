@@ -794,8 +794,8 @@ export interface NewReceiptInput {
   billingType: ReceiptBillingType;
   /**
    * 取り消せる最終日('YYYY-MM-DD'・JST)。登録時の締め日設定から計算した値を保存する
-   * (doc/14 §10)。ミラー送信の開始時刻(outbox の next_attempt_at)と同じ計算から
-   * 同時に決めること。片方だけ後から動くと、送ったあとに取り消せる状態ができる。
+   * (doc/14 §10)。設定を読み直して毎回計算し直すと、締め日を変えた瞬間に登録済みの
+   * 領収書の期限まで動いてしまうため、登録時の値をここに固定する。
    */
   cancellableUntil: string;
 }
@@ -859,8 +859,6 @@ export interface AppSettingsRecord {
   gchatReceiptWebhookUrl: EncryptedField | null;
   /** 会計の締め日(1〜28)。nullは月末(doc/14 §10)。 */
   receiptClosingDay: number | null;
-  /** ミラー送信を締め日の何日前までに終えるか。 */
-  receiptMirrorLeadDays: number;
   /** 領収書を取り消せる日数(暦日)。 */
   receiptCancellableDays: number;
 }

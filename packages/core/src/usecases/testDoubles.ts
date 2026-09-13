@@ -584,7 +584,6 @@ export class FakeAppSettingsRepository implements AppSettingsRepositoryPort {
       gchatReceiptWebhookUrl: null,
       // DBのDEFAULTと同じ既定値(doc/14 §10)。
       receiptClosingDay: null,
-      receiptMirrorLeadDays: 1,
       receiptCancellableDays: 2,
     };
     const updated: AppSettingsRecord = { ...existing, ...patch };

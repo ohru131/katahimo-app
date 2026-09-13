@@ -113,12 +113,18 @@ function ReceiptRow({
 
       {receipt.handoffText && <p className="text-xs mt-1 break-words opacity-80">{receipt.handoffText}</p>}
 
-      {/* ミラー送信の状態(doc/14 §10)。取り消せる期間が終わるまで送信を待つ作りなので、
-          「登録したのにまだスプレッドシートに出ていない」期間が必ずある。いつ送られるのかと、
-          送信が止まっていないかを行に出しておかないと、締めのときに取り残しに気付けない。 */}
-      {!cancelled && receipt.mirrorStatus === 'pending' && receipt.mirrorScheduledAt && (
-        <p className="text-xs mt-1 text-gray-500">
-          スプレッドシートへは {receipt.mirrorScheduledAt} 以降に送信(取消できる間は送りません)
+      {/* ミラー送信の状態(doc/14 §10)。送信は登録と同時に始まるが、ワーカーが拾うまでの
+          間と、失敗して再試行待ちの間は「登録したのにシートに出ていない」状態になる。
+          止まっていないかを行に出しておかないと、締めのときに取り残しに気付けない。
+          再試行待ち(pendingなのに前回の失敗が残っている)は、ただの順番待ちと区別して出す。 */}
+      {!cancelled && receipt.mirrorStatus === 'pending' && !receipt.mirrorError && (
+        <p className="text-xs mt-1 text-gray-500">スプレッドシートへ送信待ちです</p>
+      )}
+      {!cancelled && receipt.mirrorStatus === 'pending' && receipt.mirrorError && (
+        <p className="text-xs mt-1 text-amber-700 break-words">
+          スプレッドシートへの送信に失敗しました。
+          {receipt.mirrorScheduledAt ? `${receipt.mirrorScheduledAt} 以降に再試行します` : '再試行します'}
+          {` — ${receipt.mirrorError}`}
         </p>
       )}
       {!cancelled && receipt.mirrorStatus === 'failed' && (

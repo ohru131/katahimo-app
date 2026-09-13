@@ -604,36 +604,41 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     });
   });
 
-  it('ミラー送信は取り消し期限が切れるまで始まらない(送ってから取り消される状態を作らない)', async () => {
+  it('ミラー送信は遅らせない(移行期のシートを空白にしないため)', async () => {
     await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
 
     const [job] = mirror.listAllForTest();
     if (!job) throw new Error('ミラージョブが積まれていません');
-    // 2026-09-14の領収書は9/16いっぱいまで取り消せるので、送信開始は9/17 00:00 JST。
-    expect(job.nextAttemptAt?.toISOString()).toBe('2026-09-16T15:00:00.000Z');
+    // notBefore を付けないので、積んだ時点で送信対象になる(doc/14 §10)。
+    // 実DBの next_attempt_at は NOT NULL DEFAULT now() なので「今」が入り、
+    // フェイクは同じ意味を null で表す(claimPending はどちらも即座に拾う)。
+    // 取り消し済みを送らない守りは claimForMirror が担うので、遅延は要らない。
+    expect(job.nextAttemptAt).toBeNull();
   });
 
-  it('月末の領収書は締め日の前日までに送る(翌月へ持ち越さない)', async () => {
+  it('取り消し期限は送信スケジュールと連動しない(会計上のルールとして決まる)', async () => {
+    // 月末の領収書でも、送信は登録と同時。期限だけが締め日で切られる。
     await upload({ at: '2026/09/30 10:00:00', amount: '1000', storeName: '月末の店' });
-
     const [job] = mirror.listAllForTest();
     if (!job) throw new Error('ミラージョブが積まれていません');
-    // 既定は月末締め・送信日は締め日の1日前(mirrorLeadDays=1)なので送信日は9/29。
-    // 取り消せるのは9/28までで、送信開始は9/29 00:00 JST = 9/28 15:00 UTC。
-    // 登録時刻(9/30 10:00 JST)より前なので、積んだ時点で送信可能=待たずに出る(doc/14 §10)。
-    expect(job.nextAttemptAt?.toISOString()).toBe('2026-09-28T15:00:00.000Z');
+    expect(job.nextAttemptAt).toBeNull();
+
+    const stored = receiptRepository.listAllForTest().at(-1);
+    // 9/30の領収書は+2日で10/2だが、9月末で締めるので9/30まで。
+    expect(stored?.cancellableUntil).toBe('2026-09-30');
   });
 
-  it('まだ送っていない領収書の件数と送信予定を返す(締めのときに取り残しに気付けるように)', async () => {
+  it('まだ送っていない領収書の件数を返す(締めのときに取り残しに気付けるように)', async () => {
     await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
 
     const view = await listReceiptsForStaff(deps, tenantId, staffId, '2026-09', {
       today: WITHIN_DEADLINE,
     });
+    // 送信は遅らせないが、ワーカーが拾うまでの間は pending。送信に失敗して止まった分も
+    // ここで見えるので、締めのときの確認手段としては変わらず要る。
     expect(view?.pendingMirrorCount).toBe(1);
     expect(view?.failedMirrorCount).toBe(0);
     expect(view?.receipts[0]?.mirrorStatus).toBe('pending');
-    expect(view?.receipts[0]?.mirrorScheduledAt).toBe('2026/09/17 00:00:00');
   });
 
   it('二重取り消しは弾く(取り消した人・理由・時刻を上書きしない)', async () => {

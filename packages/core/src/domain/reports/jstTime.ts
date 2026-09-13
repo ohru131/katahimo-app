@@ -109,15 +109,6 @@ export function jstDateKeyWithDayOfMonth(dateStr: string, day: number, monthOffs
 }
 
 /**
- * 'YYYY-MM-DD'(JST)の日の終わり=翌日0時(JST)を、絶対時刻で返す。
- * 「その日いっぱいまで」を半開区間の上限として扱うために使う。
- */
-export function jstEndOfDay(dateStr: string): Date {
-  const [year, month, day] = dateStr.split('-').map(Number);
-  return new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, (day ?? 1) + 1) - JST_OFFSET_MINUTES * 60_000);
-}
-
-/**
  * 'YYYY-MM'(JST)の月を、絶対時刻の半開区間 [from, to) に変換する。
  *
  * 上限を含めないのは、月末の23:59:59.999のような端の値を「その月に入れるか」で悩まずに済み、

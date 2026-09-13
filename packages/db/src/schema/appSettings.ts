@@ -9,8 +9,6 @@ import { tenants } from './tenants';
  * (月末で締める運用はNULLで表す)。doc/14 §10。
  */
 export const RECEIPT_CLOSING_DAY_MAX = 28;
-/** ミラー送信を締め日の何日前までに終えるか、の上限。締め期間より長くならない範囲。 */
-export const RECEIPT_MIRROR_LEAD_DAYS_MAX = 10;
 /** 領収書を取り消せる日数の上限。 */
 export const RECEIPT_CANCELLABLE_DAYS_MAX = 14;
 
@@ -43,17 +41,10 @@ export const appSettings = pgTable(
     /**
      * 会計の締め日(1〜28)。NULLは「月末」(doc/14 §10)。
      *
-     * 領収書の取り消し期限とミラー送信の開始時刻がここから導かれる。テナントごとに
-     * 締め日が違う(20日締めなど)ため、定数ではなく設定にしている。
+     * 領収書の取り消し期限がここから導かれる。テナントごとに締め日が違う(20日締めなど)
+     * ため、定数ではなく設定にしている。
      */
     receiptClosingDay: integer(),
-    /**
-     * ミラー送信を締め日の何日前までに終えるか。既定1 = 締め日の前日いっぱいで送り終える。
-     *
-     * 0にすると締め日当日の0時に送ることになり、締め処理と競り合う。1日空けておくと、
-     * 締める時点では当期分がすべてシートに出ている状態になる。
-     */
-    receiptMirrorLeadDays: integer().notNull().default(1),
     /** 領収書を取り消せる日数(暦日)。既定2。 */
     receiptCancellableDays: integer().notNull().default(2),
 
@@ -67,10 +58,6 @@ export const appSettings = pgTable(
       'app_settings_receipt_closing_day_check',
       sql`${t.receiptClosingDay} IS NULL
         OR (${t.receiptClosingDay} >= 1 AND ${t.receiptClosingDay} <= ${sqlNumber(RECEIPT_CLOSING_DAY_MAX)})`,
-    ),
-    check(
-      'app_settings_receipt_mirror_lead_days_check',
-      sql`${t.receiptMirrorLeadDays} >= 0 AND ${t.receiptMirrorLeadDays} <= ${sqlNumber(RECEIPT_MIRROR_LEAD_DAYS_MAX)}`,
     ),
     check(
       'app_settings_receipt_cancellable_days_check',

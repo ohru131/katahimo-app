@@ -35,7 +35,6 @@ function toRecord(row: AppSettingsRow): AppSettingsRecord {
           }
         : null,
     receiptClosingDay: row.receiptClosingDay,
-    receiptMirrorLeadDays: row.receiptMirrorLeadDays,
     receiptCancellableDays: row.receiptCancellableDays,
   };
 }
@@ -70,9 +69,6 @@ export class DrizzleAppSettingsRepository implements AppSettingsRepositoryPort {
       }
       // 締め日はnullが「月末」という意味を持つので、`?? null` ではなく undefined との区別で扱う。
       if (patch.receiptClosingDay !== undefined) setValues.receiptClosingDay = patch.receiptClosingDay;
-      if (patch.receiptMirrorLeadDays !== undefined) {
-        setValues.receiptMirrorLeadDays = patch.receiptMirrorLeadDays;
-      }
       if (patch.receiptCancellableDays !== undefined) {
         setValues.receiptCancellableDays = patch.receiptCancellableDays;
       }

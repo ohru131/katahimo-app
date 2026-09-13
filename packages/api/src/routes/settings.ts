@@ -7,11 +7,7 @@ import {
   saveReceiptDeadlineSettings,
 } from '@katahimo/core';
 import type { ResolvedSession } from '@katahimo/core/usecases';
-import {
-  RECEIPT_CANCELLABLE_DAYS_MAX,
-  RECEIPT_CLOSING_DAY_MAX,
-  RECEIPT_MIRROR_LEAD_DAYS_MAX,
-} from '@katahimo/db/schema';
+import { RECEIPT_CANCELLABLE_DAYS_MAX, RECEIPT_CLOSING_DAY_MAX } from '@katahimo/db/schema';
 import { Hono } from 'hono';
 import type { Container } from '../container';
 import { getAuthenticatedSession } from '../session';
@@ -104,7 +100,7 @@ export function createSettingsRoutes(container: Container) {
   });
 
   /**
-   * 領収書の締め日設定(doc/14 §10)。取り消し期限とミラー送信の開始時刻がここから導かれる。
+   * 領収書の締め日設定(doc/14 §10)。領収書を取り消せる期限がここから導かれる。
    *
    * 値域はDBのCHECK制約でも縛っているが、ここでも見る。23514で返すと利用者には
    * 何が悪いのか分からないため(doc/14 §1.6の方針)。
@@ -126,12 +122,6 @@ export function createSettingsRoutes(container: Container) {
         400,
       );
     }
-    if (!isIntegerInRange(body?.mirrorLeadDays, 0, RECEIPT_MIRROR_LEAD_DAYS_MAX)) {
-      return c.json(
-        { ok: false, message: `送信を終える日数は0〜${RECEIPT_MIRROR_LEAD_DAYS_MAX}で指定してください。` },
-        400,
-      );
-    }
     if (!isIntegerInRange(body?.cancellableDays, 0, RECEIPT_CANCELLABLE_DAYS_MAX)) {
       return c.json(
         { ok: false, message: `取り消せる日数は0〜${RECEIPT_CANCELLABLE_DAYS_MAX}で指定してください。` },
@@ -141,7 +131,6 @@ export function createSettingsRoutes(container: Container) {
 
     const result = await saveReceiptDeadlineSettings(container, session.tenantId, {
       closingDay,
-      mirrorLeadDays: body.mirrorLeadDays,
       cancellableDays: body.cancellableDays,
     });
     return c.json(result);

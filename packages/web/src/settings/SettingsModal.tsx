@@ -87,7 +87,6 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
   const [showReceiptWebhook, setShowReceiptWebhook] = useState(false);
   // 締め日まわり(doc/14 §10)。締め日は空文字が「月末」を表す。
   const [closingDay, setClosingDay] = useState('');
-  const [mirrorLeadDays, setMirrorLeadDays] = useState('1');
   const [cancellableDays, setCancellableDays] = useState('2');
 
   // 読み込みが完了してから初めてフォームへ反映する(未読み込みのまま保存されて空値等で
@@ -102,7 +101,6 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
     setReportWebhook(data.gchatReportWebhookUrl);
     setReceiptWebhook(data.gchatReceiptWebhookUrl);
     setClosingDay(data.receiptClosingDay === null ? '' : String(data.receiptClosingDay));
-    setMirrorLeadDays(String(data.receiptMirrorLeadDays));
     setCancellableDays(String(data.receiptCancellableDays));
   }, [settingsQuery.data]);
 
@@ -169,20 +167,17 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
       // 空欄のまま保存させない。保存ボタンは type="button" でブラウザの検証を通らないため、
       // ここで弾かないと Number('') === 0 で「0日」が黙って保存される
       // (締め日の空欄は「月末」という正当な値なので、数値2つだけを見る)。
-      if (mirrorLeadDays === '' || cancellableDays === '') {
-        throw new Error('送信を終える日数と取り消せる日数を入力してください。');
+      if (cancellableDays === '') {
+        throw new Error('取り消せる日数を入力してください。');
       }
       const nextClosingDay = closingDay === '' ? null : Number(closingDay);
-      const nextMirrorLeadDays = Number(mirrorLeadDays);
       const nextCancellableDays = Number(cancellableDays);
       if (
         nextClosingDay !== settingsQuery.data.receiptClosingDay ||
-        nextMirrorLeadDays !== settingsQuery.data.receiptMirrorLeadDays ||
         nextCancellableDays !== settingsQuery.data.receiptCancellableDays
       ) {
         const result = await saveReceiptDeadlineSettings({
           closingDay: nextClosingDay,
-          mirrorLeadDays: nextMirrorLeadDays,
           cancellableDays: nextCancellableDays,
         });
         if (!result.ok) throw new Error(result.message);
@@ -391,8 +386,8 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
                     </p>
                   </div>
 
-                  {/* 締め日まわり(doc/14 §10)。取り消し期限とミラー送信の開始時刻が
-                      この3つから決まるので、意味が分かるよう1箇所にまとめて出す。 */}
+                  {/* 締め日まわり(doc/14 §10)。取り消せる期限がこの2つから決まるので、
+                      意味が分かるよう1箇所にまとめて出す。 */}
                   <div className="mt-4 pt-4 border-t border-gray-100">
                     <p className="text-xs font-bold text-gray-600 mb-2">領収書の締め日</p>
 
@@ -414,23 +409,6 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
                     </select>
                     <p className="text-[10px] text-gray-400 mt-1">
                       ※ 29〜31日は選べません(2月に存在しないため)。月末で締める場合は「月末」を選びます。
-                    </p>
-
-                    <label className="block text-xs text-gray-600 mt-3 mb-1" htmlFor="receiptMirrorLeadDays">
-                      スプレッドシートへの送信を終える日(締め日の何日前まで)
-                    </label>
-                    <input
-                      id="receiptMirrorLeadDays"
-                      type="number"
-                      min={0}
-                      max={10}
-                      value={mirrorLeadDays}
-                      onChange={(e) => setMirrorLeadDays(e.target.value)}
-                      className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                    />
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      ※
-                      1にすると締め日の前日が送信日になり、締める時点で当期分がすべてシートに出ている状態になります。0にすると締め日当日が送信日です。
                     </p>
 
                     <label className="block text-xs text-gray-600 mt-3 mb-1" htmlFor="receiptCancellableDays">

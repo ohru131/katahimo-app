@@ -6,7 +6,6 @@ import {
   computeReceiptAmount,
   formatJstDateKey,
   formatJstDateTime,
-  jstEndOfDay,
   jstMonthRange,
   normalizeAmount,
   normalizeText,
@@ -39,7 +38,7 @@ export interface ReceiptDeps {
   mirror: MirrorPort;
   /** 領収書レコードの作成とミラー要求のenqueueを、1つのトランザクションにまとめるために使う。 */
   unitOfWork: UnitOfWorkPort;
-  /** 締め日設定(取り消し期限とミラー送信の開始時刻)の読み出しに使う(doc/14 §10)。 */
+  /** 締め日設定(取り消し期限)の読み出しに使う(doc/14 §10)。 */
   appSettings: AppSettingsRepositoryPort;
 }
 
@@ -217,8 +216,7 @@ export async function uploadReceipts(
             fileKey,
             contentType: decoded.contentType,
             billingType,
-            // 送信開始時刻(下の notBefore)と同じ計算から、同時に決める。片方だけ後から
-            // 動かすと「送ったあとに取り消せる」状態ができる(doc/14 §10)。
+            // 登録時の締め日設定で確定させ、以後は設定を変えても動かさない(doc/14 §10)。
             cancellableUntil,
           },
           scope,
@@ -229,10 +227,10 @@ export async function uploadReceipts(
             kind: 'receipt',
             targetId: receiptRecord.id,
             idempotencyKey: buildMirrorIdempotencyKey('receipt', receiptRecord.id, receiptRecord.createdAt),
-            // 取り消せる期間が終わるまで送信を始めない(doc/14 §10)。スプレッドシートへの追記は
-            // 送ってしまうと取り消しても向こう側に残るため、「送ったあとに取り消された」状態を
-            // 作れないようにする。締め日の手前で打ち切るので、締めた後に送られることもない。
-            notBefore: jstEndOfDay(cancellableUntil),
+            // 送信は遅らせない(doc/14 §10)。スプレッドシートは移行期の写しでしかなく、
+            // 遅らせると「まだ移行が済んでいない人が見ている間だけシートが空」という、
+            // ミラーの目的と正反対の状態になる。取り消し済みを送らないための守りは
+            // claimForMirror(cancelled_at IS NULL の行にだけ送信を宣言するUPDATE)が担う。
           },
           scope,
         );
@@ -331,7 +329,11 @@ export interface ReceiptListItemView {
    * ジョブ自体が積まれないのでnull。
    */
   mirrorStatus: 'pending' | 'processing' | 'done' | 'failed' | null;
-  /** pendingのとき、この時刻以降に送信される('yyyy/MM/dd HH:mm:ss'・JST)。 */
+  /**
+   * pendingのとき、次に送信を試みる時刻('yyyy/MM/dd HH:mm:ss'・JST)。
+   * 登録直後は「今」なので意味を持たない。効いてくるのは送信に失敗して再試行待ちのときで、
+   * 指数バックオフで先送りされた時刻がここに出る。
+   */
   mirrorScheduledAt: string | null;
   /** 送信に失敗して止まっているときの理由。 */
   mirrorError: string | null;
@@ -367,13 +369,13 @@ export interface ReceiptListView {
 /**
  * その領収書を`today`('YYYY-MM-DD'・JST)の時点で取り消せるか(doc/14 §10)。
  *
- * 期限は「領収書の日付 + cancellableDays」と「締め日のmirrorLeadDays日前」の早いほう
- * (receiptCancellableUntil)。締めたあとの記録が動くと会計が合わなくなるため、
- * 時間が経ったものは取り消せない。判定の基準日は receipt_timestamp の日付にしている
- * (領収書には訪問日そのものを持っていない。OCRが読んだ領収書の日付、読めなければ登録時刻)。
+ * 期限は「領収書の日付 + cancellableDays」と「締め日」の早いほう(receiptCancellableUntil)。
+ * 締めたあとの記録が動くと会計が合わなくなるため、時間が経ったものは取り消せない。
+ * 判定の基準日は receipt_timestamp の日付にしている(領収書には訪問日そのものを持って
+ * いない。OCRが読んだ領収書の日付、読めなければ登録時刻)。
  *
- * ミラー送信はこの期限が切れた直後に始まる(receiptMirrorSendAfter)。2つを同じ計算に
- * 揃えてあるので、「外部へ送ったあとに取り消された」状態は起きない。
+ * ミラー送信のスケジュールとは無関係(送信は登録と同時に始まる)。取り消し済みを送らない
+ * 守りは claimForMirror が担う(doc/14 §10)。
  */
 export function canCancelReceiptOn(
   record: ReceiptRecord,
@@ -386,9 +388,8 @@ export function canCancelReceiptOn(
 /**
  * その領収書の取り消し期限('YYYY-MM-DD'・JST)。
  *
- * 登録時に確定させた `cancellable_until` を使う。締め日設定は後から変えられるが、既に
- * outbox へ積んだ送信予定は動かないので、判定のたびに現在の設定で計算し直すと期限だけが
- * 延びて「送ったあとに取り消せる」状態ができる(doc/14 §10)。
+ * 登録時に確定させた `cancellable_until` を使う。締め日設定は後から変えられるので、判定の
+ * たびに現在の設定で計算し直すと、締めたはずの期の領収書まで取り消せるようになる(doc/14 §10)。
  *
  * この列を持たない古い行だけ、現在の設定から計算してフォールバックする。
  */
@@ -529,8 +530,7 @@ export type CancelReceiptResult =
        * 取り消した時点で、ミラーワーカーが**既に送信に取りかかっていた**か
        * (`receipts.mirror_claimed_at` が立っていたか)。
        *
-       * 通常の取り消しは送信開始(`receiptMirrorSendAfter`)より前にしか通らないので必ずfalseになる。
-       * trueになるのは管理者が `ignoreDeadline` で期限後に取り消したときで、あちら側の行は
+       * 送信は登録と同時に始まるので、期限内の取り消しでもtrueになりうる。あちら側の行は
        * こちらからは消せない(Bridge.jsに取り消し用のactionが無い。doc/14 §10)。呼び出し側は
        * 「シート側を手で直す必要がある」ことを操作した人に伝えるために使う。
        *
