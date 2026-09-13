@@ -748,6 +748,12 @@ export interface ReceiptRecord {
   contentType: string;
   /** 請求区分(doc/14 §10)。 */
   billingType: ReceiptBillingType;
+  /** 取り消した時刻。nullなら有効(doc/14 §10)。取り消しても行は消さない。 */
+  cancelledAt: Date | null;
+  /** 取り消しの理由(任意入力)。 */
+  cancellationReason: string | null;
+  /** 取り消したスタッフのID。 */
+  cancelledByStaffId: string | null;
   /**
    * ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。
    * 領収書は追記しかしないため作成時刻。
@@ -788,6 +794,26 @@ export interface ReceiptRepositoryPort {
    * 行だけを対象にする。
    */
   findExistingDedupeKeys(tenantId: string, dedupeKeys: string[]): Promise<Set<string>>;
+  /**
+   * 指定スタッフが登録した領収書を、receiptTimestampが[from, to)に入るものだけ新しい順で返す。
+   * 勤怠タブの領収書一覧(月単位)が使う。
+   *
+   * 期間をSQL側で絞るのは、月をまたいで積み上がった領収書を全件読んでからアプリ側で捨てる形に
+   * すると、運用が続くほど重くなるため(receipts_tenant_staff_timestamp_idxがこの経路を支える)。
+   */
+  listByStaffInPeriod(tenantId: string, staffId: string, from: Date, to: Date): Promise<ReceiptRecord[]>;
+  /**
+   * 領収書を取り消す(論理削除。doc/14 §10)。行は消さず cancelled_at を立てる。
+   * 存在しない/他テナントのIDならnullを返す。
+   *
+   * 金額・店舗名・顧客の紐付けを書き換えるメソッドは意図的に用意していない。会計の記録なので
+   * 訂正は「取り消して登録し直す」の一択にし、取り消した行も残す。
+   */
+  cancel(
+    tenantId: string,
+    receiptId: string,
+    input: { cancelledByStaffId: string; reason: string | null },
+  ): Promise<ReceiptRecord | null>;
 }
 
 /**

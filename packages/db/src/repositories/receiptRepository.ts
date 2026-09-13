@@ -5,7 +5,7 @@ import type {
   ReceiptRepositoryPort,
   TransactionScope,
 } from '@katahimo/core/ports';
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import { receipts } from '../schema';
 import type { Database } from '../tenantScope';
 import { withTenant } from '../tenantScope';
@@ -31,6 +31,9 @@ function toRecord(row: ReceiptRow): ReceiptRecord {
     fileKey: row.fileKey,
     contentType: row.contentType,
     billingType: row.billingType as ReceiptBillingType,
+    cancelledAt: row.cancelledAt,
+    cancellationReason: row.cancellationReason,
+    cancelledByStaffId: row.cancelledByStaffId,
     createdAt: row.createdAt,
   };
 }
@@ -83,8 +86,64 @@ export class DrizzleReceiptRepository implements ReceiptRepositoryPort {
       const rows = await tx
         .select({ dedupeKey: receipts.dedupeKey })
         .from(receipts)
-        .where(and(isNotNull(receipts.dedupeKey), inArray(receipts.dedupeKey, dedupeKeys)));
+        // 取り消し済みの行は receipts_tenant_dedupe_key_uidx の対象外なので、重複としても
+        // 数えない(取り消して登録し直す訂正を、重複扱いで弾かないため。doc/14 §10)。
+        .where(
+          and(
+            isNotNull(receipts.dedupeKey),
+            inArray(receipts.dedupeKey, dedupeKeys),
+            isNull(receipts.cancelledAt),
+          ),
+        );
       return new Set(rows.map((r) => r.dedupeKey).filter((v): v is string => v !== null));
+    });
+  }
+
+  async listByStaffInPeriod(
+    tenantId: string,
+    staffId: string,
+    from: Date,
+    to: Date,
+  ): Promise<ReceiptRecord[]> {
+    return withTenant(this.db, tenantId, async (tx) => {
+      const rows = await tx
+        .select()
+        .from(receipts)
+        .where(
+          and(
+            eq(receipts.tenantId, tenantId),
+            eq(receipts.staffId, staffId),
+            gte(receipts.receiptTimestamp, from),
+            // 上限は含めない([from, to))。月末の23:59:59.999のような端の値を
+            // 「その月に入れるか」で悩まずに済み、月を並べても重複しない。
+            lt(receipts.receiptTimestamp, to),
+          ),
+        )
+        // 並びは receipts_tenant_staff_timestamp_idx と向きを揃える(doc/14 §3)。
+        .orderBy(desc(receipts.receiptTimestamp));
+      return rows.map(toRecord);
+    });
+  }
+
+  async cancel(
+    tenantId: string,
+    receiptId: string,
+    input: { cancelledByStaffId: string; reason: string | null },
+  ): Promise<ReceiptRecord | null> {
+    return withTenant(this.db, tenantId, async (tx) => {
+      const rows = await tx
+        .update(receipts)
+        .set({
+          cancelledAt: new Date(),
+          cancelledByStaffId: input.cancelledByStaffId,
+          cancellationReason: input.reason,
+        })
+        // 既に取り消し済みの行は更新しない(取り消した人・理由・時刻を上書きしないため)。
+        // usecase側でも弾いているが、同時に2回押された場合はここだけが止められる。
+        .where(and(eq(receipts.tenantId, tenantId), eq(receipts.id, receiptId), isNull(receipts.cancelledAt)))
+        .returning();
+      const row = rows[0];
+      return row ? toRecord(row) : null;
     });
   }
 }

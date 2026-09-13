@@ -566,11 +566,16 @@ CREATE TABLE "receipts" (
 	"file_key" text NOT NULL,
 	"content_type" text NOT NULL,
 	"billing_type" text DEFAULT 'company_expense' NOT NULL,
+	"cancelled_at" timestamp with time zone,
+	"cancellation_reason" text,
+	"cancelled_by_staff_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "receipts_tenant_id_uk" UNIQUE("tenant_id","id"),
 	CONSTRAINT "receipts_amount_yen_nonneg" CHECK ("receipts"."amount_yen" IS NULL OR "receipts"."amount_yen" >= 0),
 	CONSTRAINT "receipts_billing_type_check" CHECK ("receipts"."billing_type" IN ('customer_billable', 'company_expense')),
-	CONSTRAINT "receipts_billable_requires_customer" CHECK ("receipts"."billing_type" = 'company_expense' OR "receipts"."customer_id" IS NOT NULL)
+	CONSTRAINT "receipts_billable_requires_customer" CHECK ("receipts"."billing_type" = 'company_expense' OR "receipts"."customer_id" IS NOT NULL),
+	CONSTRAINT "receipts_cancellation_pair_check" CHECK (("receipts"."cancelled_at" IS NULL AND "receipts"."cancelled_by_staff_id" IS NULL AND "receipts"."cancellation_reason" IS NULL)
+        OR ("receipts"."cancelled_at" IS NOT NULL AND "receipts"."cancelled_by_staff_id" IS NOT NULL))
 );
 --> statement-breakpoint
 ALTER TABLE "receipts" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
@@ -844,6 +849,7 @@ ALTER TABLE "password_reset_codes" ADD CONSTRAINT "password_reset_codes_tenant_s
 ALTER TABLE "receipts" ADD CONSTRAINT "receipts_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "receipts" ADD CONSTRAINT "receipts_tenant_staff_fk" FOREIGN KEY ("tenant_id","staff_id") REFERENCES "public"."staff"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "receipts" ADD CONSTRAINT "receipts_tenant_customer_fk" FOREIGN KEY ("tenant_id","customer_id") REFERENCES "public"."customers"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "receipts" ADD CONSTRAINT "receipts_tenant_cancelled_by_fk" FOREIGN KEY ("tenant_id","cancelled_by_staff_id") REFERENCES "public"."staff"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reservation_assignments" ADD CONSTRAINT "reservation_assignments_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reservation_assignments" ADD CONSTRAINT "reservation_assignments_tenant_reservation_fk" FOREIGN KEY ("tenant_id","reservation_id") REFERENCES "public"."reservations"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reservation_assignments" ADD CONSTRAINT "reservation_assignments_tenant_staff_fk" FOREIGN KEY ("tenant_id","staff_id") REFERENCES "public"."staff"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -898,7 +904,8 @@ CREATE INDEX "trait_definitions_tenant_subject_idx" ON "trait_definitions" USING
 CREATE UNIQUE INDEX "outbox_jobs_tenant_idempotency_key_idx" ON "outbox_jobs" USING btree ("tenant_id","idempotency_key");--> statement-breakpoint
 CREATE INDEX "outbox_jobs_tenant_status_next_attempt_idx" ON "outbox_jobs" USING btree ("tenant_id","status","next_attempt_at","created_at");--> statement-breakpoint
 CREATE INDEX "password_reset_codes_staff_idx" ON "password_reset_codes" USING btree ("tenant_id","staff_id","created_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "receipts_tenant_dedupe_key_uidx" ON "receipts" USING btree ("tenant_id","dedupe_key") WHERE "receipts"."dedupe_key" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "receipts_tenant_dedupe_key_uidx" ON "receipts" USING btree ("tenant_id","dedupe_key") WHERE "receipts"."dedupe_key" IS NOT NULL AND "receipts"."cancelled_at" IS NULL;--> statement-breakpoint
+CREATE INDEX "receipts_tenant_staff_timestamp_idx" ON "receipts" USING btree ("tenant_id","staff_id","receipt_timestamp" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "receipts_tenant_customer_timestamp_idx" ON "receipts" USING btree ("tenant_id","customer_id","receipt_timestamp" DESC NULLS LAST);--> statement-breakpoint
 CREATE UNIQUE INDEX "reservation_assignments_primary_uidx" ON "reservation_assignments" USING btree ("tenant_id","reservation_id") WHERE "reservation_assignments"."role" = 'primary' AND "reservation_assignments"."unassigned_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "reservation_assignments_tenant_staff_idx" ON "reservation_assignments" USING btree ("tenant_id","staff_id");--> statement-breakpoint

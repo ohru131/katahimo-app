@@ -69,6 +69,29 @@ export function formatJstTimeOnly(date: Date): string {
 }
 
 /**
+ * 'YYYY-MM'(JST)の月を、絶対時刻の半開区間 [from, to) に変換する。
+ *
+ * 上限を含めないのは、月末の23:59:59.999のような端の値を「その月に入れるか」で悩まずに済み、
+ * 月を並べたときに重複も隙間も出ないため。JSTは夏時間が無く常にUTC+9なので、
+ * 壁時計の月初からオフセットを引くだけで境界が決まる。
+ *
+ * 形式が想定外の場合はnullを返す(呼び出し側が400で弾く)。
+ */
+export function jstMonthRange(yearMonth: string): { from: Date; to: Date } | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(yearMonth.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return null;
+  const offsetMs = JST_OFFSET_MINUTES * 60_000;
+  return {
+    from: new Date(Date.UTC(year, month - 1, 1) - offsetMs),
+    // Date.UTCは月が12を超えると翌年に繰り上がるため、12月でも分岐は要らない。
+    to: new Date(Date.UTC(year, month, 1) - offsetMs),
+  };
+}
+
+/**
  * 'yyyy/MM/dd HH:mm[:ss]' 形式(JST壁時計時刻)の文字列をDateに変換する。
  * 領収書日時(OCR抽出値・保存時刻フォールバック)のパース専用。形式が想定外の場合は
  * 現在時刻にフォールバックする(領収書登録そのものを失敗させないため)。

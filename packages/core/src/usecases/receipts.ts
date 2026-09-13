@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import {
+  addBusinessDays,
   buildReceiptDedupeKey,
   buildReceiptNotificationText,
   canCheckReceiptDuplicate,
   computeReceiptAmount,
+  formatJstDateKey,
+  formatJstDateTime,
+  jstMonthRange,
   normalizeAmount,
   normalizeText,
   parseJstTimestampString,
@@ -259,4 +263,234 @@ export async function uploadReceipts(
   }
 
   return { success: true, message, uploadedCount, duplicateCount: duplicates.length, duplicates };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 登録済み領収書の一覧と取り消し(doc/14 §10)
+//
+// 領収書は登録するだけで見返す画面が無く、金額の読み違い・顧客の紐付け間違いに気付いても
+// 直す手段が無かった。
+//
+// 【編集ではなく取り消しにする理由】
+// 領収書は会計の記録なので、金額や紐付け先を後から書き換えられる形にしない
+// (いつ誰がいくらに変えたのかが残らない)。訂正は「取り消して登録し直す」の一択にし、
+// 取り消した行も一覧にグレーで残す。スタッフから見た使い勝手は「消せる」のと変わらないが、
+// 消えた履歴が残らない状態にはならない。
+// ──────────────────────────────────────────────────────────────────────────
+
+/** 領収書一覧の1件。顧客名は表示用にcustomersから引き直す(領収書側には複製しない)。 */
+export interface ReceiptListItemView {
+  id: string;
+  /** 'yyyy/MM/dd HH:mm'(JST)。 */
+  receiptTimestamp: string;
+  /** 金額(円)。OCRが数値化できなかった場合はnull(amountRawを見せる)。 */
+  amountYen: number | null;
+  /** OCRが返した金額の生文字列。金額の欄が空のときに何が読めていたのかを示す。 */
+  amountRaw: string | null;
+  storeName: string | null;
+  handoffText: string | null;
+  customerId: string | null;
+  /** 顧客名。顧客に紐付かない経費領収書(駐車場代等)はnull。 */
+  customerName: string | null;
+  billingType: ReceiptBillingType;
+  /** 取り消し済みなら'yyyy/MM/dd HH:mm'(JST)。有効な行はnull。 */
+  cancelledAt: string | null;
+  /** 取り消しの理由(任意入力)。 */
+  cancellationReason: string | null;
+  /** 取り消した人の氏名。 */
+  cancelledByStaffName: string | null;
+  /**
+   * いま取り消せるか。取り消せるのは有効な行のうち、領収書の日付+2営業日までの分
+   * (canCancelReceiptOn)。画面はこれがfalseなら取消ボタンを出さない。
+   */
+  canCancel: boolean;
+}
+
+export interface ReceiptListView {
+  /** 'YYYY-MM'。 */
+  yearMonth: string;
+  receipts: ReceiptListItemView[];
+  /** 顧客に請求する分の合計(円)。取り消し済みとamountYenがnullの行は数えない。 */
+  customerBillableTotalYen: number;
+  /** 会社が立て替える分の合計(円)。同上。 */
+  companyExpenseTotalYen: number;
+  /**
+   * 金額を数値にできていない領収書の件数(取り消し済みを除く)。合計は「読めた分だけ」の
+   * 値なので、何件が合計から漏れているかを画面に出せるようにする。
+   */
+  unreadableAmountCount: number;
+  /** 取り消し済みの件数。一覧には残るが集計には入らないことを画面で示すために返す。 */
+  cancelledCount: number;
+}
+
+/**
+ * その領収書を`today`('YYYY-MM-DD'・JST)の時点で取り消せるか(doc/14 §10)。
+ *
+ * 期限は「領収書の日付 + 2営業日」の終わりまで。締めたあとの月の記録が動くと会計が合わなく
+ * なるため、時間が経ったものは取り消せない。判定の基準日は receipt_timestamp の日付にしている
+ * (領収書には訪問日そのものを持っていない。OCRが読んだ領収書の日付、読めなければ登録時刻)。
+ */
+export function canCancelReceiptOn(receiptDateStr: string, today: string): boolean {
+  return today <= addBusinessDays(receiptDateStr, CANCELLABLE_BUSINESS_DAYS);
+}
+
+/** 取り消せる期間(営業日)。 */
+const CANCELLABLE_BUSINESS_DAYS = 2;
+
+/**
+ * 指定スタッフが登録した領収書を月単位で返す(勤怠タブの領収書一覧)。
+ *
+ * 取り消し済みの行も返す(一覧にグレーで残す仕様のため)。ただし合計には入れない。
+ * 氏名はN+1にならないよう、一覧に出てくる顧客ID・スタッフIDの重複を畳んでから引く。
+ */
+export async function listReceiptsForStaff(
+  deps: ReceiptDeps,
+  tenantId: string,
+  staffId: string,
+  yearMonth: string,
+  today: Date = new Date(),
+): Promise<ReceiptListView | null> {
+  const range = jstMonthRange(yearMonth);
+  if (!range) return null;
+
+  const records = await deps.receipts.listByStaffInPeriod(tenantId, staffId, range.from, range.to);
+
+  const customerIds = Array.from(
+    new Set(records.map((r) => r.customerId).filter((id): id is string => id !== null)),
+  );
+  const customerNameById = new Map<string, string>();
+  await Promise.all(
+    customerIds.map(async (customerId) => {
+      const customer = await deps.customers.findById(tenantId, customerId);
+      if (customer) customerNameById.set(customerId, customer.name);
+    }),
+  );
+
+  const cancelledByIds = Array.from(
+    new Set(records.map((r) => r.cancelledByStaffId).filter((id): id is string => id !== null)),
+  );
+  const staffNameById = new Map<string, string>();
+  await Promise.all(
+    cancelledByIds.map(async (id) => {
+      const record = await deps.staff.findById(tenantId, id);
+      if (record) staffNameById.set(id, record.name);
+    }),
+  );
+
+  const todayKey = formatJstDateKey(today);
+  let customerBillableTotalYen = 0;
+  let companyExpenseTotalYen = 0;
+  let unreadableAmountCount = 0;
+  let cancelledCount = 0;
+  for (const record of records) {
+    // 取り消し済みは集計から外す(「データ出力時は取消済みを除外する」と同じ扱い)。
+    if (record.cancelledAt !== null) {
+      cancelledCount += 1;
+      continue;
+    }
+    if (record.amountYen === null) {
+      unreadableAmountCount += 1;
+      continue;
+    }
+    if (record.billingType === 'customer_billable') customerBillableTotalYen += record.amountYen;
+    else companyExpenseTotalYen += record.amountYen;
+  }
+
+  return {
+    yearMonth,
+    receipts: records.map((record) => ({
+      id: record.id,
+      receiptTimestamp: formatJstDateTime(record.receiptTimestamp),
+      amountYen: record.amountYen,
+      amountRaw: record.amountRaw,
+      storeName: record.storeName,
+      handoffText: record.handoffText,
+      customerId: record.customerId,
+      customerName: record.customerId ? (customerNameById.get(record.customerId) ?? null) : null,
+      billingType: record.billingType,
+      cancelledAt: record.cancelledAt ? formatJstDateTime(record.cancelledAt) : null,
+      cancellationReason: record.cancellationReason,
+      cancelledByStaffName: record.cancelledByStaffId
+        ? (staffNameById.get(record.cancelledByStaffId) ?? null)
+        : null,
+      canCancel:
+        record.cancelledAt === null &&
+        canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey),
+    })),
+    customerBillableTotalYen,
+    companyExpenseTotalYen,
+    unreadableAmountCount,
+    cancelledCount,
+  };
+}
+
+export type CancelReceiptResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' | 'forbidden' | 'already_cancelled' | 'deadline_passed' };
+
+/**
+ * 領収書を取り消す(論理削除。doc/14 §10)。行は消さず cancelled_at を立てるだけ。
+ *
+ * 【他人の領収書を取り消せないようにする場所】
+ * RLSはテナントまでしか絞らないため、同じテナントの別スタッフの領収書IDを指定すれば
+ * 届いてしまう。requesterStaffIdと突き合わせてここで弾く(管理者は対象スタッフを
+ * 切り替えて扱えるよう、呼び出し側=APIルートがallowOtherStaffを立てる)。
+ *
+ * 【期限をサーバー側でも見る理由】
+ * 画面は期限切れの行に取消ボタンを出さないが、APIを直接叩けば通ってしまう。締めた月の
+ * 会計が動く操作なので、画面の出し分けだけに頼らない。
+ */
+export async function cancelReceipt(
+  deps: ReceiptDeps,
+  tenantId: string,
+  receiptId: string,
+  options: {
+    requesterStaffId: string;
+    allowOtherStaff: boolean;
+    /** 任意の1行。未入力はnull。 */
+    reason: string | null;
+    today?: Date;
+  },
+): Promise<CancelReceiptResult> {
+  const record = await deps.receipts.findById(tenantId, receiptId);
+  if (!record) return { ok: false, reason: 'not_found' };
+  if (!options.allowOtherStaff && record.staffId !== options.requesterStaffId) {
+    return { ok: false, reason: 'forbidden' };
+  }
+  // 二重取り消しは、取り消した人・理由・時刻を上書きしてしまうので弾く。
+  if (record.cancelledAt !== null) return { ok: false, reason: 'already_cancelled' };
+
+  const todayKey = formatJstDateKey(options.today ?? new Date());
+  if (!canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey)) {
+    return { ok: false, reason: 'deadline_passed' };
+  }
+
+  const cancelled = await deps.receipts.cancel(tenantId, receiptId, {
+    cancelledByStaffId: options.requesterStaffId,
+    reason: options.reason?.trim() ? options.reason.trim() : null,
+  });
+  if (!cancelled) return { ok: false, reason: 'not_found' };
+  return { ok: true };
+}
+
+/**
+ * 領収書画像の実体を返す(一覧から現物を確認するため)。
+ *
+ * 金額・店舗名はOCRが読めないことがあり、その場合は行に何も出ない。どの領収書を取り消して
+ * いるのかを確かめる手段が無いと取り消しの判断ができないため、画像を出せるようにする。
+ * 閲覧可否の判定はcancelReceiptと同じ規則にする。
+ */
+export async function getReceiptImage(
+  deps: ReceiptDeps,
+  tenantId: string,
+  receiptId: string,
+  options: { requesterStaffId: string; allowOtherStaff: boolean },
+): Promise<{ body: Uint8Array; contentType: string } | null> {
+  const record = await deps.receipts.findById(tenantId, receiptId);
+  if (!record) return null;
+  if (!options.allowOtherStaff && record.staffId !== options.requesterStaffId) return null;
+
+  const body = await deps.storage.get(record.fileKey);
+  if (!body) return null;
+  return { body, contentType: record.contentType };
 }

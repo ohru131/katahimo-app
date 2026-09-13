@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -831,6 +832,64 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
           [fixture.tenantId, fixture.dailyReportId, fixture.customerId, coupon.id],
         ),
         'coupon_redemptions_report_coupon_uidx',
+      );
+    });
+  });
+  describe('receipts の取り消し(doc/14 §10)', () => {
+    /** 有効な領収書を1件作る。 */
+    async function createReceipt(dedupeKey: string | null): Promise<string> {
+      const {
+        rows: [row],
+      } = await fixture.client.query<{ id: string }>(
+        `INSERT INTO receipts (tenant_id, staff_id, customer_id, receipt_timestamp, dedupe_key,
+                               amount_yen, store_name, file_key, content_type)
+         VALUES ($1, $2, $3, now(), $4, 1200, 'コンビニ', $5, 'image/jpeg') RETURNING id;`,
+        [fixture.tenantId, fixture.staffId, fixture.customerId, dedupeKey, `key-${randomUUID()}`],
+      );
+      if (!row) throw new Error('領収書の準備に失敗しました');
+      return row.id;
+    }
+
+    it('取り消した行は dedupe の一意索引の対象外になる(取消→登録し直しができる)', async () => {
+      const dedupeKey = `dedupe-${randomUUID()}`;
+      const receiptId = await createReceipt(dedupeKey);
+
+      // 同じ dedupe_key の2枚目は、1枚目が有効なうちは弾かれる。
+      await expectRejectedByConstraint(createReceipt(dedupeKey), 'receipts_tenant_dedupe_key_uidx');
+
+      // 1枚目を取り消すと、同じ内容をもう一度登録できる(顧客の紐付けだけを直す場合、
+      // 金額も店舗名も日時も同じものを登録し直すことになるため)。
+      await fixture.client.query(
+        'UPDATE receipts SET cancelled_at = now(), cancelled_by_staff_id = $2 WHERE id = $1;',
+        [receiptId, fixture.staffId],
+      );
+      await expect(createReceipt(dedupeKey)).resolves.toBeDefined();
+    });
+
+    it('取り消し済みなのに取り消した人が無い行は作れない', async () => {
+      const receiptId = await createReceipt(null);
+      await expectRejectedByConstraint(
+        fixture.client.query('UPDATE receipts SET cancelled_at = now() WHERE id = $1;', [receiptId]),
+        'receipts_cancellation_pair_check',
+      );
+    });
+
+    it('取り消していないのに取消理由だけが入っている行は作れない', async () => {
+      const receiptId = await createReceipt(null);
+      await expectRejectedByConstraint(
+        fixture.client.query("UPDATE receipts SET cancellation_reason = '理由' WHERE id = $1;", [receiptId]),
+        'receipts_cancellation_pair_check',
+      );
+    });
+
+    it('取り消した人は同じテナントのスタッフでなければならない', async () => {
+      const receiptId = await createReceipt(null);
+      await expectRejectedByConstraint(
+        fixture.client.query(
+          'UPDATE receipts SET cancelled_at = now(), cancelled_by_staff_id = $2 WHERE id = $1;',
+          [receiptId, randomUUID()],
+        ),
+        'receipts_tenant_cancelled_by_fk',
       );
     });
   });

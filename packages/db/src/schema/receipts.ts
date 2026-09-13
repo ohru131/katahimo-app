@@ -78,6 +78,23 @@ export const receipts = pgTable(
      */
     billingType: text().notNull().default('company_expense'),
 
+    /**
+     * 取り消した時刻。nullなら有効(doc/14 §10)。
+     *
+     * 【物理削除にしない理由】
+     * 領収書は会計の記録なので、「あったはずのものが痕跡なく消える」状態を作らない。
+     * 取り消しても行は残し、一覧にはグレーで出す。集計・出力の対象から外すのはアプリ側の責任。
+     *
+     * 【編集ではなく取り消しにする理由】
+     * 金額や紐付け先を後から書き換えられると、いつ誰がいくらに変えたのかが残らない。
+     * 間違えたときは取り消して登録し直す(取り消した行と新しい行の両方が残る)。
+     */
+    cancelledAt: timestamp({ withTimezone: true }),
+    /** 取り消しの理由(任意の1行)。取り消していない行はnull。 */
+    cancellationReason: text(),
+    /** 取り消した人。誰が取り消したかは会計の記録として残す必要がある。 */
+    cancelledByStaffId: uuid(),
+
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -101,6 +118,13 @@ export const receipts = pgTable(
       columns: [t.tenantId, t.customerId],
       foreignColumns: [customers.tenantId, customers.id],
     }),
+    // 取り消した人も同じテナントのスタッフであることをDBで縛る。cancelledByStaffIdがnullの行は
+    // MATCH SIMPLE(既定)によりFK制約の対象外になる(取り消していない行を許容する)。
+    foreignKey({
+      name: 'receipts_tenant_cancelled_by_fk',
+      columns: [t.tenantId, t.cancelledByStaffId],
+      foreignColumns: [staff.tenantId, staff.id],
+    }),
     // invoice_lines.receipt_id からの複合外部キー(tenant_id, receipt_id)の参照先。
     // customers.ts の customers_tenant_id_uk と同じ理由(RLSはFK制約をバイパスするため)。
     unique('receipts_tenant_id_uk').on(t.tenantId, t.id),
@@ -108,9 +132,27 @@ export const receipts = pgTable(
     // 同時に同じ領収書が2リクエストで登録された場合にfindExistingDedupeKeysをすり抜けても
     // DB側で止めるため、dedupeKeyがある行に限定した一意インデックスにしている
     // (null同士は重複とみなさない=金額/店舗名が空でdedupeKeyがnullの行は複数許容)。
+    //
+    // 取り消した行を対象から外すのは、「取り消して登録し直す」が唯一の訂正手段だから
+    // (doc/14 §10)。顧客の紐付けだけを直したい場合、金額も店舗名も日時も同じ領収書を
+    // もう一度登録することになり、dedupe_keyが完全に一致する。取り消した行を残したまま
+    // この索引の対象にしていると、訂正のたびに23505で弾かれて登録し直せない
+    // (invoice_lines の superseded_at 付き部分索引と同じ理由)。
     uniqueIndex('receipts_tenant_dedupe_key_uidx')
       .on(t.tenantId, t.dedupeKey)
-      .where(sql`${t.dedupeKey} IS NOT NULL`),
+      .where(sql`${t.dedupeKey} IS NOT NULL AND ${t.cancelledAt} IS NULL`),
+    // 勤怠タブの領収書一覧(そのスタッフが登録した分を月で絞り、新しい順)を索引だけで返すため
+    // (doc/14 §3)。登録画面からしか入れられなかった請求区分を後から直せるようにした画面が
+    // 毎回引く経路なので、索引が無いとテナントの全領収書のスキャンになる。
+    index('receipts_tenant_staff_timestamp_idx').on(t.tenantId, t.staffId, t.receiptTimestamp.desc()),
+    // 取り消しの3列は揃って埋まるか、揃って空かのどちらかにする。理由は任意なので縛らないが、
+    // 「取り消し済みなのに誰が取り消したか分からない」行は会計の記録として使えない。
+    // IS NULL / IS NOT NULL しか使っていないのでこの式がNULLに評価されることはない(doc/14 §8.3)。
+    check(
+      'receipts_cancellation_pair_check',
+      sql`(${t.cancelledAt} IS NULL AND ${t.cancelledByStaffId} IS NULL AND ${t.cancellationReason} IS NULL)
+        OR (${t.cancelledAt} IS NOT NULL AND ${t.cancelledByStaffId} IS NOT NULL)`,
+    ),
     // 顧客の領収書一覧を新しい順に返すクエリを索引だけで返すため(doc/14 §3)。
     // customerIdはnull許容だが、それでも(tenant_id, customer_id, ...)の複合索引として作る
     // (customerIdがnullの行はこの索引の対象外になるだけで、絞り込み自体は害にならない)。

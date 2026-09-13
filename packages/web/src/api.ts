@@ -852,6 +852,85 @@ export async function uploadReceipts(input: UploadReceiptsInput): Promise<Upload
   return parseJsonOrThrow<UploadReceiptsResult>(res);
 }
 
+/** 勤怠タブの領収書一覧の1件(GET /api/receipts)。core ReceiptListItemViewと同じ形。 */
+export interface ReceiptListItemView {
+  id: string;
+  /** 'yyyy/MM/dd HH:mm'(JST)。 */
+  receiptTimestamp: string;
+  amountYen: number | null;
+  /** OCRが返した金額の生文字列。amountYenがnullのときに何が読めていたのかを示す。 */
+  amountRaw: string | null;
+  storeName: string | null;
+  handoffText: string | null;
+  customerId: string | null;
+  /** 顧客に紐付かない経費領収書(駐車場代等)はnull。 */
+  customerName: string | null;
+  billingType: ReceiptBillingType;
+  /** 取り消し済みなら'yyyy/MM/dd HH:mm'(JST)。有効な行はnull。 */
+  cancelledAt: string | null;
+  cancellationReason: string | null;
+  cancelledByStaffName: string | null;
+  /** いま取り消せるか(領収書の日付+2営業日まで)。falseなら取消ボタンを出さない。 */
+  canCancel: boolean;
+}
+
+export interface ReceiptListView {
+  yearMonth: string;
+  receipts: ReceiptListItemView[];
+  customerBillableTotalYen: number;
+  companyExpenseTotalYen: number;
+  /** 金額を数値にできていない領収書の件数(合計に入っていない分)。 */
+  unreadableAmountCount: number;
+  /** 取り消し済みの件数(一覧には残るが集計には入らない)。 */
+  cancelledCount: number;
+}
+
+/**
+ * 登録済みの領収書を月単位で取得する。`staffId`は管理者だけが指定でき、それ以外は
+ * サーバー側で本人のstaffIdに強制される。
+ */
+export async function fetchReceipts(yearMonth: string, staffId?: string): Promise<ReceiptListView> {
+  const params = new URLSearchParams({ yearMonth });
+  if (staffId) params.set('staffId', staffId);
+  const res = await fetch(`/api/receipts?${params.toString()}`, { credentials: 'include' });
+  return parseJsonOrThrow<ReceiptListView>(res);
+}
+
+/**
+ * 領収書を取り消す(論理削除。doc/14 §10)。
+ * 会計の記録なので編集はできない。訂正は「取り消して登録し直す」。
+ */
+export async function cancelReceipt(receiptId: string, reason: string): Promise<void> {
+  const res = await fetch(`/api/receipts/${encodeURIComponent(receiptId)}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ reason }),
+  });
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || '領収書の取り消しに失敗しました');
+}
+
+/**
+ * 領収書画像を取得し、`<img src>` に渡せるオブジェクトURLを返す。
+ *
+ * 【URLを組み立てて <img src> に直接渡さない理由】
+ * 公開デモはAPIサーバーを持たず、ページ内で `window.fetch` を横取りしてブラウザ内の
+ * PGliteに繋いでいる(packages/demo/src/demoApi.ts)。`<img src>` の読み込みはfetchを
+ * 通らないので、デモでは実在しないパスへの本物のリクエストになり必ず失敗する。
+ * fetchで取ってからオブジェクトURLにすれば、本番でもデモでも同じコードで動く。
+ *
+ * 画像の実体を一覧のJSONに載せない(base64にするとレスポンスが重くなる)のは変わらない。
+ * 返したURLは使い終わったら `URL.revokeObjectURL` で解放すること。
+ */
+export async function fetchReceiptImageObjectUrl(receiptId: string): Promise<string> {
+  const res = await fetch(`/api/receipts/${encodeURIComponent(receiptId)}/image`, {
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error('領収書画像を取得できませんでした');
+  return URL.createObjectURL(await res.blob());
+}
+
 export interface ReceiptOcrResult {
   amount: string | number;
   storeName: string;

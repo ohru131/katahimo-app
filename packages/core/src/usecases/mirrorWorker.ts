@@ -121,6 +121,9 @@ export async function processOutboxJob(
     case 'receipt': {
       const record = await deps.receipts.findById(tenantId, job.targetId);
       if (!record) return;
+      // 取り消された領収書は外部へ出さない(doc/14 §10の「データ出力時は取消済みを除外する」)。
+      // 登録直後に取り消された場合、outboxのジョブだけが残ることがあるため、送る直前に見る。
+      if (record.cancelledAt !== null) return;
       const [staffRecord, customerRecord, imageBytes] = await Promise.all([
         deps.staff.findById(tenantId, record.staffId),
         record.customerId ? deps.customers.findById(tenantId, record.customerId) : Promise.resolve(null),

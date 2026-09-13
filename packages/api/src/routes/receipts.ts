@@ -1,4 +1,10 @@
-import { extractReceiptAmount, uploadReceipts } from '@katahimo/core';
+import {
+  cancelReceipt,
+  extractReceiptAmount,
+  getReceiptImage,
+  listReceiptsForStaff,
+  uploadReceipts,
+} from '@katahimo/core';
 import { formatJstDateTime } from '@katahimo/core/domain';
 import { RECEIPT_BILLING_TYPES, type ReceiptBillingType } from '@katahimo/core/ports';
 import { Hono } from 'hono';
@@ -14,8 +20,102 @@ function isReceiptBillingType(value: unknown): value is ReceiptBillingType {
   return (RECEIPT_BILLING_TYPES as readonly unknown[]).includes(value);
 }
 
+/** 取消理由(任意の1行)の上限。 */
+const MAX_CANCELLATION_REASON_LENGTH = 200;
+
 export function createReceiptRoutes(container: Container) {
   const app = new Hono();
+
+  /**
+   * 勤怠タブの領収書一覧。指定スタッフが登録した領収書を月単位(`yearMonth`='YYYY-MM')で返す。
+   *
+   * 管理者だけが `staffId` で他スタッフ分に切り替えられる(resolveReportTargetStaffIdが
+   * 管理者以外の指定を常に無視して本人のstaffIdに強制する)。
+   */
+  app.get('/', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    const yearMonth = c.req.query('yearMonth') ?? '';
+    const staffId = resolveReportTargetStaffId(session, c.req.query('staffId'));
+
+    const result = await listReceiptsForStaff(container, session.tenantId, staffId, yearMonth);
+    // jstMonthRangeが解釈できない形式のときだけnullになる。
+    if (!result) {
+      return c.json({ code: 'validation_failed', message: 'yearMonth はYYYY-MM形式で指定してください' }, 400);
+    }
+    return c.json(result);
+  });
+
+  /**
+   * 領収書を取り消す(論理削除。doc/14 §10)。
+   *
+   * 会計の記録なので編集は用意していない。訂正は「取り消して登録し直す」の一択で、
+   * 取り消した行も一覧に残る。期限(領収書の日付+2営業日)はここでも見る
+   * (画面はボタンを出さないが、APIを直接叩けば通ってしまうため)。
+   */
+  app.post('/:id/cancel', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    const body = await c.req.json().catch(() => null);
+    const rawReason = (body as Record<string, unknown> | null)?.reason;
+    if (rawReason !== undefined && rawReason !== null && typeof rawReason !== 'string') {
+      return c.json({ success: false, message: '取消理由は文字列で指定してください' }, 400);
+    }
+    // 1行の自由記述。長文を貼られても壊れないよう上限だけ決めておく。
+    if (typeof rawReason === 'string' && rawReason.length > MAX_CANCELLATION_REASON_LENGTH) {
+      return c.json(
+        {
+          success: false,
+          message: `取消理由は${MAX_CANCELLATION_REASON_LENGTH}文字以内で入力してください`,
+        },
+        400,
+      );
+    }
+
+    const result = await cancelReceipt(container, session.tenantId, c.req.param('id'), {
+      requesterStaffId: session.staffId,
+      allowOtherStaff: session.isAdmin,
+      reason: typeof rawReason === 'string' ? rawReason : null,
+    });
+    if (!result.ok) {
+      // 他スタッフの領収書は「見つからない」と同じ404にする。同じテナントにそのIDが
+      // 存在するかどうか自体を、権限のない相手に伝えないため。
+      if (result.reason === 'not_found' || result.reason === 'forbidden') {
+        return c.json({ success: false, message: '領収書が見つかりません' }, 404);
+      }
+      const message =
+        result.reason === 'already_cancelled'
+          ? 'この領収書は既に取り消されています'
+          : '取り消せる期間(領収書の日付+2営業日)を過ぎています';
+      return c.json({ success: false, message }, 400);
+    }
+    return c.json({ success: true });
+  });
+
+  /**
+   * 領収書画像の実体。一覧から現物を確認するために使う(OCRが金額・店舗名を読めなかった
+   * 領収書は、画像を見ないとどれなのか分からないため)。
+   *
+   * 画像URLを推測されても他人の領収書が見えないよう、閲覧可否はPATCHと同じ規則で判定する。
+   */
+  app.get('/:id/image', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    const image = await getReceiptImage(container, session.tenantId, c.req.param('id'), {
+      requesterStaffId: session.staffId,
+      allowOtherStaff: session.isAdmin,
+    });
+    if (!image) return c.json({ code: 'not_found', message: '領収書が見つかりません' }, 404);
+
+    return c.body(image.body as unknown as ArrayBuffer, 200, {
+      'Content-Type': image.contentType,
+      // 領収書は個人情報を含むため、共有キャッシュには載せない。
+      'Cache-Control': 'private, max-age=300',
+    });
+  });
 
   /** 領収書画像1枚から金額・店舗名・日時をOCR抽出する。GAS版extractAmountFromImage相当。 */
   app.post('/ocr', async (c) => {

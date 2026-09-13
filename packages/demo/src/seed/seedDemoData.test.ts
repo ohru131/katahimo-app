@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
-import { listCouponsForSelection } from '@katahimo/core';
+import { listCouponsForSelection, listReceiptsForStaff } from '@katahimo/core';
 import * as schema from '@katahimo/db/schema';
 import { serializeTransactions } from '@katahimo/db/serialize-transactions';
 import type { Database } from '@katahimo/db/tenant-scope';
@@ -44,6 +44,24 @@ describe('seedDemoData(公開デモの初期データ投入)', () => {
     );
     const customerIdByName = new Map<string, string>();
     const container = createDemoContainer({ db, customerIdByName, addressLatLng: new Map() });
+    // BrowserStoragePortはIndexedDB前提で、Nodeには存在しない(ブラウザでは本物が動く)。
+    // シードが最後まで流れるかを見るのがこのテストの目的なので、ここだけメモリに差し替える。
+    const files = new Map<string, Uint8Array>();
+    container.storage = {
+      async put(key, contentType, body) {
+        files.set(key, body);
+        return { key, contentType, byteSize: body.byteLength };
+      },
+      async get(key) {
+        return files.get(key) ?? null;
+      },
+      async delete(key) {
+        files.delete(key);
+      },
+      async signedUrl(key) {
+        return `memory://${key}`;
+      },
+    };
 
     const seeded = await seedDemoData(container, () => {});
     expect(seeded.customerIdByName.size).toBeGreaterThan(0);
@@ -56,6 +74,11 @@ describe('seedDemoData(公開デモの初期データ投入)', () => {
     if (!tenantId) throw new Error('デモテナントが作られていません');
 
     const today = new Date().toISOString().slice(0, 10);
+    const staffRows = await client.query<{ id: string }>(
+      "SELECT id FROM staff WHERE email = 'admin@demo.example.com' LIMIT 1;",
+    );
+    const adminStaffId = staffRows.rows[0]?.id;
+    if (!adminStaffId) throw new Error('デモ管理者が作られていません');
     const selectable = await listCouponsForSelection(container, tenantId, {
       customerId: firstCustomerId,
       onDate: today,
@@ -65,5 +88,13 @@ describe('seedDemoData(公開デモの初期データ投入)', () => {
 
     // 配布型クーポン(THANKS1000)は配った1世帯目にだけ出る。
     expect(selectable.some((c) => c.code === 'THANKS1000')).toBe(true);
+
+    // 勤怠タブの「🧾 領収書」が空にならないよう、今月ぶんの領収書が入っていること。
+    // 金額を読み取れなかった1枚は合計に入らず、枚数として出る(doc/14 §10)。
+    const receipts = await listReceiptsForStaff(container, tenantId, adminStaffId, today.slice(0, 7));
+    expect(receipts?.receipts).toHaveLength(4);
+    expect(receipts?.customerBillableTotalYen).toBe(3730);
+    expect(receipts?.companyExpenseTotalYen).toBe(600);
+    expect(receipts?.unreadableAmountCount).toBe(1);
   }, 120_000);
 });

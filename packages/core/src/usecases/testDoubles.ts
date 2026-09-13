@@ -717,8 +717,13 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
    */
   async create(input: NewReceiptInput): Promise<ReceiptRecord> {
     if (input.dedupeKey !== null) {
+      // 取り消し済みの行は receipts_tenant_dedupe_key_uidx の対象外(doc/14 §10)。
+      // 取り消して登録し直す訂正が、重複判定に引っかからないようにするため。
       const conflict = this.rows.some(
-        (r) => r.record.tenantId === input.tenantId && r.dedupeKey === input.dedupeKey,
+        (r) =>
+          r.record.tenantId === input.tenantId &&
+          r.dedupeKey === input.dedupeKey &&
+          r.record.cancelledAt === null,
       );
       if (conflict) {
         throw Object.assign(
@@ -740,6 +745,9 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
       fileKey: input.fileKey,
       contentType: input.contentType,
       billingType: input.billingType,
+      cancelledAt: null,
+      cancellationReason: null,
+      cancelledByStaffId: null,
       createdAt: new Date(),
     };
     this.rows.push({ record, dedupeKey: input.dedupeKey });
@@ -755,9 +763,51 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
     const keys = new Set(dedupeKeys);
     return new Set(
       this.rows
-        .filter((r) => r.record.tenantId === tenantId && r.dedupeKey && keys.has(r.dedupeKey))
+        .filter(
+          (r) =>
+            r.record.tenantId === tenantId &&
+            r.dedupeKey &&
+            keys.has(r.dedupeKey) &&
+            r.record.cancelledAt === null,
+        )
         .map((r) => r.dedupeKey as string),
     );
+  }
+
+  async listByStaffInPeriod(
+    tenantId: string,
+    staffId: string,
+    from: Date,
+    to: Date,
+  ): Promise<ReceiptRecord[]> {
+    return this.rows
+      .map((r) => r.record)
+      .filter(
+        (r) =>
+          r.tenantId === tenantId &&
+          r.staffId === staffId &&
+          // DrizzleReceiptRepositoryと同じ半開区間 [from, to)。
+          r.receiptTimestamp.getTime() >= from.getTime() &&
+          r.receiptTimestamp.getTime() < to.getTime(),
+      )
+      .sort((a, b) => b.receiptTimestamp.getTime() - a.receiptTimestamp.getTime())
+      .map((r) => ({ ...r }));
+  }
+
+  async cancel(
+    tenantId: string,
+    receiptId: string,
+    input: { cancelledByStaffId: string; reason: string | null },
+  ): Promise<ReceiptRecord | null> {
+    const row = this.rows.find(
+      // DrizzleReceiptRepositoryと同じく、既に取り消し済みの行は更新しない。
+      (r) => r.record.tenantId === tenantId && r.record.id === receiptId && r.record.cancelledAt === null,
+    );
+    if (!row) return null;
+    row.record.cancelledAt = new Date();
+    row.record.cancelledByStaffId = input.cancelledByStaffId;
+    row.record.cancellationReason = input.reason;
+    return { ...row.record };
   }
 
   /** 登録順の全件を返す(billingType/amountYen等、createに渡した値の検証に使う)。 */

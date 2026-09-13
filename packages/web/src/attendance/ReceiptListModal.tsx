@@ -1,0 +1,318 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import type { ReceiptListItemView } from '../api';
+import { cancelReceipt, fetchReceiptImageObjectUrl, fetchReceipts } from '../api';
+
+/**
+ * 領収書画像。開いたときにfetchで取り、オブジェクトURLにして表示する
+ * (`<img src="/api/...">` にできない理由は fetchReceiptImageObjectUrl のコメント参照)。
+ */
+function ReceiptImage({ receiptId, alt }: { receiptId: string; alt: string }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let revoked = false;
+    let url: string | null = null;
+    fetchReceiptImageObjectUrl(receiptId)
+      .then((created) => {
+        // 取得中に閉じられていたら、作ったURLをそのまま捨てる(解放漏れを作らない)。
+        if (revoked) {
+          URL.revokeObjectURL(created);
+          return;
+        }
+        url = created;
+        setObjectUrl(created);
+      })
+      .catch(() => setFailed(true));
+    return () => {
+      revoked = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [receiptId]);
+
+  if (failed) return <p className="text-xs text-red-500 mt-2">画像を読み込めませんでした</p>;
+  if (!objectUrl) {
+    return (
+      <div className="flex justify-center py-4">
+        <div className="w-5 h-5 rounded-full border-4 border-gray-200 loading-spinner" />
+      </div>
+    );
+  }
+  return <img src={objectUrl} alt={alt} className="mt-2 w-full rounded-lg border border-gray-200" />;
+}
+
+function currentYearMonth(): string {
+  return new Date().toLocaleDateString('sv-SE').slice(0, 7); // 'YYYY-MM'
+}
+
+function formatYen(value: number): string {
+  return `${value.toLocaleString('ja-JP')}円`;
+}
+
+/**
+ * 金額の表示。OCRが数値にできなかった領収書は、読み取った生の文字列を添えて「?」にする
+ * (空欄にすると、金額0円なのか読めなかったのかが区別できない)。
+ */
+function amountLabel(receipt: ReceiptListItemView): string {
+  if (receipt.amountYen !== null) return formatYen(receipt.amountYen);
+  return receipt.amountRaw ? `? (${receipt.amountRaw})` : '?';
+}
+
+/**
+ * 領収書1件の行。
+ *
+ * 金額・店舗名・顧客の紐付けはここでは直せない(会計の記録なので、いつ誰がいくらに変えたのかが
+ * 残らない形にしない)。間違えたときは取り消して登録し直す。
+ */
+function ReceiptRow({
+  receipt,
+  busy,
+  onCancel,
+}: {
+  receipt: ReceiptListItemView;
+  busy: boolean;
+  onCancel: (reason: string) => void;
+}) {
+  const [showImage, setShowImage] = useState(false);
+  const [askingReason, setAskingReason] = useState(false);
+  const [reason, setReason] = useState('');
+  const cancelled = receipt.cancelledAt !== null;
+
+  return (
+    <li
+      className={`rounded-lg border p-3 text-sm ${
+        cancelled ? 'border-gray-200 bg-gray-50 text-gray-400' : 'border-gray-200'
+      }`}
+    >
+      <div className="flex justify-between items-start gap-2">
+        <div className="min-w-0">
+          <p className={`break-words ${cancelled ? 'line-through' : 'font-bold text-gray-800'}`}>
+            {receipt.storeName || <span className="text-gray-400 font-normal">店舗名なし</span>}
+          </p>
+          <p className={`text-xs ${cancelled ? '' : 'text-gray-500'}`}>{receipt.receiptTimestamp}</p>
+          <p className={`text-xs ${cancelled ? '' : 'text-gray-500'}`}>
+            {receipt.customerName ?? <span className="text-gray-400">顧客に紐付かない経費</span>}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className={cancelled ? 'line-through' : 'font-bold text-gray-800'}>{amountLabel(receipt)}</p>
+          <p
+            className={`text-[10px] ${
+              cancelled
+                ? ''
+                : receipt.billingType === 'customer_billable'
+                  ? 'text-amber-700 font-bold'
+                  : 'text-gray-500'
+            }`}
+          >
+            {receipt.billingType === 'customer_billable' ? '顧客に請求' : '会社立替'}
+          </p>
+        </div>
+      </div>
+
+      {receipt.handoffText && <p className="text-xs mt-1 break-words opacity-80">{receipt.handoffText}</p>}
+
+      {/* 取り消した記録も会計の履歴なので、いつ・誰が・なぜ取り消したかを行に残して見せる。 */}
+      {cancelled && (
+        <p className="text-xs mt-2 bg-gray-100 rounded p-2 text-gray-500 break-words">
+          取消済み({receipt.cancelledAt}
+          {receipt.cancelledByStaffName ? ` / ${receipt.cancelledByStaffName}` : ''})
+          {receipt.cancellationReason ? ` — ${receipt.cancellationReason}` : ''}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2 mt-2">
+        <button
+          type="button"
+          onClick={() => setShowImage((v) => !v)}
+          className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100"
+        >
+          {showImage ? '画像を隠す' : '画像を見る'}
+        </button>
+        {/* 取消ボタンは、有効な行かつ期限内(領収書の日付+2営業日)のときだけ出す。
+            期限を過ぎたものはボタン自体を出さない(サーバー側でも同じ条件で弾く)。 */}
+        {receipt.canCancel && !askingReason && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setAskingReason(true)}
+            className="ml-auto text-xs px-2 py-1 rounded border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-60"
+          >
+            取消
+          </button>
+        )}
+      </div>
+
+      {/* 取り消しが成功すると canCancel が false になるので、この確認欄は自動的に閉じる
+          (成功後も開いたままだと、取消済みの行に「取り消します」の確認が残って見える)。 */}
+      {askingReason && receipt.canCancel && (
+        <div className="mt-2 space-y-2 bg-red-50 border border-red-200 rounded-lg p-2">
+          <p className="text-xs text-red-700">
+            この領収書を取り消します。記録は消えず、取消済みとして残ります。
+            <br />
+            金額や顧客を直したい場合は、取り消したうえで登録し直してください。
+          </p>
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={200}
+            placeholder="取消理由(任意)"
+            aria-label="取消理由"
+            className="w-full p-2 border border-gray-300 rounded text-sm"
+          />
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setAskingReason(false);
+                setReason('');
+              }}
+              className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-100"
+            >
+              やめる
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onCancel(reason)}
+              className="text-xs px-3 py-1.5 rounded bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white font-bold"
+            >
+              取り消す
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 画像は開いたときだけ読み込む。一覧を開いた瞬間に全件取りにいくと、月に何十枚も
+          登録しているスタッフでは無駄な通信になる。 */}
+      {showImage && <ReceiptImage receiptId={receipt.id} alt={`${receipt.storeName ?? '領収書'}の画像`} />}
+    </li>
+  );
+}
+
+/**
+ * 「🧾 領収書」モーダル。勤怠タブの月次集計と同じ位置・同じ形(月を選んで一覧)にしている。
+ *
+ * 領収書はこれまで登録するだけで、あとから見返す画面が無かった。金額の読み違いや顧客の
+ * 紐付け間違いに気付いても直す手段が無く、請求額が狂ったまま気付けない。
+ *
+ * 【編集ではなく取り消しにしている理由】
+ * 会計の記録なので、金額や紐付け先を後から書き換えられる形にはしない(いつ誰がいくらに
+ * 変えたのかが残らない)。訂正は「取り消して登録し直す」の一択で、取り消した行も
+ * グレーで残す。スタッフから見た使い勝手は「消せる」のと変わらない。
+ */
+export function ReceiptListModal({ staffId, onClose }: { staffId?: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [yearMonth, setYearMonth] = useState(currentYearMonth());
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const receiptsQuery = useQuery({
+    queryKey: ['receipts', yearMonth, staffId],
+    queryFn: () => fetchReceipts(yearMonth, staffId),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => cancelReceipt(id, reason),
+    onSuccess: () => {
+      setErrorMessage(null);
+      // 合計も変わるので、一覧ごと取り直す(画面側で足し直すと、サーバーの集計とズレる)。
+      queryClient.invalidateQueries({ queryKey: ['receipts'] });
+    },
+    onError: (e: Error) => setErrorMessage(e.message),
+  });
+
+  const view = receiptsQuery.data;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-[110] flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-lg rounded-xl shadow-xl flex flex-col max-h-[90vh]">
+        <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+          <h3 className="font-bold text-gray-800 text-sm">🧾 領収書</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 hover:bg-gray-200 rounded-full text-gray-500"
+          >
+            &times;
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3 overflow-y-auto">
+          <div>
+            <label className="block text-xs font-bold text-gray-600 mb-1" htmlFor="receiptMonth">
+              対象月
+            </label>
+            <input
+              id="receiptMonth"
+              type="month"
+              value={yearMonth}
+              onChange={(e) => setYearMonth(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded text-sm"
+            />
+          </div>
+
+          {receiptsQuery.isPending && (
+            <div className="flex justify-center py-6">
+              <div className="w-6 h-6 rounded-full border-4 border-gray-200 loading-spinner" />
+            </div>
+          )}
+          {receiptsQuery.isError && (
+            <p className="text-red-500 text-sm">{(receiptsQuery.error as Error).message}</p>
+          )}
+          {errorMessage && <p className="text-red-500 text-xs">{errorMessage}</p>}
+
+          {view && (
+            <>
+              <ul className="text-sm text-gray-800 space-y-1 bg-gray-50 rounded-lg p-3">
+                <li>登録枚数: {view.receipts.length - view.cancelledCount}枚</li>
+                <li className="text-amber-800 font-bold">
+                  顧客に請求: {formatYen(view.customerBillableTotalYen)}
+                </li>
+                <li>会社立替: {formatYen(view.companyExpenseTotalYen)}</li>
+                {/* 合計は「金額を数値にできた分」だけ。読めなかった枚数を出さないと、
+                    合計が実額より小さいことに気付けない。 */}
+                {view.unreadableAmountCount > 0 && (
+                  <li className="text-red-600">
+                    金額を読み取れなかった領収書が {view.unreadableAmountCount}
+                    枚あります(合計に含まれていません)
+                  </li>
+                )}
+                {view.cancelledCount > 0 && (
+                  <li className="text-gray-500">
+                    取消済み {view.cancelledCount}枚(一覧には残りますが、合計には入りません)
+                  </li>
+                )}
+              </ul>
+
+              {view.receipts.length === 0 && (
+                <p className="text-sm text-gray-400">この月に登録された領収書はありません</p>
+              )}
+
+              <ul className="space-y-2">
+                {view.receipts.map((receipt) => (
+                  <ReceiptRow
+                    key={receipt.id}
+                    receipt={receipt}
+                    busy={cancelMutation.isPending}
+                    onCancel={(reason) => cancelMutation.mutate({ id: receipt.id, reason })}
+                  />
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+
+        <div className="p-4 border-t bg-gray-50 rounded-b-xl text-right">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700"
+          >
+            閉じる
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

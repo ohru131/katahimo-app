@@ -7,6 +7,7 @@ import {
   saveAccidentReport,
   saveAttendanceDay,
   saveDailyReport,
+  uploadReceipts,
 } from '@katahimo/core';
 import type { AttendanceRowData } from '@katahimo/shared';
 import { MAX_MOVE_LEGS } from '@katahimo/shared';
@@ -60,6 +61,54 @@ function birthDateFromAgeMonths(today: Date, ageMonths: number): string {
   const dob = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - ageMonths, 15));
   return dob.toISOString().slice(0, 10);
 }
+
+/**
+ * デモ用の領収書画像(1x1の透明PNG)。実物の写真を同梱せずに「画像を見る」の導線まで
+ * 確かめられるようにするための最小データ。
+ */
+const DEMO_RECEIPT_IMAGE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+/**
+ * デモ用の領収書。金額が'よみとれず'の行は、OCRが数値にできなかった場合(amount_yenがnull)を
+ * 再現する。一覧の合計は読めた分だけなので、その枚数が警告として出ることまで見せられる。
+ */
+const DEMO_RECEIPTS: {
+  time: string;
+  amount: string;
+  storeName: string;
+  billingType: 'customer_billable' | 'company_expense';
+  handoffText: string;
+}[] = [
+  {
+    time: '10:30',
+    amount: '1280',
+    storeName: 'スーパーみどり',
+    billingType: 'customer_billable',
+    handoffText: 'おやつと飲み物を購入しました',
+  },
+  {
+    time: '12:15',
+    amount: '600',
+    storeName: 'コインパーキング仙台駅前',
+    billingType: 'company_expense',
+    handoffText: '訪問先の駐車場代',
+  },
+  {
+    time: '15:40',
+    amount: '2450',
+    storeName: 'ドラッグストアあおば',
+    billingType: 'customer_billable',
+    handoffText: 'おむつを買い足しました',
+  },
+  {
+    time: '17:05',
+    amount: 'よみとれず',
+    storeName: '',
+    billingType: 'company_expense',
+    handoffText: 'レシートが薄く、金額を読み取れませんでした',
+  },
+];
 
 const VISIT_NOTES = [
   '室内遊びを中心に過ごしました。積み木を高く積むことに繰り返し挑戦していました。',
@@ -304,6 +353,33 @@ export async function seedDemoData(
         businessDate,
         buildAttendanceRow(visits, dateIndex),
       );
+    }
+  }
+
+  // 領収書(doc/14 §10)。勤怠タブの「🧾 領収書」を開いたときに一覧が空にならないよう、
+  // 今月ぶんを何枚か入れておく。請求区分の両方・顧客に紐付かない経費・OCRが金額を読めなかった
+  // 場合の3つを混ぜて、一覧の見え方(合計に入らない枚数の警告を含む)をそのまま確かめられるようにする。
+  onProgress({ message: '領収書を登録しています…', ratio: 0.95 });
+  const receiptCustomerId = customerIdByName.get(
+    `${DEMO_FIGURES[0]?.familyName} ${DEMO_FIGURES[0]?.givenName}`,
+  );
+  if (receiptCustomerId) {
+    for (const receipt of DEMO_RECEIPTS) {
+      await uploadReceipts(container, tenant.id, {
+        staffId: adminStaffId,
+        // 駐車場代のような会社経費は顧客に紐付かない(customer_billableにはできない)。
+        customerId: receipt.billingType === 'customer_billable' ? receiptCustomerId : null,
+        images: [
+          {
+            data: DEMO_RECEIPT_IMAGE,
+            amount: receipt.amount,
+            storeName: receipt.storeName,
+            billingType: receipt.billingType,
+          },
+        ],
+        fallbackTimestamp: `${toJstDateIso(today).replaceAll('-', '/')} ${receipt.time}:00`,
+        handoffText: receipt.handoffText,
+      });
     }
   }
 

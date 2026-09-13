@@ -1,5 +1,5 @@
 {
-  "id": "c0c1dfcb-d004-416a-a1f9-fdb895d16fee",
+  "id": "977b5a76-8c64-4aef-9254-22f249041f6c",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -4897,6 +4897,24 @@
           "notNull": true,
           "default": "'company_expense'"
         },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancellation_reason": {
+          "name": "cancellation_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_by_staff_id": {
+          "name": "cancelled_by_staff_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -4923,7 +4941,34 @@
             }
           ],
           "isUnique": true,
-          "where": "\"receipts\".\"dedupe_key\" IS NOT NULL",
+          "where": "\"receipts\".\"dedupe_key\" IS NOT NULL AND \"receipts\".\"cancelled_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "receipts_tenant_staff_timestamp_idx": {
+          "name": "receipts_tenant_staff_timestamp_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "staff_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "receipt_timestamp",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4999,6 +5044,21 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
+        },
+        "receipts_tenant_cancelled_by_fk": {
+          "name": "receipts_tenant_cancelled_by_fk",
+          "tableFrom": "receipts",
+          "tableTo": "staff",
+          "columnsFrom": [
+            "tenant_id",
+            "cancelled_by_staff_id"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5036,6 +5096,10 @@
         "receipts_billable_requires_customer": {
           "name": "receipts_billable_requires_customer",
           "value": "\"receipts\".\"billing_type\" = 'company_expense' OR \"receipts\".\"customer_id\" IS NOT NULL"
+        },
+        "receipts_cancellation_pair_check": {
+          "name": "receipts_cancellation_pair_check",
+          "value": "(\"receipts\".\"cancelled_at\" IS NULL AND \"receipts\".\"cancelled_by_staff_id\" IS NULL AND \"receipts\".\"cancellation_reason\" IS NULL)\n        OR (\"receipts\".\"cancelled_at\" IS NOT NULL AND \"receipts\".\"cancelled_by_staff_id\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": true
