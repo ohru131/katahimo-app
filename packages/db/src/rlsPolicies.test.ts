@@ -60,7 +60,10 @@ function isPgTable(value: unknown): value is PgTable {
 
 /** schema/index.ts が export しているテーブルを全部集める(名前のベタ書きをしない)。 */
 function collectSchemaTables(): SchemaTable[] {
-  return Object.values(schema)
+  // unknown[] として渡す。`Object.values(schema)` の要素型はテーブルごとの具象型のunionで、
+  // そのままだと `.filter(isPgTable)` が `PgTable` へ絞り込めず(型述語の S extends U を
+  // 満たさない)、union のまま getTableConfig に渡って弾かれる。
+  return (Object.values(schema) as unknown[])
     .filter(isPgTable)
     .map((table) => {
       const config = getTableConfig(table);

@@ -582,6 +582,10 @@ export class FakeAppSettingsRepository implements AppSettingsRepositoryPort {
       geminiOcrModel: null,
       gchatReportWebhookUrl: null,
       gchatReceiptWebhookUrl: null,
+      // DBのDEFAULTと同じ既定値(doc/14 §10)。
+      receiptClosingDay: null,
+      receiptMirrorLeadDays: 1,
+      receiptCancellableDays: 2,
     };
     const updated: AppSettingsRecord = { ...existing, ...patch };
     this.rows.set(tenantId, updated);

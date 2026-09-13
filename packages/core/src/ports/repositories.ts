@@ -846,6 +846,12 @@ export interface AppSettingsRecord {
   geminiOcrModel: string | null;
   gchatReportWebhookUrl: EncryptedField | null;
   gchatReceiptWebhookUrl: EncryptedField | null;
+  /** 会計の締め日(1〜28)。nullは月末(doc/14 §10)。 */
+  receiptClosingDay: number | null;
+  /** ミラー送信を締め日の何日前までに終えるか。 */
+  receiptMirrorLeadDays: number;
+  /** 領収書を取り消せる日数(暦日)。 */
+  receiptCancellableDays: number;
 }
 
 /** 渡されたフィールドだけ上書きする部分更新(PATCH)。行が無ければ作成する(upsert)。 */

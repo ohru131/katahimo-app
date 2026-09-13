@@ -14,9 +14,11 @@ import {
   receiptMirrorSendAfter,
 } from '../domain';
 import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
+import type { ReceiptDeadlinePolicy } from '../domain/reports/receiptCancellation';
 import type { MirrorJobStatus, MirrorPort, OutboxRepositoryPort } from '../ports/mirror';
 import type { NotifierPort } from '../ports/notifier';
 import type {
+  AppSettingsRepositoryPort,
   CustomerRepositoryPort,
   ReceiptBillingType,
   ReceiptRepositoryPort,
@@ -24,6 +26,7 @@ import type {
 } from '../ports/repositories';
 import type { StoragePort } from '../ports/storage';
 import type { UnitOfWorkPort } from '../ports/unitOfWork';
+import { resolveReceiptDeadlinePolicy } from './settings';
 
 export interface ReceiptDeps {
   receipts: ReceiptRepositoryPort;
@@ -35,6 +38,8 @@ export interface ReceiptDeps {
   mirror: MirrorPort;
   /** 領収書レコードの作成とミラー要求のenqueueを、1つのトランザクションにまとめるために使う。 */
   unitOfWork: UnitOfWorkPort;
+  /** 締め日設定(取り消し期限とミラー送信の開始時刻)の読み出しに使う(doc/14 §10)。 */
+  appSettings: AppSettingsRepositoryPort;
 }
 
 export interface ReceiptImageInput {
@@ -127,6 +132,10 @@ export async function uploadReceipts(
     };
   }
 
+  // 締め日設定は1回だけ読む。画像ごとに読み直すと、同じバッチの中で設定変更をまたいだ場合に
+  // 送信開始時刻が枚によって変わる(doc/14 §10)。
+  const policy = await resolveReceiptDeadlinePolicy(deps, tenantId);
+
   // DB制約(receipts_billable_requires_customer)に落として23514で失敗させるより先に、
   // ここで弾いて分かりやすいエラーにする(顧客未選択なのに顧客請求は画面側でも選べない
   // ようにしているため、ここに来るのは利用者の入力ミスではなく実装・呼び出し側の誤り)。
@@ -214,8 +223,8 @@ export async function uploadReceipts(
             idempotencyKey: buildMirrorIdempotencyKey('receipt', receiptRecord.id, receiptRecord.createdAt),
             // 取り消せる期間が終わるまで送信を始めない(doc/14 §10)。スプレッドシートへの追記は
             // 送ってしまうと取り消しても向こう側に残るため、「送ったあとに取り消された」状態を
-            // 作れないようにする。月末で打ち切るので、前月分が翌月に送られることもない。
-            notBefore: receiptMirrorSendAfter(formatJstDateKey(receiptRecord.receiptTimestamp)),
+            // 作れないようにする。締め日の手前で打ち切るので、締めた後に送られることもない。
+            notBefore: receiptMirrorSendAfter(formatJstDateKey(receiptRecord.receiptTimestamp), policy),
           },
           scope,
         );
@@ -350,16 +359,20 @@ export interface ReceiptListView {
 /**
  * その領収書を`today`('YYYY-MM-DD'・JST)の時点で取り消せるか(doc/14 §10)。
  *
- * 期限は「領収書の日付 + 2日、ただしその月の末日まで」(receiptCancellableUntil)。
- * 締めたあとの月の記録が動くと会計が合わなくなるため、時間が経ったものは取り消せない。
- * 判定の基準日は receipt_timestamp の日付にしている(領収書には訪問日そのものを持っていない。
- * OCRが読んだ領収書の日付、読めなければ登録時刻)。
+ * 期限は「領収書の日付 + cancellableDays」と「締め日のmirrorLeadDays日前」の早いほう
+ * (receiptCancellableUntil)。締めたあとの記録が動くと会計が合わなくなるため、
+ * 時間が経ったものは取り消せない。判定の基準日は receipt_timestamp の日付にしている
+ * (領収書には訪問日そのものを持っていない。OCRが読んだ領収書の日付、読めなければ登録時刻)。
  *
  * ミラー送信はこの期限が切れた直後に始まる(receiptMirrorSendAfter)。2つを同じ計算に
  * 揃えてあるので、「外部へ送ったあとに取り消された」状態は起きない。
  */
-export function canCancelReceiptOn(receiptDateStr: string, today: string): boolean {
-  return today <= receiptCancellableUntil(receiptDateStr);
+export function canCancelReceiptOn(
+  receiptDateStr: string,
+  today: string,
+  policy: ReceiptDeadlinePolicy,
+): boolean {
+  return today <= receiptCancellableUntil(receiptDateStr, policy);
 }
 
 /**
@@ -389,6 +402,7 @@ export async function listReceiptsForStaff(
   if (!range) return null;
 
   const records = await deps.receipts.listByStaffInPeriod(tenantId, staffId, range.from, range.to);
+  const policy = await resolveReceiptDeadlinePolicy(deps, tenantId);
 
   const customerIds = Array.from(
     new Set(records.map((r) => r.customerId).filter((id): id is string => id !== null)),
@@ -469,7 +483,7 @@ export async function listReceiptsForStaff(
       canCancel:
         record.cancelledAt === null &&
         (options.ignoreDeadline === true ||
-          canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey)),
+          canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey, policy)),
       mirrorStatus: mirrorStatusByTarget.get(record.id)?.status ?? null,
       mirrorScheduledAt:
         mirrorStatusByTarget.get(record.id)?.status === 'pending'
@@ -545,7 +559,8 @@ export async function cancelReceipt(
 
   if (options.ignoreDeadline !== true) {
     const todayKey = formatJstDateKey(options.today ?? new Date());
-    if (!canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey)) {
+    const policy = await resolveReceiptDeadlinePolicy(deps, tenantId);
+    if (!canCancelReceiptOn(formatJstDateKey(record.receiptTimestamp), todayKey, policy)) {
       return { ok: false, reason: 'deadline_passed' };
     }
   }

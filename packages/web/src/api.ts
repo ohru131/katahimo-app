@@ -262,6 +262,12 @@ export interface AdminSettingsView {
   geminiOcrModel: string;
   gchatReportWebhookUrl: string;
   gchatReceiptWebhookUrl: string;
+  /** 会計の締め日(1〜28)。nullは月末(doc/14 §10)。 */
+  receiptClosingDay: number | null;
+  /** ミラー送信を締め日の何日前までに終えるか。 */
+  receiptMirrorLeadDays: number;
+  /** 領収書を取り消せる日数(暦日)。 */
+  receiptCancellableDays: number;
 }
 
 export async function fetchAdminSettings(): Promise<AdminSettingsView> {
@@ -298,6 +304,18 @@ export function saveGoogleChatWebhookSettings(
   receiptWebhookUrl: string,
 ): Promise<SaveSettingsResult> {
   return postSettings('/api/settings/admin/gchat-webhooks', { reportWebhookUrl, receiptWebhookUrl });
+}
+
+/**
+ * 領収書の締め日設定を保存する(doc/14 §10)。
+ * 取り消し期限とミラー送信の開始時刻の両方がこの3つから決まる。
+ */
+export function saveReceiptDeadlineSettings(input: {
+  closingDay: number | null;
+  mirrorLeadDays: number;
+  cancellableDays: number;
+}): Promise<SaveSettingsResult> {
+  return postSettings('/api/settings/admin/receipt-deadline', input);
 }
 
 export interface GeminiModelInfo {

@@ -1,3 +1,7 @@
+import {
+  DEFAULT_RECEIPT_DEADLINE_POLICY,
+  type ReceiptDeadlinePolicy,
+} from '../domain/reports/receiptCancellation';
 import type { CryptoPort } from '../ports/crypto';
 import type { AppSettingsRepositoryPort } from '../ports/repositories';
 
@@ -22,6 +26,10 @@ export interface AdminSettingsView {
   geminiOcrModel: string;
   gchatReportWebhookUrl: string;
   gchatReceiptWebhookUrl: string;
+  /** 締め日まわり(doc/14 §10)。画面はこの3つをそのまま編集する。 */
+  receiptClosingDay: number | null;
+  receiptMirrorLeadDays: number;
+  receiptCancellableDays: number;
 }
 
 /** マスク表示で見せる末尾の文字数。 */
@@ -64,8 +72,64 @@ export async function getAdminSettings(deps: SettingsDeps, tenantId: string): Pr
     geminiOcrModel: row?.geminiOcrModel || DEFAULT_GEMINI_OCR_MODEL,
     gchatReportWebhookUrl,
     gchatReceiptWebhookUrl,
+    receiptClosingDay: row?.receiptClosingDay ?? DEFAULT_RECEIPT_DEADLINE_POLICY.closingDay,
+    receiptMirrorLeadDays: row?.receiptMirrorLeadDays ?? DEFAULT_RECEIPT_DEADLINE_POLICY.mirrorLeadDays,
+    receiptCancellableDays: row?.receiptCancellableDays ?? DEFAULT_RECEIPT_DEADLINE_POLICY.cancellableDays,
   };
 }
+
+/**
+ * 領収書の締め日設定を読む。未登録のテナントは既定値
+ * (月末締め・締め日の1日前までに送信・取り消しは2日間)。
+ *
+ * 取り消し期限とミラー送信の開始時刻の両方がここから導かれるので、**読み出しは必ずこの1箇所**
+ * を通す。片方だけ別の値を使うと、取り消せる期間の途中で送信が始まってしまう(doc/14 §10)。
+ */
+export async function resolveReceiptDeadlinePolicy(
+  // 暗号化には触れないので SettingsDeps 全体は要求しない(領収書側のdepsからも呼べるようにする)。
+  deps: Pick<SettingsDeps, 'appSettings'>,
+  tenantId: string,
+): Promise<ReceiptDeadlinePolicy> {
+  const row = await deps.appSettings.find(tenantId);
+  if (!row) return DEFAULT_RECEIPT_DEADLINE_POLICY;
+  return {
+    closingDay: row.receiptClosingDay,
+    mirrorLeadDays: row.receiptMirrorLeadDays,
+    cancellableDays: row.receiptCancellableDays,
+  };
+}
+
+export type SaveReceiptDeadlineInput = ReceiptDeadlinePolicy;
+
+/**
+ * 締め日設定を保存する。値域の検証は呼び出し側(APIルート)とDBのCHECK制約が行うが、
+ * 「送信締切が締め期間の外へ出る」組み合わせだけはここで弾く。
+ *
+ * mirrorLeadDays が締め期間より長いと送信締切が前の期の中へ入り込み、登録した時点で
+ * 既に締切を過ぎている=常に即送信、という状態になる。DBのCHECKは列ごとにしか見られないので
+ * (締め日と日数の関係は1行の中の組み合わせ)、ここで見る。
+ */
+export async function saveReceiptDeadlineSettings(
+  deps: SettingsDeps,
+  tenantId: string,
+  input: SaveReceiptDeadlineInput,
+): Promise<SaveSettingsResult> {
+  if (input.mirrorLeadDays >= MIN_CLOSING_PERIOD_DAYS) {
+    return {
+      ok: false,
+      message: `送信を終える日数は${MIN_CLOSING_PERIOD_DAYS}日未満にしてください(締め期間より長いと、登録した時点で常に締切を過ぎた扱いになります)。`,
+    };
+  }
+  await deps.appSettings.upsert(tenantId, {
+    receiptClosingDay: input.closingDay,
+    receiptMirrorLeadDays: input.mirrorLeadDays,
+    receiptCancellableDays: input.cancellableDays,
+  });
+  return { ok: true, message: '締め日の設定を保存しました。' };
+}
+
+/** 締め期間の最短日数(2月=28日)。送信締切がこれ以上前だと締め期間の外へ出る。 */
+const MIN_CLOSING_PERIOD_DAYS = 28;
 
 /**
  * 保存済みのGemini APIキーを復号して返す(未設定なら空文字)。

@@ -95,6 +95,20 @@ export function jstEndOfMonthDateKey(dateStr: string): string {
 }
 
 /**
+ * 'YYYY-MM-DD'(JST)と同じ月(monthOffsetを足した月)の、指定した日を返す。
+ * 実費報告(領収書)の締め日の算出に使う(doc/14 §10)。
+ *
+ * 呼び出し側は day を1〜28に制限すること(29〜31は2月に存在せず、Date.UTCが翌月へ
+ * 繰り上げてしまう)。この制限はDBのCHECK制約 app_settings_receipt_closing_day_check
+ * でも縛っている。
+ */
+export function jstDateKeyWithDayOfMonth(dateStr: string, day: number, monthOffset = 0): string {
+  const [year, month] = dateStr.split('-').map(Number);
+  const date = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1 + monthOffset, day, 12));
+  return date.toISOString().slice(0, 10);
+}
+
+/**
  * 'YYYY-MM-DD'(JST)の日の終わり=翌日0時(JST)を、絶対時刻で返す。
  * 「その日いっぱいまで」を半開区間の上限として扱うために使う。
  */

@@ -7,6 +7,7 @@ import { createCustomer } from './customers';
 import type { ReceiptDeps } from './receipts';
 import { cancelReceipt, listReceiptsForStaff, uploadReceipts } from './receipts';
 import {
+  FakeAppSettingsRepository,
   FakeCustomerRepository,
   FakeFamilyMemberRepository,
   FakeNotifierPort,
@@ -67,6 +68,7 @@ describe('uploadReceipts', () => {
       notifier: new FakeNotifierPort(),
       mirror,
       unitOfWork: new FakeUnitOfWork([receiptRepository, mirror]),
+      appSettings: new FakeAppSettingsRepository(),
     };
   });
 
@@ -272,6 +274,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
       notifier: new FakeNotifierPort(),
       mirror,
       unitOfWork: new FakeUnitOfWork([receiptRepository, mirror]),
+      appSettings: new FakeAppSettingsRepository(),
     };
   });
 
@@ -536,13 +539,15 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     expect(job.nextAttemptAt?.toISOString()).toBe('2026-09-16T15:00:00.000Z');
   });
 
-  it('月末の領収書は翌月へ持ち越さず、その月のうちに送る', async () => {
+  it('月末の領収書は締め日の前日までに送る(翌月へ持ち越さない)', async () => {
     await upload({ at: '2026/09/30 10:00:00', amount: '1000', storeName: '月末の店' });
 
     const [job] = mirror.listAllForTest();
     if (!job) throw new Error('ミラージョブが積まれていません');
-    // 9/30いっぱいで取り消し期限が切れ、10/1 00:00 JST に送られる(9月分が10月にずれ込まない)。
-    expect(job.nextAttemptAt?.toISOString()).toBe('2026-09-30T15:00:00.000Z');
+    // 既定は月末締め・送信はその1日前まで(mirrorLeadDays=1)なので送信締切は9/29。
+    // 送信開始は9/30 00:00 JST = 9/29 15:00 UTC で、登録時刻(9/30 10:00 JST)より前。
+    // つまり積んだ時点で送信可能=締め間際の分は待たずに出る(doc/14 §10)。
+    expect(job.nextAttemptAt?.toISOString()).toBe('2026-09-29T15:00:00.000Z');
   });
 
   it('まだ送っていない領収書の件数と送信予定を返す(締めのときに取り残しに気付けるように)', async () => {

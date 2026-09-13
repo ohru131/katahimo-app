@@ -11,6 +11,7 @@ import type { ReportDeps } from './reports';
 import { saveAccidentReport, saveDailyReport } from './reports';
 import {
   FakeAccidentReportRepository,
+  FakeAppSettingsRepository,
   FakeAttendanceDayRepository,
   FakeCouponRedemptionRepository,
   FakeCouponRepository,
@@ -274,6 +275,7 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
       notifier: new FakeNotifierPort(),
       mirror: new FailingMirrorPort(),
       unitOfWork: new FakeUnitOfWork([receipts, outbox]),
+      appSettings: new FakeAppSettingsRepository(),
     };
 
     await expect(

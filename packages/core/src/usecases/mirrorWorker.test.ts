@@ -14,6 +14,7 @@ import type { ReportDeps } from './reports';
 import { saveAccidentReport, saveDailyReport } from './reports';
 import {
   FakeAccidentReportRepository,
+  FakeAppSettingsRepository,
   FakeAttendanceDayRepository,
   FakeCouponRedemptionRepository,
   FakeCouponRepository,
@@ -204,6 +205,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
       notifier: new FakeNotifierPort(),
       mirror: outbox,
       unitOfWork: new FakeUnitOfWork([receipts, outbox]),
+      appSettings: new FakeAppSettingsRepository(),
     };
 
     await uploadReceipts(receiptDeps, tenantId, {
@@ -384,6 +386,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
       notifier: new FakeNotifierPort(),
       mirror: outbox,
       unitOfWork: new FakeUnitOfWork([receipts, outbox]),
+      appSettings: new FakeAppSettingsRepository(),
     };
 
     await uploadReceipts(receiptDeps, tenantId, {
