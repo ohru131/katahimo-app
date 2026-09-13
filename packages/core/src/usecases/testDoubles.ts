@@ -754,6 +754,7 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
       cancelledAt: null,
       cancellationReason: null,
       cancelledByStaffId: null,
+      mirrorClaimedAt: null,
       createdAt: new Date(),
     };
     this.rows.push({ record, dedupeKey: input.dedupeKey });
@@ -813,6 +814,20 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
     row.record.cancelledAt = new Date();
     row.record.cancelledByStaffId = input.cancelledByStaffId;
     row.record.cancellationReason = input.reason;
+    return { ...row.record };
+  }
+
+  /**
+   * DrizzleReceiptRepositoryと同じく、取り消し済みの行には宣言できない。
+   * 実DBでは cancel との直列化を行ロックが担うが、ここは単一スレッドなので
+   * 「取り消し済みならnull」という結果だけを再現する。
+   */
+  async claimForMirror(tenantId: string, receiptId: string): Promise<ReceiptRecord | null> {
+    const row = this.rows.find(
+      (r) => r.record.tenantId === tenantId && r.record.id === receiptId && r.record.cancelledAt === null,
+    );
+    if (!row) return null;
+    row.record.mirrorClaimedAt = new Date();
     return { ...row.record };
   }
 

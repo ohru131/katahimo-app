@@ -95,6 +95,20 @@ export const receipts = pgTable(
     /** 取り消した人。誰が取り消したかは会計の記録として残す必要がある。 */
     cancelledByStaffId: uuid(),
 
+    /**
+     * ミラーワーカーが送信に取りかかった時刻(doc/14 §10)。
+     *
+     * **取り消しと送信開始を同じ行の上で直列化するための列。** 外部へのHTTP送信はDBの
+     * トランザクションに入れられないので、「送る直前に cancelled_at を見る」だけでは
+     * 見たあと送るまでの隙間に取り消しが確定しうる。そこで送信の開始を
+     * 「`cancelled_at IS NULL` の行にこの列を立てるUPDATE」として表す。UPDATE同士は
+     * 行ロックで直列化されるため、取り消しが先に確定していれば0行になって送信は始まらず、
+     * 送信の開始が先なら取り消し側がこの列を見て「送信済みかもしれない」と判定できる。
+     *
+     * 再試行で上書きされる(値は「最後に送信を試みた時刻」)。送信の成否は outbox_jobs 側が持つ。
+     */
+    mirrorClaimedAt: timestamp({ withTimezone: true }),
+
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

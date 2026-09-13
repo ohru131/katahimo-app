@@ -119,11 +119,14 @@ export async function processOutboxJob(
     }
 
     case 'receipt': {
-      const record = await deps.receipts.findById(tenantId, job.targetId);
-      if (!record) return;
       // 取り消された領収書は外部へ出さない(doc/14 §10の「データ出力時は取消済みを除外する」)。
-      // 登録直後に取り消された場合、outboxのジョブだけが残ることがあるため、送る直前に見る。
-      if (record.cancelledAt !== null) return;
+      //
+      // findById で cancelledAt を「見る」のではなく claimForMirror で「宣言する」のは、
+      // 読んでから送るまでの隙間に取り消しが確定するのを止めるため。宣言は
+      // `cancelled_at IS NULL` の行に対するUPDATEなので、取り消しのUPDATEと同じ行ロックで
+      // 直列化される。取り消しが先に確定していればnullが返り、送信は始まらない。
+      const record = await deps.receipts.claimForMirror(tenantId, job.targetId);
+      if (!record) return;
       const [staffRecord, customerRecord, imageBytes] = await Promise.all([
         deps.staff.findById(tenantId, record.staffId),
         record.customerId ? deps.customers.findById(tenantId, record.customerId) : Promise.resolve(null),

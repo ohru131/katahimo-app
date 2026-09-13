@@ -471,14 +471,12 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     expect(result).toEqual({ ok: true, mirrorAlreadySent: false });
   });
 
-  it('送信済みの領収書を管理者が期限後に取り消すと、送信済みだったことを返す', async () => {
+  it('送信に取りかかった後の管理者取消は、送信済みだったことを返す', async () => {
     await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
     const receiptId = latestReceiptId();
 
-    // 期限を過ぎている=送信開始時刻も過ぎているので、この時点でシートには行が出ている。
-    const [job] = mirror.listAllForTest();
-    if (!job) throw new Error('ミラージョブが積まれていません');
-    await mirror.markDone(tenantId, job.id);
+    // ミラーワーカーが送信を宣言した状態(mirrorWorkerのreceipt分岐が呼ぶのと同じ経路)。
+    expect(await receiptRepository.claimForMirror(tenantId, receiptId)).not.toBeNull();
 
     const result = await cancelReceipt(deps, tenantId, receiptId, {
       requesterStaffId: staffId,
@@ -491,20 +489,22 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
     expect(result).toEqual({ ok: true, mirrorAlreadySent: true });
   });
 
-  it('送信中(processing)も送信済み扱いにする(送られたか外から判別できないため)', async () => {
+  it('取消が先なら、ミラー送信は始められない(宣言がnullになる)', async () => {
     await upload({ at: `${RECEIPT_DAY} 10:00:00`, amount: '1000', storeName: 'A' });
     const receiptId = latestReceiptId();
-    // claimPendingでprocessingへ遷移させる(ワーカーが掴んだ直後の状態)。
-    await mirror.claimPending(tenantId, 10);
 
     const result = await cancelReceipt(deps, tenantId, receiptId, {
       requesterStaffId: staffId,
       allowOtherStaff: true,
       ignoreDeadline: true,
-      reason: '経理の締め処理で戻す',
+      reason: '間違えて登録した',
       today: AFTER_DEADLINE,
     });
-    expect(result).toEqual({ ok: true, mirrorAlreadySent: true });
+    expect(result).toEqual({ ok: true, mirrorAlreadySent: false });
+
+    // 取り消しが先に確定していれば、ワーカーは送信を宣言できない=送られない。
+    // 「送る直前にcancelledAtを見る」だけでは埋まらない隙間を、ここで塞いでいる。
+    expect(await receiptRepository.claimForMirror(tenantId, receiptId)).toBeNull();
   });
 
   it('管理者でも、取り消し済みの行は二重に取り消せない', async () => {

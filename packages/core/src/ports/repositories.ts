@@ -755,6 +755,11 @@ export interface ReceiptRecord {
   /** 取り消したスタッフのID。 */
   cancelledByStaffId: string | null;
   /**
+   * ミラーワーカーが送信に取りかかった時刻(doc/14 §10)。nullならまだ誰も送ろうとしていない。
+   * claimForMirror が立て、取り消し側はこれを見て「送信済みかもしれない」を判定する。
+   */
+  mirrorClaimedAt: Date | null;
+  /**
    * ミラーの冪等キーに使うレコードの版(buildMirrorIdempotencyKey参照)。
    * 領収書は追記しかしないため作成時刻。
    */
@@ -814,6 +819,19 @@ export interface ReceiptRepositoryPort {
     receiptId: string,
     input: { cancelledByStaffId: string; reason: string | null },
   ): Promise<ReceiptRecord | null>;
+  /**
+   * ミラー送信の開始を宣言する(doc/14 §10)。`cancelled_at IS NULL` の行にだけ
+   * `mirror_claimed_at` を立て、立てられた行を返す。取り消し済みならnull。
+   *
+   * 【これが単なる「送る直前のcancelledAt確認」と違う理由】
+   * 外部へのHTTP送信はDBトランザクションに入れられないため、読んでから送るまでの隙間に
+   * 取り消しが確定しうる。宣言をUPDATEにすると、取り消しのUPDATEと同じ行ロックで直列化される。
+   * 取り消しが先なら0行=送信は始まらない。宣言が先なら、取り消し側は返り値の
+   * `mirrorClaimedAt` を見て「送信済みかもしれない」と確実に判定できる。
+   *
+   * 再試行では上書きしてよい(送信の成否は outbox_jobs 側が持つ)。
+   */
+  claimForMirror(tenantId: string, receiptId: string): Promise<ReceiptRecord | null>;
 }
 
 /**

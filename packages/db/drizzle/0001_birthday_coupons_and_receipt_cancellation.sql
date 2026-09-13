@@ -48,6 +48,7 @@ ALTER TABLE "customers" ADD COLUMN "dob_raw" text;--> statement-breakpoint
 ALTER TABLE "receipts" ADD COLUMN "cancelled_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "receipts" ADD COLUMN "cancellation_reason" text;--> statement-breakpoint
 ALTER TABLE "receipts" ADD COLUMN "cancelled_by_staff_id" uuid;--> statement-breakpoint
+ALTER TABLE "receipts" ADD COLUMN "mirror_claimed_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "customer_coupons" ADD CONSTRAINT "customer_coupons_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_coupons" ADD CONSTRAINT "customer_coupons_tenant_customer_fk" FOREIGN KEY ("tenant_id","customer_id") REFERENCES "public"."customers"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_coupons" ADD CONSTRAINT "customer_coupons_tenant_coupon_fk" FOREIGN KEY ("tenant_id","coupon_id") REFERENCES "public"."coupons"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

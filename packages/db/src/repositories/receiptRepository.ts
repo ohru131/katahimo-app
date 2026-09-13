@@ -34,6 +34,7 @@ function toRecord(row: ReceiptRow): ReceiptRecord {
     cancelledAt: row.cancelledAt,
     cancellationReason: row.cancellationReason,
     cancelledByStaffId: row.cancelledByStaffId,
+    mirrorClaimedAt: row.mirrorClaimedAt,
     createdAt: row.createdAt,
   };
 }
@@ -140,6 +141,20 @@ export class DrizzleReceiptRepository implements ReceiptRepositoryPort {
         })
         // 既に取り消し済みの行は更新しない(取り消した人・理由・時刻を上書きしないため)。
         // usecase側でも弾いているが、同時に2回押された場合はここだけが止められる。
+        .where(and(eq(receipts.tenantId, tenantId), eq(receipts.id, receiptId), isNull(receipts.cancelledAt)))
+        .returning();
+      const row = rows[0];
+      return row ? toRecord(row) : null;
+    });
+  }
+
+  async claimForMirror(tenantId: string, receiptId: string): Promise<ReceiptRecord | null> {
+    return withTenant(this.db, tenantId, async (tx) => {
+      const rows = await tx
+        .update(receipts)
+        .set({ mirrorClaimedAt: new Date() })
+        // 取り消し済みの行は宣言できない=送信しない。cancelのUPDATEと同じ行を争うので、
+        // どちらが先かはPostgreSQLの行ロックが決める(doc/14 §10)。
         .where(and(eq(receipts.tenantId, tenantId), eq(receipts.id, receiptId), isNull(receipts.cancelledAt)))
         .returning();
       const row = rows[0];

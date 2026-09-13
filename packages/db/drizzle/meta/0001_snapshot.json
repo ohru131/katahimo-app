@@ -1,5 +1,5 @@
 {
-  "id": "274e3a7c-c5dc-48d9-a1da-30f5d35cb3cb",
+  "id": "ad98239c-0578-48c7-b5a9-69a3c814bb9c",
   "prevId": "a16ddc35-045a-4fed-b815-7776c95ffa5a",
   "version": "7",
   "dialect": "postgresql",
@@ -4939,6 +4939,12 @@
         "cancelled_by_staff_id": {
           "name": "cancelled_by_staff_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mirror_claimed_at": {
+          "name": "mirror_claimed_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
