@@ -42,10 +42,6 @@ function ReceiptImage({ receiptId, alt }: { receiptId: string; alt: string }) {
   return <img src={objectUrl} alt={alt} className="mt-2 w-full rounded-lg border border-gray-200" />;
 }
 
-function currentYearMonth(): string {
-  return new Date().toLocaleDateString('sv-SE').slice(0, 7); // 'YYYY-MM'
-}
-
 function formatYen(value: number): string {
   return `${value.toLocaleString('ja-JP')}円`;
 }
@@ -214,19 +210,20 @@ function ReceiptRow({
 }
 
 /**
- * 「🧾 領収書」モーダル。勤怠タブの月次集計と同じ位置・同じ形(月を選んで一覧)にしている。
+ * 領収書一覧(月次集計モーダルの「領収書」セクションから開く明細)。
  *
- * 領収書はこれまで登録するだけで、あとから見返す画面が無かった。金額の読み違いや顧客の
- * 紐付け間違いに気付いても直す手段が無く、請求額が狂ったまま気付けない。
+ * GAS版では領収書は月次集計モーダルの中に日別集計として出るだけだったが、こちらでは
+ * 同じ場所から明細(画像・取消)まで辿れるようにしている。対象月は呼び出し側
+ * (MonthlySummaryModal)が持つ月をそのまま受け取る。月の選択欄をここにも置くと、
+ * 上の勤怠表と別の月を見ている状態が作れてしまうため。
  *
  * 【編集ではなく取り消しにしている理由】
  * 会計の記録なので、金額や紐付け先を後から書き換えられる形にはしない(いつ誰がいくらに
  * 変えたのかが残らない)。訂正は「取り消して登録し直す」の一択で、取り消した行も
  * グレーで残す。スタッフから見た使い勝手は「消せる」のと変わらない。
  */
-export function ReceiptListModal({ staffId, onClose }: { staffId?: string; onClose: () => void }) {
+export function ReceiptListPanel({ staffId, yearMonth }: { staffId?: string; yearMonth: string }) {
   const queryClient = useQueryClient();
-  const [yearMonth, setYearMonth] = useState(currentYearMonth());
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   /**
    * 「取り消したが、外部シートには既に送られていた」ことの警告。管理者が期限後に取り消した
@@ -246,6 +243,9 @@ export function ReceiptListModal({ staffId, onClose }: { staffId?: string; onClo
       setMirrorSentWarning(result.mirrorAlreadySent);
       // 合計も変わるので、一覧ごと取り直す(画面側で足し直すと、サーバーの集計とズレる)。
       queryClient.invalidateQueries({ queryKey: ['receipts'] });
+      // 月次集計モーダルの「領収書」セクション(日別集計・月合計)も同じ値を出しているので、
+      // そちらも取り直す。取り消した分が合計に残ったままにならないようにするため。
+      queryClient.invalidateQueries({ queryKey: ['attendance-month'] });
     },
     onError: (e: Error) => setErrorMessage(e.message),
   });
@@ -253,127 +253,78 @@ export function ReceiptListModal({ staffId, onClose }: { staffId?: string; onClo
   const view = receiptsQuery.data;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-[110] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-lg rounded-xl shadow-xl flex flex-col max-h-[90vh]">
-        <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
-          <h3 className="font-bold text-gray-800 text-sm">🧾 領収書</h3>
+    <div className="space-y-3">
+      {receiptsQuery.isPending && (
+        <div className="flex justify-center py-6">
+          <div className="w-6 h-6 rounded-full border-4 border-gray-200 loading-spinner" />
+        </div>
+      )}
+      {receiptsQuery.isError && (
+        <p className="text-red-500 text-sm">{(receiptsQuery.error as Error).message}</p>
+      )}
+      {errorMessage && <p className="text-red-500 text-xs">{errorMessage}</p>}
+      {/* 送信に取りかかった後の行はこちらからは消せない(Bridge.jsに取り消し用のactionが無い)。
+          黙って成功にすると、シート側に有効な行が残ったままになる。
+          mirror_claimed_at が表すのは「送信を開始した」ことで、HTTP送信の成否までは
+          分からない。断定すると管理者がシート側の状態を誤認するので、両方の可能性を出す。 */}
+      {mirrorSentWarning && (
+        <div className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded-lg p-2 flex items-start gap-2">
+          <span className="flex-grow">
+            取り消しましたが、この領収書は
+            <strong>スプレッドシートへ送信済み、または送信中</strong>でした。
+            シート側の行は自動では消えません。
+            <strong>シートを確認し、行があれば手で取り消してください。</strong>
+          </span>
           <button
             type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-gray-200 rounded-full text-gray-500"
+            onClick={() => setMirrorSentWarning(false)}
+            className="shrink-0 px-2 py-1 rounded hover:bg-amber-100"
+            aria-label="この警告を閉じる"
           >
             &times;
           </button>
         </div>
+      )}
 
-        <div className="p-4 space-y-3 overflow-y-auto">
-          <div>
-            <label className="block text-xs font-bold text-gray-600 mb-1" htmlFor="receiptMonth">
-              対象月
-            </label>
-            <input
-              id="receiptMonth"
-              type="month"
-              value={yearMonth}
-              onChange={(e) => setYearMonth(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded text-sm"
-            />
-          </div>
+      {view && (
+        <>
+          <ul className="text-sm text-gray-800 space-y-1 bg-gray-50 rounded-lg p-3">
+            <li>登録枚数: {view.receipts.length - view.cancelledCount}枚</li>
+            <li className="text-amber-800 font-bold">
+              顧客に請求: {formatYen(view.customerBillableTotalYen)}
+            </li>
+            <li>会社立替: {formatYen(view.companyExpenseTotalYen)}</li>
+            {/* 送信待ち・送信失敗の件数。締めのときにここだけ見れば取り残しが分かる。
+                読み取れなかった枚数・取消済みの枚数は上の日別集計の側に出しているので、
+                同じ数字をここで二重に出さない。 */}
+            {view.pendingMirrorCount > 0 && (
+              <li className="text-gray-500">
+                スプレッドシート未送信 {view.pendingMirrorCount}枚(取消できる期間が終わってから送信)
+              </li>
+            )}
+            {view.failedMirrorCount > 0 && (
+              <li className="text-red-600 font-bold">
+                スプレッドシートへの送信に失敗 {view.failedMirrorCount}枚(対応が必要です)
+              </li>
+            )}
+          </ul>
 
-          {receiptsQuery.isPending && (
-            <div className="flex justify-center py-6">
-              <div className="w-6 h-6 rounded-full border-4 border-gray-200 loading-spinner" />
-            </div>
-          )}
-          {receiptsQuery.isError && (
-            <p className="text-red-500 text-sm">{(receiptsQuery.error as Error).message}</p>
-          )}
-          {errorMessage && <p className="text-red-500 text-xs">{errorMessage}</p>}
-          {/* 送信に取りかかった後の行はこちらからは消せない(Bridge.jsに取り消し用のactionが無い)。
-              黙って成功にすると、シート側に有効な行が残ったままになる。
-              mirror_claimed_at が表すのは「送信を開始した」ことで、HTTP送信の成否までは
-              分からない。断定すると管理者がシート側の状態を誤認するので、両方の可能性を出す。 */}
-          {mirrorSentWarning && (
-            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded-lg p-2 flex items-start gap-2">
-              <span className="flex-grow">
-                取り消しましたが、この領収書は
-                <strong>スプレッドシートへ送信済み、または送信中</strong>でした。
-                シート側の行は自動では消えません。
-                <strong>シートを確認し、行があれば手で取り消してください。</strong>
-              </span>
-              <button
-                type="button"
-                onClick={() => setMirrorSentWarning(false)}
-                className="shrink-0 px-2 py-1 rounded hover:bg-amber-100"
-                aria-label="この警告を閉じる"
-              >
-                &times;
-              </button>
-            </div>
+          {view.receipts.length === 0 && (
+            <p className="text-sm text-gray-400">この月に登録された領収書はありません</p>
           )}
 
-          {view && (
-            <>
-              <ul className="text-sm text-gray-800 space-y-1 bg-gray-50 rounded-lg p-3">
-                <li>登録枚数: {view.receipts.length - view.cancelledCount}枚</li>
-                <li className="text-amber-800 font-bold">
-                  顧客に請求: {formatYen(view.customerBillableTotalYen)}
-                </li>
-                <li>会社立替: {formatYen(view.companyExpenseTotalYen)}</li>
-                {/* 合計は「金額を数値にできた分」だけ。読めなかった枚数を出さないと、
-                    合計が実額より小さいことに気付けない。 */}
-                {view.unreadableAmountCount > 0 && (
-                  <li className="text-red-600">
-                    金額を読み取れなかった領収書が {view.unreadableAmountCount}
-                    枚あります(合計に含まれていません)
-                  </li>
-                )}
-                {view.cancelledCount > 0 && (
-                  <li className="text-gray-500">
-                    取消済み {view.cancelledCount}枚(一覧には残りますが、合計には入りません)
-                  </li>
-                )}
-                {/* 送信待ち・送信失敗の件数。締めのときにここだけ見れば取り残しが分かる。 */}
-                {view.pendingMirrorCount > 0 && (
-                  <li className="text-gray-500">
-                    スプレッドシート未送信 {view.pendingMirrorCount}枚(取消できる期間が終わってから送信)
-                  </li>
-                )}
-                {view.failedMirrorCount > 0 && (
-                  <li className="text-red-600 font-bold">
-                    スプレッドシートへの送信に失敗 {view.failedMirrorCount}枚(対応が必要です)
-                  </li>
-                )}
-              </ul>
-
-              {view.receipts.length === 0 && (
-                <p className="text-sm text-gray-400">この月に登録された領収書はありません</p>
-              )}
-
-              <ul className="space-y-2">
-                {view.receipts.map((receipt) => (
-                  <ReceiptRow
-                    key={receipt.id}
-                    receipt={receipt}
-                    busy={cancelMutation.isPending}
-                    onCancel={(reason) => cancelMutation.mutate({ id: receipt.id, reason })}
-                  />
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
-
-        <div className="p-4 border-t bg-gray-50 rounded-b-xl text-right">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700"
-          >
-            閉じる
-          </button>
-        </div>
-      </div>
+          <ul className="space-y-2">
+            {view.receipts.map((receipt) => (
+              <ReceiptRow
+                key={receipt.id}
+                receipt={receipt}
+                busy={cancelMutation.isPending}
+                onCancel={(reason) => cancelMutation.mutate({ id: receipt.id, reason })}
+              />
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

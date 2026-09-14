@@ -1,7 +1,9 @@
 import {
+  applyCalendarSyncForDay,
   getAttendanceDay,
   getAttendanceMonth,
   getAttendanceScheduleEvents,
+  previewCalendarSyncForDay,
   saveAttendanceDay,
 } from '@katahimo/core';
 import type { AttendanceRowData } from '@katahimo/core/domain';
@@ -157,6 +159,60 @@ export function createAttendanceRoutes(container: Container) {
     const staffId = resolveAttendanceTargetStaffId(session, c.req.query('staffId'));
     const events = await getAttendanceScheduleEvents(container, session.tenantId, staffId, start, end);
     return c.json({ events });
+  });
+
+  /**
+   * Googleカレンダーの内容を出勤簿へ反映する(GAS版PastSchedule.jsの
+   * previewCalendarSyncForStaffOnDate / applyCalendarSyncForStaffOnDate)。
+   *
+   * 1日ぶんが1リクエスト。一括反映(管理者用)はこのエンドポイントを画面側が
+   * 日付×スタッフのぶんだけ順に呼ぶ(GAS版runCalendarSyncQueueと同じ)。まとめて処理する
+   * エンドポイントにしないのは、1件ごとにGAS側でMapsのルート計算が走り、
+   * 期間が長いと1リクエストがタイムアウトするため。1件ずつなら途中まで反映された分は残り、
+   * 失敗した組み合わせだけを再実行できる。
+   *
+   * GAS版と同じく「修正可能期限」の制限は無い(カレンダー内容の反映はいつでも行える)。
+   * 対象スタッフはresolveAttendanceTargetStaffIdが決めるので、管理者以外がstaffIdを
+   * 指定しても常に本人の勤怠になる。
+   */
+  app.post('/calendar-sync/preview', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    const body = await c.req.json().catch(() => null);
+    const date = body?.date;
+    if (typeof date !== 'string' || !DATE_PATTERN.test(date)) {
+      return c.json({ code: 'validation_failed', message: 'date(YYYY-MM-DD)が必要です' }, 400);
+    }
+
+    const staffId = resolveAttendanceTargetStaffId(session, body?.staffId);
+    try {
+      const preview = await previewCalendarSyncForDay(container, session.tenantId, staffId, date);
+      return c.json({ preview });
+    } catch (e) {
+      // カレンダー(GASブリッジ)が落ちている・未設定といった外部要因で失敗する。一括反映は
+      // 失敗した組み合わせだけを再実行できる作りなので、理由をそのまま画面へ返す。
+      return c.json({ code: 'calendar_sync_failed', message: (e as Error).message }, 502);
+    }
+  });
+
+  app.post('/calendar-sync/apply', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    const body = await c.req.json().catch(() => null);
+    const date = body?.date;
+    if (typeof date !== 'string' || !DATE_PATTERN.test(date)) {
+      return c.json({ code: 'validation_failed', message: 'date(YYYY-MM-DD)が必要です' }, 400);
+    }
+
+    const staffId = resolveAttendanceTargetStaffId(session, body?.staffId);
+    try {
+      const result = await applyCalendarSyncForDay(container, session.tenantId, staffId, date);
+      return c.json({ result });
+    } catch (e) {
+      return c.json({ code: 'calendar_sync_failed', message: (e as Error).message }, 502);
+    }
   });
 
   return app;

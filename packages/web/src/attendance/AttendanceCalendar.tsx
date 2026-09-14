@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AttendanceRowData, ScheduleEvent, ScheduleEventSlot } from '../api';
 import { fetchAttendanceDay, fetchAttendanceWeekEvents, saveAttendanceDay } from '../api';
 import { applySlotEdit, readSlotFields } from './arraySlot';
+import { CalendarSyncDiffModal } from './CalendarSyncDiffModal';
 import {
   CAL_DOW,
   CAL_TYPE_STYLE,
@@ -25,17 +26,28 @@ const CAL_TIME_AXIS_WIDTH = 24;
  * (移行時の混乱を減らすため)。
  *
  * 表示している予定は実際のGoogleカレンダーからではなく、保存済みの出勤簿(attendance_days)
- * の記録をそのままカレンダー風に色分け表示しているだけ(GAS版と同じ設計)。そのため
- * Googleカレンダー連携(Phase 5)が無くても動く。GAS版にあった「📅 カレンダーから取得」
- * (実際のGoogleカレンダーの内容を出勤簿へ反映するボタン)は、その連携が無いため含めていない。
+ * の記録をそのままカレンダー風に色分け表示しているだけ(GAS版と同じ設計)。実際の
+ * Googleカレンダーの内容を取り込みたいときは、1日表示の「📅 カレンダーから反映」
+ * (差分を確認してから書き込む)か、勤怠タブ上部の「📅 一括反映(管理者用)」を使う
+ * ――これもGAS版と同じ導線。
  */
-export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
+export function AttendanceCalendar({
+  staffId,
+  jumpToDate,
+  onJumpHandled,
+}: {
+  staffId?: string;
+  /** 月次集計から日付行をタップされたとき、その日の1日表示へ切り替える。 */
+  jumpToDate?: string | null;
+  onJumpHandled?: () => void;
+} = {}) {
   const queryClient = useQueryClient();
   const [weekAnchor, setWeekAnchor] = useState(() => calGetWeekStart(new Date()));
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [selectedDate, setSelectedDate] = useState(() => calYmd(new Date()));
   const [openSlot, setOpenSlot] = useState<ScheduleEventSlot | null>(null);
   const [dayRowData, setDayRowData] = useState<AttendanceRowData>({});
+  const [showCalendarSync, setShowCalendarSync] = useState(false);
 
   const weekEnd = (() => {
     const d = new Date(weekAnchor);
@@ -78,6 +90,16 @@ export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
     setViewMode('day');
   };
 
+  // 月次集計の日付行がタップされたら、その日を含む週へ移動して1日表示にする
+  // (GAS版openScheduleSlotForDate_が、別の週の日でも週アンカーを付け替えていたのと同じ)。
+  useEffect(() => {
+    if (!jumpToDate) return;
+    setWeekAnchor(calGetWeekStart(new Date(`${jumpToDate}T00:00:00`)));
+    setSelectedDate(jumpToDate);
+    setViewMode('day');
+    onJumpHandled?.();
+  }, [jumpToDate, onJumpHandled]);
+
   const handleSlotSave = (fields: { name: string; start: string; end: string } | null) => {
     if (!openSlot) return;
     const merged = applySlotEdit(dayRowData, openSlot, fields);
@@ -89,7 +111,8 @@ export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 mb-4">
       <div className="bg-amber-50 border border-amber-200 text-amber-700 text-[11px] rounded-lg px-2.5 py-2 mb-2 leading-snug">
-        ⚠️ ここに表示されるのは保存済みの出勤簿の記録です(Googleカレンダー連携はまだ実装されていません)。
+        ⚠️ ここに表示されるのは保存済みの出勤簿の記録です。Googleカレンダーの最新の内容にするには、1日表示の
+        「📅 カレンダーから反映」を押してください。
       </div>
 
       <div className="flex items-center justify-between mb-2">
@@ -139,7 +162,7 @@ export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
       </div>
 
       {viewMode === 'day' && (
-        <div className="mb-2">
+        <div className="mb-2 flex items-center justify-between gap-2">
           <button
             type="button"
             onClick={() => setViewMode('week')}
@@ -147,6 +170,30 @@ export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
           >
             ← 週間表示に戻る
           </button>
+          <div className="flex gap-1">
+            {/* GAS版1日表示ヘッダーの「📅 カレンダーから取得」。差分を確認してから書き込む。 */}
+            <button
+              type="button"
+              onClick={() => setShowCalendarSync(true)}
+              className="text-[11px] px-2 py-1 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+            >
+              📅 カレンダーから反映
+            </button>
+            {/* GAS版の「🔄 勤怠シートから読込」に相当。正データはこちらのDBなので、
+                読み直すだけ(スプレッドシートは移行期の写し)。 */}
+            <button
+              type="button"
+              onClick={() => {
+                void dayQuery.refetch();
+                void weekQuery.refetch();
+              }}
+              disabled={dayQuery.isFetching || weekQuery.isFetching}
+              title="最新の内容を再読込"
+              className="text-[11px] px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+            >
+              🔄 再読込
+            </button>
+          </div>
         </div>
       )}
 
@@ -257,6 +304,14 @@ export function AttendanceCalendar({ staffId }: { staffId?: string } = {}) {
           rowData={dayRowData}
           onSave={handleSlotSave}
           onClose={() => setOpenSlot(null)}
+        />
+      )}
+
+      {showCalendarSync && (
+        <CalendarSyncDiffModal
+          date={selectedDate}
+          staffId={staffId}
+          onClose={() => setShowCalendarSync(false)}
         />
       )}
     </div>

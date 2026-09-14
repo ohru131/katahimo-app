@@ -12,8 +12,13 @@ import {
   toColumnRow,
 } from '../domain/attendance';
 import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
+import { formatJstDateKey, jstMonthRange } from '../domain/reports/jstTime';
 import type { MirrorPort } from '../ports/mirror';
-import type { AttendanceDayRepositoryPort } from '../ports/repositories';
+import type {
+  AttendanceDayRepositoryPort,
+  ReceiptRepositoryPort,
+  StaffRepositoryPort,
+} from '../ports/repositories';
 import type { UnitOfWorkPort } from '../ports/unitOfWork';
 
 export interface AttendanceDeps {
@@ -32,6 +37,17 @@ export interface AttendanceDeps {
   mirrorAttendanceAggregate: boolean;
   /** 勤怠の保存とミラー要求のenqueueを、1つのトランザクションにまとめるために使う。 */
   unitOfWork: UnitOfWorkPort;
+  /**
+   * 月次集計に「対象: 氏名 / 年月」の見出しを出すために引く(GAS版getAttendanceMonthの
+   * 戻り値staffNameと同じ)。
+   */
+  staff: StaffRepositoryPort;
+  /**
+   * 月次集計に含める領収書の日別集計(GAS版getReceiptsForMonth_)のために引く。
+   * 領収書は勤怠と同じ「その月に自分がやったこと」の記録で、GAS版では月次集計モーダルの
+   * 中に一体で出ている。
+   */
+  receipts: ReceiptRepositoryPort;
 }
 
 export interface AttendanceDayView {
@@ -112,27 +128,120 @@ export async function saveAttendanceDay(
   };
 }
 
-export interface AttendanceMonthView {
-  yearMonth: string;
-  days: AttendanceDayView[];
-  totals: AttendanceMonthlyTotals;
+/** 月次集計に埋め込む領収書の1日分(GAS版 receipts.byDay の1エントリ)。 */
+export interface AttendanceMonthReceiptDay {
+  /** 'YYYY-MM-DD'(JST)。領収書の日時(OCRが読んだ日付、読めなければ登録時刻)の日付部分。 */
+  date: string;
+  amountYen: number;
 }
 
-/** 指定スタッフの指定月('YYYY-MM')の勤怠を集計する。 */
+export interface AttendanceMonthReceipts {
+  /** 日付昇順。金額の入っていない日は現れない。 */
+  byDay: AttendanceMonthReceiptDay[];
+  /** 領収書月集計(円)。取り消し済みと、金額を数値化できなかった分は入らない。 */
+  totalYen: number;
+  /**
+   * 金額を数値にできていない領収書の件数(取り消し済みを除く)。合計は「読めた分だけ」なので、
+   * 何件が合計から漏れているかを画面に出せるようにする(GAS版には無い。GAS版は
+   * `Number(row[4]) || 0` で黙って0円として合計していた)。
+   */
+  unreadableAmountCount: number;
+  /** 取り消し済みの件数(合計には入らない)。 */
+  cancelledCount: number;
+}
+
+export interface AttendanceMonthView {
+  yearMonth: string;
+  /** 対象スタッフの氏名。月次集計の見出し「対象: 氏名 / 年月」に使う。 */
+  staffName: string;
+  /**
+   * その月の全日(1日〜末日)。記録が無い日も空のrowData・0の派生値で並ぶ
+   * (GAS版getAttendanceMonthと同じ。スプレッドシートの日付一覧をそのまま見るのと同じ情報量にする)。
+   */
+  days: AttendanceDayView[];
+  totals: AttendanceMonthlyTotals;
+  receipts: AttendanceMonthReceipts;
+}
+
+/** 'YYYY-MM' の日数。 */
+function daysInMonth(yearMonth: string): number {
+  const [year, month] = yearMonth.split('-').map(Number);
+  // Date.UTCのday=0はその月の最終日。month(1始まり)をそのまま渡すと翌月の0日=当月末日になる。
+  return new Date(Date.UTC(year ?? 1970, month ?? 1, 0)).getUTCDate();
+}
+
+/**
+ * 指定スタッフ・指定月の領収書を日別に集計する(GAS版 getReceiptsForMonth_ 相当)。
+ *
+ * GAS版との違いは2点だけで、どちらも新システム側にしか無い概念に合わせたもの:
+ *   - 取り消し済み(cancelled_at)の領収書は合計にも日別にも入れない。
+ *   - 金額を数値化できなかった領収書を0円として黙って足さず、件数として別に返す。
+ */
+async function aggregateReceiptsForMonth(
+  deps: AttendanceDeps,
+  tenantId: string,
+  staffId: string,
+  yearMonth: string,
+): Promise<AttendanceMonthReceipts> {
+  const range = jstMonthRange(yearMonth);
+  if (!range) return { byDay: [], totalYen: 0, unreadableAmountCount: 0, cancelledCount: 0 };
+
+  const records = await deps.receipts.listByStaffInPeriod(tenantId, staffId, range.from, range.to);
+
+  const amountByDate = new Map<string, number>();
+  let totalYen = 0;
+  let unreadableAmountCount = 0;
+  let cancelledCount = 0;
+
+  for (const record of records) {
+    if (record.cancelledAt !== null) {
+      cancelledCount++;
+      continue;
+    }
+    if (record.amountYen === null) {
+      unreadableAmountCount++;
+      continue;
+    }
+    const dateKey = formatJstDateKey(record.receiptTimestamp);
+    amountByDate.set(dateKey, (amountByDate.get(dateKey) ?? 0) + record.amountYen);
+    totalYen += record.amountYen;
+  }
+
+  const byDay = Array.from(amountByDate, ([date, amountYen]) => ({ date, amountYen })).sort((a, b) =>
+    a.date.localeCompare(b.date),
+  );
+
+  return { byDay, totalYen, unreadableAmountCount, cancelledCount };
+}
+
+/**
+ * 指定スタッフの指定月('YYYY-MM')の勤怠を集計する。
+ *
+ * daysはその月の全日を1日〜末日まで並べる(記録が無い日は空のrowData)。GAS版
+ * getAttendanceMonthが出勤簿シートの日付行をそのまま全日ぶん返しているのに合わせたもので、
+ * 「スプレッドシートの日付一覧を見ているのと同じ情報量」を画面に出せるようにするため。
+ * 記録のある日だけを返すと、画面側で月の日付を組み立て直すことになり、末日の判定が
+ * サーバーとクライアントに二重に散る。
+ */
 export async function getAttendanceMonth(
   deps: AttendanceDeps,
   tenantId: string,
   staffId: string,
   yearMonth: string,
 ): Promise<AttendanceMonthView> {
-  const records = await deps.attendanceDays.listByStaffAndMonth(tenantId, staffId, yearMonth);
+  const [staffRecord, records, receipts] = await Promise.all([
+    deps.staff.findById(tenantId, staffId),
+    deps.attendanceDays.listByStaffAndMonth(tenantId, staffId, yearMonth),
+    aggregateReceiptsForMonth(deps, tenantId, staffId, yearMonth),
+  ]);
 
-  const days = records.map((r) => ({
-    businessDate: r.businessDate,
-    rowData: r.rowData,
-    derived: computeDayDerived(toColumnRow(r.rowData)),
-  }));
-  days.sort((a, b) => a.businessDate.localeCompare(b.businessDate));
+  const rowDataByDate = new Map(records.map((r) => [r.businessDate, r.rowData]));
+  const days: AttendanceDayView[] = [];
+  for (let day = 1; day <= daysInMonth(yearMonth); day++) {
+    const businessDate = `${yearMonth}-${String(day).padStart(2, '0')}`;
+    const rowData = rowDataByDate.get(businessDate) ?? {};
+    days.push({ businessDate, rowData, derived: computeDayDerived(toColumnRow(rowData)) });
+  }
 
   // computeMonthlyTotalsはattendanceCalc.ts側の内部実装(列記号のAttendanceColumnRow)を
   // そのまま受け取るので、ここでもtoColumnRow()を通す(表示用のAttendanceMonthView.days自体は
@@ -141,7 +250,7 @@ export async function getAttendanceMonth(
     days.map((d) => ({ rowData: toColumnRow(d.rowData), derived: d.derived })),
   );
 
-  return { yearMonth, days, totals };
+  return { yearMonth, staffName: staffRecord?.name ?? '', days, totals, receipts };
 }
 
 /**

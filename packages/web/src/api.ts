@@ -403,10 +403,26 @@ export interface AttendanceMonthlyTotals {
   shoppingErrandTotal: number;
 }
 
+/** 月次集計に埋め込む領収書の1日分。core AttendanceMonthReceiptDayと同じ形。 */
+export interface AttendanceMonthReceiptDay {
+  date: string;
+  amountYen: number;
+}
+
+export interface AttendanceMonthReceipts {
+  byDay: AttendanceMonthReceiptDay[];
+  totalYen: number;
+  unreadableAmountCount: number;
+  cancelledCount: number;
+}
+
 export interface AttendanceMonthView {
   yearMonth: string;
+  staffName: string;
+  /** その月の全日(1日〜末日)。記録が無い日も空のrowData・0の派生値で並ぶ。 */
   days: AttendanceDayView[];
   totals: AttendanceMonthlyTotals;
+  receipts: AttendanceMonthReceipts;
 }
 
 /** staffIdは管理者が「対象スタッフ」を選んでいる場合のみ渡す(非管理者は常に自分自身なので不要)。 */
@@ -478,6 +494,56 @@ export async function fetchAttendanceWeekEvents(
   const res = await fetch(`/api/attendance/week?${params.toString()}`, { credentials: 'include' });
   const body = await parseJsonOrThrow<{ events: ScheduleEvent[] }>(res);
   return body.events;
+}
+
+// ── Googleカレンダー → 出勤簿の反映(GAS版の「📅 カレンダーから取得」「📅 一括反映(管理者用)」)──
+
+/** 反映で書き換わる列1つぶんの差分。core CalendarSyncChangeと同じ形。 */
+export interface CalendarSyncChange {
+  column: string;
+  label: string;
+  oldValue: string;
+  newValue: string;
+}
+
+export interface CalendarSyncPreview {
+  staffId: string;
+  staffName: string;
+  date: string;
+  appointmentCount: number;
+  hasChanges: boolean;
+  changes: CalendarSyncChange[];
+}
+
+export interface CalendarSyncApplyResult extends CalendarSyncPreview {
+  changedCount: number;
+}
+
+/** 書き込まずに差分だけ取る(差分確認モーダル用)。 */
+export async function previewCalendarSync(date: string, staffId?: string): Promise<CalendarSyncPreview> {
+  const res = await fetch('/api/attendance/calendar-sync/preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ date, staffId }),
+  });
+  const body = await parseJsonOrThrow<{ preview: CalendarSyncPreview }>(res);
+  return body.preview;
+}
+
+/**
+ * 実際に出勤簿へ反映する。差分はサーバー側で計算し直されるので、プレビューの結果を
+ * 送り返す必要はない(送っても使われない)。
+ */
+export async function applyCalendarSync(date: string, staffId?: string): Promise<CalendarSyncApplyResult> {
+  const res = await fetch('/api/attendance/calendar-sync/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ date, staffId }),
+  });
+  const body = await parseJsonOrThrow<{ result: CalendarSyncApplyResult }>(res);
+  return body.result;
 }
 
 // ── 割引クーポン(doc/14 §9。日報画面の選択UIと、管理者向けクーポン管理画面の両方で使う) ──
