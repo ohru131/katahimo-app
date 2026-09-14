@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { collectTables } from './collectSchema';
+import { collectTables, type TableInfo } from './collectSchema';
 import { SCHEMA_DOMAINS } from './domains';
 import { REFERENCE_PATH } from './referencePath';
-import { renderReference } from './renderReference';
+import { renderDiagram, renderReference, renderTable } from './renderReference';
 
 /**
  * 自動生成するリファレンス(doc/16)が、スキーマの現状と一致していることの検査。
@@ -15,6 +15,30 @@ import { renderReference } from './renderReference';
  */
 
 const tables = collectTables();
+
+/** 検査用の空テーブル。必要な項目だけを上書きして使う。 */
+function emptyTable(name: string): TableInfo {
+  return {
+    name,
+    columns: [],
+    uniqueConstraints: [],
+    foreignKeys: [],
+    checks: [],
+    indexes: [],
+    policies: [],
+    rlsEnabled: false,
+  };
+}
+
+/** 検査用の列。 */
+function column(name: string, notNull: boolean): TableInfo['columns'][number] {
+  return { name, sqlType: 'uuid', notNull, primaryKey: false };
+}
+
+/** テーブル1つぶんの節だけを描画する(ドメイン定義を通さずに確かめるため)。 */
+function renderTableSection(table: TableInfo): string {
+  return renderTable(table);
+}
 
 /** 生成したMarkdownから、mermaidの関係線だけを取り出す。 */
 function diagramRelations(): string[] {
@@ -79,6 +103,54 @@ describe('データベース構造リファレンス', () => {
       // daily_reports_tenant_reservation_uidx は reservation_id IS NOT NULL の部分索引。
       // 親を指している行は全部この索引が縛るので、1予約に日報は1件まで。
       expect(diagramRelations()).toContain('reservations |o--o| daily_reports');
+    });
+
+    it('RLSが有効ならポリシーの有無に関わらず「なし」とは書かない', () => {
+      // ポリシーが1つも無いまま有効にすると、PostgreSQLは全行を拒否する。
+      // そこで「RLS: なし」と出すと実態と正反対の説明になる。
+      const rendered = renderTableSection({
+        ...emptyTable('rls_without_policy'),
+        rlsEnabled: true,
+        policies: [],
+      });
+
+      expect(rendered).toContain('RLS: 有効(ポリシーが無いため全行が拒否される)');
+    });
+
+    it('ポリシーが複数あれば全部出す', () => {
+      const rendered = renderTableSection({
+        ...emptyTable('two_policies'),
+        rlsEnabled: true,
+        policies: [
+          { name: 'policy_a', for: 'select', using: 'a' },
+          { name: 'policy_b', for: 'insert', using: 'b' },
+        ],
+      });
+
+      expect(rendered).toContain('RLS: `policy_a`(SELECT)— `a`');
+      expect(rendered).toContain('RLS: `policy_b`(INSERT)— `b`');
+    });
+
+    it('式インデックスを含むユニーク索引は多重度の判定に使わない', () => {
+      // columnNames には式が入らないので、`(tenant_id, lower(code))` が `[tenant_id]` に
+      // 見えて、tenant_id だけの外部キーと誤って一致してしまう。
+      const child: TableInfo = {
+        ...emptyTable('children'),
+        columns: [column('parent_id', true)],
+        foreignKeys: [{ columns: ['parent_id'], table: 'parents', foreignColumns: ['id'] }],
+        indexes: [
+          {
+            name: 'children_expr_uidx',
+            columns: ['parent_id', 'lower(code)'],
+            columnNames: ['parent_id'],
+            unique: true,
+          },
+        ],
+      };
+      const rendered = renderDiagram([child]);
+
+      // 1対1(o|)ではなく1対多(o{)になる。
+      expect(rendered).toContain('parents ||--o{ children');
     });
 
     it('業務条件で絞る部分ユニーク索引は1対1にしない', () => {

@@ -56,7 +56,13 @@ function cardinality(child: TableInfo, columns: readonly string[]): string {
     primaryKey,
     ...child.uniqueConstraints.map((constraint) => constraint.expression.split(', ')),
     ...child.indexes
-      .filter((index) => index.unique && constrainsEveryRow(index))
+      // 式インデックス(lower(code) 等)を含むものは外す。columnNames には式が入らないので、
+      // `(parent_id, lower(code))` が `[parent_id]` に見えて、単独列の外部キーと
+      // 誤って一致してしまう。全要素が素の列である索引だけを見る。
+      .filter(
+        (index) =>
+          index.unique && index.columnNames.length === index.columns.length && constrainsEveryRow(index),
+      )
       .map((index) => index.columnNames),
   ].some((candidate) => [...candidate].sort().join(',') === key);
 
@@ -68,12 +74,13 @@ function cardinality(child: TableInfo, columns: readonly string[]): string {
 }
 
 /**
- * ドメイン1つぶんのER図。
+ * ドメイン1つぶんのER図。renderTable と同じ理由で export している。
+ *
  *
  * 属性はPKとFKの列だけを出す。全462列を図に流し込むと読めなくなるうえ、同じ内容が
  * 第2章の表にもある。図の役目は「どのテーブルがどう繋がっているか」に絞る。
  */
-function renderDiagram(owned: readonly TableInfo[]): string {
+export function renderDiagram(owned: readonly TableInfo[]): string {
   const ownedNames = new Set(owned.map((table) => table.name));
   // 親として参照されるだけのテーブルも、線の行き先として図に出す(属性は出さない)。
   const referenced = new Set<string>();
@@ -114,15 +121,28 @@ function renderDiagram(owned: readonly TableInfo[]): string {
   return lines.join('\n');
 }
 
-/** テーブル1つぶんの定義(列の表+制約の箇条書き)。 */
-function renderTable(table: TableInfo): string {
+/**
+ * テーブル1つぶんの定義(列の表+制約の箇条書き)。
+ *
+ * export しているのは、実スキーマには今のところ存在しない形(ポリシーが複数ある・
+ * RLSだけ有効でポリシーが無い等)を検査から直接渡せるようにするため。
+ */
+export function renderTable(table: TableInfo): string {
   const out: string[] = [`### \`${table.name}\``, ''];
 
-  const policy = table.policies[0];
-  out.push(
-    policy ? `RLS: \`${policy.name}\`(${policy.for.toUpperCase()})— \`${policy.using ?? ''}\`` : 'RLS: なし',
-    '',
-  );
+  // RLSの有効・無効とポリシーの有無は別の話。ポリシーが1つも無いまま有効にすると
+  // PostgreSQLは全行を拒否するので、「RLS: なし」と出すと実態と正反対になる。
+  // ポリシーは複数張れるため、1つ目だけでなく全部出す(今はどのテーブルも1つ)。
+  if (!table.rlsEnabled) {
+    out.push('RLS: なし', '');
+  } else if (table.policies.length === 0) {
+    out.push('RLS: 有効(ポリシーが無いため全行が拒否される)', '');
+  } else {
+    for (const policy of table.policies) {
+      out.push(`RLS: \`${policy.name}\`(${policy.for.toUpperCase()})— \`${policy.using ?? ''}\``);
+    }
+    out.push('');
+  }
 
   out.push('| 列 | 型 | NULL | 既定値 |', '|---|---|---|---|');
   for (const column of table.columns) {
