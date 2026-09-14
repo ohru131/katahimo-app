@@ -106,15 +106,16 @@ describe('データベース構造リファレンス', () => {
     });
 
     it('RLSが有効ならポリシーの有無に関わらず「なし」とは書かない', () => {
-      // ポリシーが1つも無いまま有効にすると、PostgreSQLは全行を拒否する。
+      // ポリシーが1つも無いまま有効にすると、一致するポリシーが無いので何も見えなくなる。
       // そこで「RLS: なし」と出すと実態と正反対の説明になる。
+      // 一方で「全行が拒否される」とも書かない(superuser・BYPASSRLS・FORCE未適用の所有者は素通りする)。
       const rendered = renderTableSection({
         ...emptyTable('rls_without_policy'),
         rlsEnabled: true,
         policies: [],
       });
 
-      expect(rendered).toContain('RLS: 有効(ポリシーが無いため全行が拒否される)');
+      expect(rendered).toContain('RLS: 有効(ポリシーが無いため、RLSが適用されるロールからは1行も見えない)');
     });
 
     it('ポリシーが複数あれば全部出す', () => {

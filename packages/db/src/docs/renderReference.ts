@@ -131,12 +131,18 @@ export function renderTable(table: TableInfo): string {
   const out: string[] = [`### \`${table.name}\``, ''];
 
   // RLSの有効・無効とポリシーの有無は別の話。ポリシーが1つも無いまま有効にすると
-  // PostgreSQLは全行を拒否するので、「RLS: なし」と出すと実態と正反対になる。
+  // 一致するポリシーが無いので何も見えなくなり、「RLS: なし」と出すと実態と正反対になる。
+  //
+  // ただし「全行が拒否される」と言い切るのも正しくない。superuser と BYPASSRLS を持つロールは
+  // RLSを無視するし、テーブル所有者も FORCE ROW LEVEL SECURITY が無ければ素通りする
+  // (このリポジトリは 0000_baseline_schema.sql で FORCE を手で足している。第1.1節)。
+  // 誰から見えないのかを限定して書く。
+  //
   // ポリシーは複数張れるため、1つ目だけでなく全部出す(今はどのテーブルも1つ)。
   if (!table.rlsEnabled) {
     out.push('RLS: なし', '');
   } else if (table.policies.length === 0) {
-    out.push('RLS: 有効(ポリシーが無いため全行が拒否される)', '');
+    out.push('RLS: 有効(ポリシーが無いため、RLSが適用されるロールからは1行も見えない)', '');
   } else {
     for (const policy of table.policies) {
       out.push(`RLS: \`${policy.name}\`(${policy.for.toUpperCase()})— \`${policy.using ?? ''}\``);
