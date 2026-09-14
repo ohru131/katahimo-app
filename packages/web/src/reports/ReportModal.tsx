@@ -20,6 +20,7 @@ import {
   DAILY_MEMO_PLACEHOLDER,
   HIYARI_WRITING_HINT,
 } from './promptDefaults';
+import { clearReportDraft, loadReportDraft, saveReportDraft } from './reportDraft';
 import { useVoiceInput } from './useVoiceInput';
 
 type Mode = 'daily' | 'accident';
@@ -38,6 +39,13 @@ function formatDateDisplay(d: Date): string {
 /** 'YYYY-MM-DD'(タイムゾーンのずれを避けるためtoLocaleDateString('sv-SE')を使う。AttendanceTabと同じ手法)。 */
 function formatDateKey(d: Date): string {
   return d.toLocaleDateString('sv-SE');
+}
+
+/** formatDateKeyの逆。書きかけの控えから訪問日を戻すときに使う(ローカル時刻の0時にする)。 */
+function parseDateKey(key: string): Date {
+  const [y, m, d] = key.split('-').map(Number);
+  if (!y || !m || !d) return new Date();
+  return new Date(y, m - 1, d);
 }
 
 /**
@@ -295,7 +303,16 @@ function formatNowForReceipt(): string {
  * 2タブ+領収書登録)に対応。「顧客情報」「活動記録」は別モーダル(CustomerDetail/HistoryModal)
  * に分かれている点もGAS版と同じ(openModal(customer)は常にこの報告モーダルを開く)。
  */
-export function ReportModal({ customerId, onClose }: { customerId: string; onClose: () => void }) {
+export function ReportModal({
+  customerId,
+  onClose,
+  restoreDraft = false,
+}: {
+  customerId: string;
+  onClose: () => void;
+  /** 端末に残っていた書きかけを流し込むか。開く側が利用者に確認したうえでtrueにする。 */
+  restoreDraft?: boolean;
+}) {
   const customerQuery = useQuery({
     queryKey: ['customer', customerId],
     queryFn: () => fetchCustomerDetail(customerId),
@@ -436,7 +453,8 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   );
   const [accTargetName, setAccTargetName] = useState('');
   const [accTargetDob, setAccTargetDob] = useState('');
-  const [occurrenceTime, setOccurrenceTime] = useState('');
+  // GAS版のlast_acc_timeと同じ。同じ訪問で続けて書くことが多く、毎回入れ直さずに済ませる。
+  const [occurrenceTime, setOccurrenceTime] = useState(() => localStorage.getItem('last_acc_time') || '');
   const [location, setLocation] = useState('');
   const [accidentContent, setAccidentContent] = useState('');
   const [situation, setSituation] = useState('');
@@ -541,6 +559,8 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
       // サーバー側の状態と選択状態を合わせ直している)。
       setSelectedCouponIds(report.coupons.map((c) => c.couponId));
       setDailyMessage('日報を保存しました');
+      // 確定したので書きかけの控えは不要(残すと次回「書きかけがあります」と出てしまう)。
+      clearReportDraft();
       markCustomerRecentlyUsed(customerId);
     } catch (e) {
       setDailyError(e instanceof Error ? e.message : String(e));
@@ -607,6 +627,8 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
       setAccidentSavedId(report.id);
       setAccidentSavedSnapshot(snapshot);
       setAccidentMessage(`${reportType}を保存しました`);
+      clearReportDraft();
+      localStorage.setItem('last_acc_time', occurrenceTime);
       markCustomerRecentlyUsed(customerId);
     } catch (e) {
       setAccidentError(e instanceof Error ? e.message : String(e));
@@ -614,6 +636,106 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
       setSavingAccident(false);
     }
   };
+
+  /**
+   * 入力が変わるたびに端末へ控えを書く(GAS版saveReportDraftSnapshotと同じ役割)。
+   * 保存に成功した時点でclearReportDraft()が消すので、残っているのは常に「未保存の書きかけ」だけ。
+   */
+  useEffect(() => {
+    if (!customerQuery.data) return;
+    saveReportDraft({
+      customerId,
+      customerName: customerQuery.data.name,
+      mode,
+      visitDate: formatDateKey(visitDate),
+      startHour,
+      startMinute,
+      endHour,
+      endMinute,
+      memoText,
+      accidentMemo,
+      internalText,
+      customerText,
+      riskRating,
+      esRating,
+      accident: {
+        reportType,
+        targetName: accTargetName,
+        targetDob: accTargetDob,
+        occurrenceTime,
+        location,
+        accidentContent,
+        situation,
+        immediateResponse,
+        parentCorrespondence,
+        diagnosisTreatment,
+        prevention,
+      },
+      savedAt: Date.now(),
+    });
+  }, [
+    customerQuery.data,
+    customerId,
+    mode,
+    visitDate,
+    startHour,
+    startMinute,
+    endHour,
+    endMinute,
+    memoText,
+    accidentMemo,
+    internalText,
+    customerText,
+    riskRating,
+    esRating,
+    reportType,
+    accTargetName,
+    accTargetDob,
+    occurrenceTime,
+    location,
+    accidentContent,
+    situation,
+    immediateResponse,
+    parentCorrespondence,
+    diagnosisTreatment,
+    prevention,
+  ]);
+
+  /**
+   * 前回の書きかけを、同じ顧客のダイアログを開いたときに一度だけ流し込む。
+   * 復元するかどうかは開く側(CustomerSearch)が確認済みで、ここへは「復元する」と決まった
+   * ものだけが来る。
+   */
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    const draft = loadReportDraft();
+    if (!draft || draft.customerId !== customerId || !restoreDraft) return;
+    restoredRef.current = true;
+    setMode(draft.mode);
+    setVisitDate(parseDateKey(draft.visitDate));
+    setStartHour(draft.startHour);
+    setStartMinute(draft.startMinute);
+    setEndHour(draft.endHour);
+    setEndMinute(draft.endMinute);
+    setMemoText(draft.memoText);
+    setAccidentMemo(draft.accidentMemo);
+    setInternalText(draft.internalText);
+    setCustomerText(draft.customerText);
+    setRiskRating(draft.riskRating);
+    setEsRating(draft.esRating);
+    setReportType(draft.accident.reportType);
+    setAccTargetName(draft.accident.targetName);
+    setAccTargetDob(draft.accident.targetDob);
+    setOccurrenceTime(draft.accident.occurrenceTime);
+    setLocation(draft.accident.location);
+    setAccidentContent(draft.accident.accidentContent);
+    setSituation(draft.accident.situation);
+    setImmediateResponse(draft.accident.immediateResponse);
+    setParentCorrespondence(draft.accident.parentCorrespondence);
+    setDiagnosisTreatment(draft.accident.diagnosisTreatment);
+    setPrevention(draft.accident.prevention);
+  }, [customerId, restoreDraft]);
 
   const MAX_RECEIPT_IMAGES = 6;
 

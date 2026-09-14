@@ -8,6 +8,8 @@ import type {
   CouponUpdateRequest,
   CouponUsageLimitKind,
   CustomerCouponUpsertRequest,
+  FamilyAllergyStatus,
+  FamilyMemberAllergyUpdateRequest,
 } from '@katahimo/shared';
 
 export type {
@@ -48,6 +50,9 @@ export interface FamilyMemberView {
   /** 生年月日の元表記。dobDateの解析成否によらず常に入る。 */
   dobRaw: string | null;
   info: string | null;
+  /** 'unknown'(未確認) / 'none'(確認して無し) / 'present'(あり)。doc/db/guidelines.md §11。 */
+  allergyStatus: FamilyAllergyStatus;
+  allergyNote: string | null;
 }
 
 export interface CustomerDetailView {
@@ -652,6 +657,28 @@ export async function updateCustomerBirthday(customerId: string, dob: string): P
   });
   const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
   if (!body.success) throw new Error(body.message || '生年月日の更新に失敗しました');
+}
+
+/**
+ * 世帯構成員のアレルギーを登録・更新する。訪問の現場で聞き取る情報なので管理者に限らない。
+ * 「あり」にするときは内容が必須(サーバー側とDBの制約でも縛っている)。
+ */
+export async function updateFamilyMemberAllergy(
+  customerId: string,
+  memberId: string,
+  allergy: FamilyMemberAllergyUpdateRequest,
+): Promise<void> {
+  const res = await fetch(
+    `/api/customers/${encodeURIComponent(customerId)}/family/${encodeURIComponent(memberId)}/allergy`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(allergy),
+    },
+  );
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'アレルギーの更新に失敗しました');
 }
 
 /** 顧客カルテの「この顧客が使えるクーポン」一覧(管理者のみ)。 */

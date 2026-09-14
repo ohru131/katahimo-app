@@ -25,10 +25,10 @@ drizzleがDDLを起こすときと同じ解釈を通しているので、`packag
 | 項目 | 数 |
 |---|---|
 | テーブル | 34 |
-| 列 | 462 |
+| 列 | 464 |
 | 外部キー | 83 |
 | インデックス | 54 |
-| CHECK制約 | 111 |
+| CHECK制約 | 113 |
 | RLSポリシー | 33 |
 
 ---
@@ -550,6 +550,8 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 | `dob_date` | `date` | NULL可 | — |
 | `dob_raw` | `text` | NULL可 | — |
 | `info` | `text` | NULL可 | — |
+| `allergy_status` | `text` | NOT NULL | `'unknown'` |
+| `allergy_note` | `text` | NULL可 | — |
 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |
 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |
 
@@ -557,6 +559,11 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 
 - `(tenant_id)` → `tenants(id)`
 - `(tenant_id, customer_id)` → `customers(tenant_id, id)`
+
+**CHECK制約**
+
+- `family_members_allergy_status_check` — `"family_members"."allergy_status" IN ('unknown', 'none', 'present')`
+- `family_members_allergy_note_required` — `"family_members"."allergy_status" <> 'present' OR ("family_members"."allergy_note" IS NOT NULL AND "family_members"."allergy_note" <> '')`
 
 **インデックス**
 

@@ -9,6 +9,7 @@ import type {
   CouponDiscountKind,
   CouponEligibilityKind,
   CouponUsageLimitKind,
+  FamilyAllergyStatus,
 } from '@katahimo/shared';
 import type { AttendanceRowData } from '../domain/attendance/types';
 import type { LoginThrottlePolicy } from '../domain/auth/loginThrottle';
@@ -25,6 +26,7 @@ export type {
   CouponDiscountKind,
   CouponEligibilityKind,
   CouponUsageLimitKind,
+  FamilyAllergyStatus,
 } from '@katahimo/shared';
 
 /**
@@ -379,8 +381,12 @@ export interface FamilyMemberRecord {
   /** 生年月日の元表記('YYYY/M/D'。normalizeDateStrで正規化済み)。dobDateの解析成否によらず
    * 常に保持する(未取得ならnull)。 */
   dobRaw: string | null;
-  /** 職業・アレルギー等の自由記述。 */
+  /** 職業・その他共有事項の自由記述。 */
   info: string | null;
+  /** アレルギーの確認状態。'unknown'(未確認) / 'none' / 'present'。 */
+  allergyStatus: FamilyAllergyStatus;
+  /** アレルギーの内容。'present' のときは必ず入る。 */
+  allergyNote: string | null;
 }
 
 export interface NewFamilyMemberInput {
@@ -390,11 +396,23 @@ export interface NewFamilyMemberInput {
   dobDate: string | null;
   dobRaw: string | null;
   info: string | null;
+  allergyStatus: FamilyAllergyStatus;
+  allergyNote: string | null;
 }
 
 export interface FamilyMemberRepositoryPort {
   createMany(inputs: NewFamilyMemberInput[]): Promise<FamilyMemberRecord[]>;
   listByCustomerId(tenantId: string, customerId: string): Promise<FamilyMemberRecord[]>;
+  /**
+   * アレルギーだけを更新する。氏名・生年月日は取込が正なので、ここでは触らない
+   * (顧客の生年月日だけを別経路で更新しているのと同じ考え方。usecases/customers.ts参照)。
+   */
+  updateAllergy(
+    tenantId: string,
+    customerId: string,
+    memberId: string,
+    allergy: { status: FamilyAllergyStatus; note: string | null },
+  ): Promise<FamilyMemberRecord | null>;
   /** 更新時は全件入れ替え(現在の世帯構成員一覧で置き換える)。誰が増減したかの追跡はしない。 */
   replaceForCustomer(
     tenantId: string,

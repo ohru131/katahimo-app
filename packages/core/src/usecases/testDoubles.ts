@@ -42,6 +42,7 @@ import type {
   CustomerRepositoryPort,
   DailyReportRecord,
   DailyReportRepositoryPort,
+  FamilyAllergyStatus,
   FamilyMemberRecord,
   FamilyMemberRepositoryPort,
   IssuePasswordResetCodeInput,
@@ -457,6 +458,8 @@ export class FakeFamilyMemberRepository implements FamilyMemberRepositoryPort {
       dobDate: input.dobDate,
       dobRaw: input.dobRaw,
       info: input.info,
+      allergyStatus: input.allergyStatus,
+      allergyNote: input.allergyNote,
     };
   }
 
@@ -483,6 +486,20 @@ export class FakeFamilyMemberRepository implements FamilyMemberRepositoryPort {
     this.rows.length = 0;
     this.rows.push(...keep);
     return this.createMany(inputs);
+  }
+
+  async updateAllergy(
+    tenantId: string,
+    customerId: string,
+    memberId: string,
+    allergy: { status: FamilyAllergyStatus; note: string | null },
+  ): Promise<FamilyMemberRecord | null> {
+    const row = this.rows.find(
+      (r) => r.record.tenantId === tenantId && r.record.customerId === customerId && r.record.id === memberId,
+    );
+    if (!row) return null;
+    row.record = { ...row.record, allergyStatus: allergy.status, allergyNote: allergy.note };
+    return row.record;
   }
 }
 

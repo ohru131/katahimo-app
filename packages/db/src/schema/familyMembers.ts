@@ -1,6 +1,18 @@
+import { FAMILY_ALLERGY_STATUSES } from '@katahimo/shared';
 import { sql } from 'drizzle-orm';
-import { date, foreignKey, index, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  check,
+  date,
+  foreignKey,
+  index,
+  pgPolicy,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
+import { sqlInList } from './_sqlLiteral';
 import { customers } from './customers';
 import { tenants } from './tenants';
 
@@ -41,8 +53,29 @@ export const familyMembers = pgTable(
      */
     dobRaw: text(),
 
-    /** 職業・アレルギー・その他共有事項などの自由記述(parseFamilyInfoのinfo)。 */
+    /** 職業・その他共有事項などの自由記述(parseFamilyInfoのinfo)。 */
     info: text(),
+
+    /**
+     * アレルギーの確認状態。'unknown'(未確認・既定) / 'none'(確認して無し) / 'present'(あり)。
+     *
+     * 【info の自由記述と別に列を持つ理由】
+     * アレルギーは取り違えると命に関わるため、「この子に何があるか」を一定の場所から必ず
+     * 読めるようにする。自由記述に混ざっていると、書き方が人によって違ううえ
+     * (「卵アレルギーあり」「卵×」「アレルギーなし」)、SQLで拾えないので
+     * 「アレルギーのあるお子様が何人いるか」すら数えられない。
+     *
+     * 【既定を 'unknown' にする理由】
+     * GAS版は未記入を画面に「アレルギー: なし」と表示していて、聞いていないだけの状態と
+     * 確認して無かった状態が同じ見え方になっていた。既定を「未確認」にし、
+     * 「なし」は人が確認して選んだときにだけ入るようにする。
+     */
+    allergyStatus: text().notNull().default('unknown'),
+    /**
+     * アレルギーの内容(品目・症状・対応)。'present' のときは必ず入る(下のCHECK)。
+     * 'none'/'unknown' でも、確認した経緯などを残したい場合に書ける。
+     */
+    allergyNote: text(),
 
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
@@ -55,6 +88,16 @@ export const familyMembers = pgTable(
       columns: [t.tenantId, t.customerId],
       foreignColumns: [customers.tenantId, customers.id],
     }),
+    check(
+      'family_members_allergy_status_check',
+      sql`${t.allergyStatus} IN ${sqlInList(FAMILY_ALLERGY_STATUSES)}`,
+    ),
+    // 「あり」なのに内容が無い行を作らせない。現場が見ても何に気を付ければよいか分からず、
+    // 「あり」という情報だけでは訪問前の確認に使えないため。
+    check(
+      'family_members_allergy_note_required',
+      sql`${t.allergyStatus} <> 'present' OR (${t.allergyNote} IS NOT NULL AND ${t.allergyNote} <> '')`,
+    ),
     // listByCustomer(WHERE tenant_id=? AND customer_id=?)を索引だけで返すため(doc/db/guidelines.md §3)。
     index('family_members_tenant_customer_idx').on(t.tenantId, t.customerId),
   ],

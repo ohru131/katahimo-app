@@ -3,6 +3,7 @@ import type {
   CustomerPatchInput,
   CustomerRecord,
   CustomerRepositoryPort,
+  FamilyAllergyStatus,
   FamilyMemberRecord,
   FamilyMemberRepositoryPort,
   NewCustomerInput,
@@ -138,16 +139,47 @@ function buildCustomerRecordFields(tenantId: string, input: CreateCustomerInput)
   };
 }
 
+/**
+ * 取込で入れ替える世帯構成員に、いま入っているアレルギーを引き継ぐための対応表を作る。
+ *
+ * 【引き継ぎが要る理由】
+ * 世帯構成員はCSV取込のたびに全件入れ替える(replaceForCustomer)。アレルギーはCSVに元となる
+ * 列が無く現場で聞き取って入れる情報なので、素直に入れ替えると再取込のたびに消える
+ * (GAS版は家族DBシートをclearContentsしていて、実際にこの消え方をする)。
+ * 顧客の生年月日を「キーを作らない」ことで守っているのと同じ問題を、こちらでは
+ * 既存行からの引き継ぎで守る。
+ *
+ * 【氏名が重複する構成員を引き継がない理由】
+ * 突き合わせられるのは氏名しかない(idはCSV側に無い)。同姓同名が2人いると、どちらの
+ * アレルギーをどちらに付けるかを決められない。取り違えたまま「卵アレルギーなし」と
+ * 出すより、未確認に戻して現場に入れ直してもらうほうが安全なので、
+ * 重複する氏名は対応表から除く。
+ */
+function buildAllergyCarryOver(existing: FamilyMemberRecord[]): Map<string, FamilyMemberRecord> {
+  const byName = new Map<string, FamilyMemberRecord | null>();
+  for (const member of existing) {
+    byName.set(member.name, byName.has(member.name) ? null : member);
+  }
+  const carried = new Map<string, FamilyMemberRecord>();
+  for (const [name, member] of byName) {
+    if (member) carried.set(name, member);
+  }
+  return carried;
+}
+
 /** 家族構成員の入力配列を、指定顧客に紐付くNewFamilyMemberInputの配列に変換する。 */
 function buildFamilyMemberInputs(
   tenantId: string,
   customerId: string,
   members: FamilyMemberInput[],
+  existing: FamilyMemberRecord[] = [],
 ): NewFamilyMemberInput[] {
+  const carryOver = buildAllergyCarryOver(existing);
   return members.map((m) => {
     // doc/db/guidelines.md §6: dob(自由記述由来の"YYYY/M/D"等)はdobRawへそのまま残しつつ、
     // parseDateOnlyで解析できた場合だけdobDateに'YYYY-MM-DD'を入れる。
     const dobRaw = nullIfEmpty(m.dob);
+    const previous = carryOver.get(m.name);
     return {
       tenantId,
       customerId,
@@ -155,6 +187,9 @@ function buildFamilyMemberInputs(
       dobDate: dobRaw ? parseDateOnly(dobRaw) : null,
       dobRaw,
       info: nullIfEmpty(m.info),
+      // 既存行が無ければ未確認から始める(doc/db/guidelines.md §11)。
+      allergyStatus: previous?.allergyStatus ?? 'unknown',
+      allergyNote: previous?.allergyNote ?? null,
     };
   });
 }
@@ -226,7 +261,10 @@ export async function updateCustomer(
   const updated = await deps.customers.update(tenantId, customerId, patch);
 
   if (input.familyMembers) {
-    const memberInputs = buildFamilyMemberInputs(tenantId, customerId, input.familyMembers);
+    // 入れ替える前にいまの行を読み、聞き取り済みのアレルギーを氏名で引き継ぐ
+    // (buildAllergyCarryOver のコメント参照)。
+    const existing = await deps.familyMembers.listByCustomerId(tenantId, customerId);
+    const memberInputs = buildFamilyMemberInputs(tenantId, customerId, input.familyMembers, existing);
     await deps.familyMembers.replaceForCustomer(tenantId, customerId, memberInputs);
   }
 
@@ -289,6 +327,9 @@ export interface FamilyMemberView {
   dobDate: string | null;
   dobRaw: string | null;
   info: string | null;
+  /** アレルギーの確認状態。'unknown' は「まだ聞けていない」で、「なし」とは別(doc/db/guidelines.md §11)。 */
+  allergyStatus: FamilyAllergyStatus;
+  allergyNote: string | null;
 }
 
 /** 顧客の全項目(RESERVA CSV由来の全フィールド)をそのまま返す詳細ビュー。 */
@@ -332,7 +373,36 @@ export interface CustomerDetailView {
 
 /** FamilyMemberRecordを、詳細画面用のFamilyMemberViewに変換する。 */
 function toFamilyMemberView(row: FamilyMemberRecord): FamilyMemberView {
-  return { id: row.id, name: row.name, dobDate: row.dobDate, dobRaw: row.dobRaw, info: row.info };
+  return {
+    id: row.id,
+    name: row.name,
+    dobDate: row.dobDate,
+    dobRaw: row.dobRaw,
+    info: row.info,
+    allergyStatus: row.allergyStatus,
+    allergyNote: row.allergyNote,
+  };
+}
+
+/**
+ * 世帯構成員のアレルギーだけを更新する(doc/db/guidelines.md §11)。
+ *
+ * 顧客の生年月日と同じく、CSV取込が触らない項目なので画面から入れられるようにする。
+ * 氏名・生年月日は取込が正なのでここでは触らない。
+ * 「なし」「未確認」にしたときも内容(note)は消さず、確認の経緯を残せるようにしている。
+ */
+export async function updateFamilyMemberAllergy(
+  deps: CustomerDeps,
+  tenantId: string,
+  customerId: string,
+  memberId: string,
+  allergy: { status: FamilyAllergyStatus; note: string },
+): Promise<FamilyMemberView | null> {
+  const updated = await deps.familyMembers.updateAllergy(tenantId, customerId, memberId, {
+    status: allergy.status,
+    note: nullIfEmpty(allergy.note),
+  });
+  return updated ? toFamilyMemberView(updated) : null;
 }
 
 /** 顧客1件の全項目を、世帯構成員一覧とあわせて返す(詳細画面用)。 */

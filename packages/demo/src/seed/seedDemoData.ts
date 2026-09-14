@@ -1,5 +1,11 @@
 import type { Container } from '@katahimo/api';
-import { assignCouponToCustomer, createCoupon, createCustomer, registerStaff } from '@katahimo/core';
+import {
+  assignCouponToCustomer,
+  createCoupon,
+  createCustomer,
+  registerStaff,
+  updateFamilyMemberAllergy,
+} from '@katahimo/core';
 import { DEMO_FIGURES, DEMO_OFFICE, DEMO_STAFF, DEMO_TENANT } from './figures';
 import {
   birthDateFromAgeMonths,
@@ -216,6 +222,16 @@ export async function seedDemoData(
       })),
     });
     customerIdByName.set(name, created.id);
+
+    // アレルギーは createCustomer では入らない(取込で消さないよう、常に未確認から始める)。
+    // デモでは「あり」「なし」「未確認」が並んで見えるよう、作成後に聞き取り済みの子だけ埋める。
+    const savedChildren = await container.familyMembers.listByCustomerId(tenant.id, created.id);
+    for (const child of figure.children) {
+      if (!child.allergy) continue;
+      const saved = savedChildren.find((m) => m.name === `${figure.familyName} ${child.givenName}`);
+      if (!saved) continue;
+      await updateFamilyMemberAllergy(container, tenant.id, created.id, saved.id, child.allergy);
+    }
     addressLatLng.set(address, { lat: figure.lat, lng: figure.lng });
 
     // 配布型クーポンは1世帯目にだけ配る(顧客カルテの「クーポン」で配布状況を見られる)。

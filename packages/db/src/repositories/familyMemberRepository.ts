@@ -1,4 +1,5 @@
 import type {
+  FamilyAllergyStatus,
   FamilyMemberRecord,
   FamilyMemberRepositoryPort,
   NewFamilyMemberInput,
@@ -19,6 +20,8 @@ function toInsertValues(input: NewFamilyMemberInput) {
     dobDate: input.dobDate,
     dobRaw: input.dobRaw,
     info: input.info,
+    allergyStatus: input.allergyStatus,
+    allergyNote: input.allergyNote,
   };
 }
 
@@ -32,6 +35,9 @@ function toRecord(row: FamilyMemberRow): FamilyMemberRecord {
     dobDate: row.dobDate,
     dobRaw: row.dobRaw,
     info: row.info,
+    // DB上は text 列(許可値はCHECK制約が縛る)なので、ポートの型へ寄せる。
+    allergyStatus: row.allergyStatus as FamilyAllergyStatus,
+    allergyNote: row.allergyNote,
   };
 }
 
@@ -72,6 +78,30 @@ export class DrizzleFamilyMemberRepository implements FamilyMemberRepositoryPort
 
       const rows = await tx.insert(familyMembers).values(inputs.map(toInsertValues)).returning();
       return rows.map(toRecord);
+    });
+  }
+
+  async updateAllergy(
+    tenantId: string,
+    customerId: string,
+    memberId: string,
+    allergy: { status: FamilyAllergyStatus; note: string | null },
+  ): Promise<FamilyMemberRecord | null> {
+    return withTenant(this.db, tenantId, async (tx) => {
+      const rows = await tx
+        .update(familyMembers)
+        .set({ allergyStatus: allergy.status, allergyNote: allergy.note })
+        .where(
+          and(
+            eq(familyMembers.tenantId, tenantId),
+            // URLの顧客に属する構成員だけを対象にする(別の顧客のIDを渡しても0件で404になる)。
+            eq(familyMembers.customerId, customerId),
+            eq(familyMembers.id, memberId),
+          ),
+        )
+        .returning();
+      const row = rows[0];
+      return row ? toRecord(row) : null;
     });
   }
 }

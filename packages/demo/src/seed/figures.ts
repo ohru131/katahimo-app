@@ -12,6 +12,11 @@ export interface DemoChild {
   /** 訪問時点で0〜6歳になるよう、シード時の「今日」から逆算する月齢。 */
   ageMonths: number;
   info: string;
+  /**
+   * アレルギー(doc/db/guidelines.md §11)。省略した子は「未確認」のまま残し、
+   * 聞き取りが済んでいない状態がどう見えるかもデモで分かるようにする。
+   */
+  allergy?: { status: 'none' | 'present'; note: string };
 }
 
 export interface DemoFigure {
@@ -51,8 +56,18 @@ export const DEMO_FIGURES: readonly DemoFigure[] = [
     parkingDetail: '来客用スペースB-4。管理人室でカードを借りる',
     memo: '玄関チャイムが鳴りにくいため、到着時は電話連絡をお願いしたいとのこと。',
     children: [
-      { givenName: '信忠', ageMonths: 58, info: '積み木遊びが好き。人見知りは少ない。' },
-      { givenName: '徳', ageMonths: 19, info: '卵アレルギーあり(加熱済みは可)。' },
+      {
+        givenName: '信忠',
+        ageMonths: 58,
+        info: '積み木遊びが好き。人見知りは少ない。',
+        allergy: { status: 'none', note: '2026-08の訪問時に保護者へ確認済み。' },
+      },
+      {
+        givenName: '徳',
+        ageMonths: 19,
+        info: '手づかみ食べの練習中。',
+        allergy: { status: 'present', note: '卵(加熱済みは可)。発疹が出たら冷やして保護者へ連絡。' },
+      },
     ],
   },
   {
@@ -87,7 +102,14 @@ export const DEMO_FIGURES: readonly DemoFigure[] = [
     parkingArea: '路上',
     parkingDetail: '平日は駐車監視員の巡回が多い。短時間でも要注意。',
     memo: 'ご家族に医療従事者がおり、健康面の相談を受けることが多い。',
-    children: [{ givenName: '章', ageMonths: 46, info: 'ぜんそくの既往あり。季節の変わり目は注意。' }],
+    children: [
+      {
+        givenName: '章',
+        ageMonths: 46,
+        info: 'ぜんそくの既往あり。季節の変わり目は注意。',
+        allergy: { status: 'present', note: 'ハウスダスト。発作時は処方の吸入薬(保護者が預ける)。' },
+      },
+    ],
   },
   {
     familyName: '与謝野',

@@ -8,6 +8,7 @@ import {
   searchCustomersByFamilyName,
   updateCustomer,
   updateCustomerBirthday,
+  updateFamilyMemberAllergy,
 } from './customers';
 import { FakeCustomerRepository, FakeFamilyMemberRepository } from './testDoubles';
 
@@ -82,8 +83,19 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
         dobDate: '2019-01-19',
         dobRaw: '2019/1/19',
         info: '保育園児 卵アレルギー',
+        // 取込に元となる列が無いので、作った直後は必ず未確認から始まる(doc/db/guidelines.md §11)。
+        allergyStatus: 'unknown',
+        allergyNote: null,
       },
-      { id: expect.any(String), name: '佐藤 次子', dobDate: '2021-06-20', dobRaw: '2021/6/20', info: null },
+      {
+        id: expect.any(String),
+        name: '佐藤 次子',
+        dobDate: '2021-06-20',
+        dobRaw: '2021/6/20',
+        info: null,
+        allergyStatus: 'unknown',
+        allergyNote: null,
+      },
     ]);
   });
 
@@ -96,7 +108,15 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
 
     const detail = await getCustomerDetail(deps, tenantId, created.id);
     expect(detail?.familyMembers).toEqual([
-      { id: expect.any(String), name: '佐藤 太郎', dobDate: null, dobRaw: '1990/1', info: null },
+      {
+        id: expect.any(String),
+        name: '佐藤 太郎',
+        dobDate: null,
+        dobRaw: '1990/1',
+        info: null,
+        allergyStatus: 'unknown',
+        allergyNote: null,
+      },
     ]);
   });
 
@@ -123,6 +143,116 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     expect(detail?.dobDate).toBe('1990-06-15');
     expect(detail?.dobRaw).toBe('1990/6/15');
     expect(detail?.city).toBe('仙台市青葉区');
+  });
+
+  it('updateFamilyMemberAllergyでアレルギーだけを更新でき、氏名・生年月日は動かない', async () => {
+    const created = await createCustomer(deps, {
+      tenantId,
+      name: '佐藤 花子',
+      familyMembers: [{ name: '佐藤 太郎', dob: '2019/1/19', info: '保育園児' }],
+    });
+    const before = await getCustomerDetail(deps, tenantId, created.id);
+    const member = before?.familyMembers[0];
+    if (!member) throw new Error('世帯構成員が作られていない');
+    expect(member.allergyStatus).toBe('unknown');
+
+    await updateFamilyMemberAllergy(deps, tenantId, created.id, member.id, {
+      status: 'present',
+      note: '卵(加熱済みは可)',
+    });
+
+    const after = await getCustomerDetail(deps, tenantId, created.id);
+    expect(after?.familyMembers[0]).toEqual({
+      id: member.id,
+      name: '佐藤 太郎',
+      dobDate: '2019-01-19',
+      dobRaw: '2019/1/19',
+      info: '保育園児',
+      allergyStatus: 'present',
+      allergyNote: '卵(加熱済みは可)',
+    });
+  });
+
+  it('別の顧客の世帯構成員IDを渡してもアレルギーを更新できない', async () => {
+    const a = await createCustomer(deps, {
+      tenantId,
+      name: '佐藤 花子',
+      familyMembers: [{ name: '佐藤 太郎', dob: '2019/1/19' }],
+    });
+    const b = await createCustomer(deps, { tenantId, name: '鈴木 一郎' });
+    const detail = await getCustomerDetail(deps, tenantId, a.id);
+    const member = detail?.familyMembers[0];
+    if (!member) throw new Error('世帯構成員が作られていない');
+
+    const result = await updateFamilyMemberAllergy(deps, tenantId, b.id, member.id, {
+      status: 'present',
+      note: '卵',
+    });
+
+    expect(result).toBeNull();
+    const after = await getCustomerDetail(deps, tenantId, a.id);
+    expect(after?.familyMembers[0]?.allergyStatus).toBe('unknown');
+  });
+
+  it('取込(世帯構成員の入れ替え)は、聞き取り済みのアレルギーを消さない', async () => {
+    // 世帯構成員はCSV取込のたびに全件入れ替わる。アレルギーはCSVに元となる列が無いので、
+    // 素直に入れ替えると現場で聞き取った内容が毎回消える(GAS版がその壊れ方をしている)。
+    const created = await createCustomer(deps, {
+      tenantId,
+      name: '佐藤 花子',
+      familyMembers: [{ name: '佐藤 太郎', dob: '2019/1/19', info: '保育園児' }],
+    });
+    const before = await getCustomerDetail(deps, tenantId, created.id);
+    const member = before?.familyMembers[0];
+    if (!member) throw new Error('世帯構成員が作られていない');
+    await updateFamilyMemberAllergy(deps, tenantId, created.id, member.id, {
+      status: 'present',
+      note: '卵(加熱済みは可)',
+    });
+
+    // 再取込。CSV側は氏名と生年月日と自由記述だけを持つ。
+    await updateCustomer(deps, tenantId, created.id, {
+      tenantId,
+      name: '佐藤 花子',
+      familyMembers: [{ name: '佐藤 太郎', dob: '2019/1/19', info: '保育園児 年中' }],
+    });
+
+    const after = await getCustomerDetail(deps, tenantId, created.id);
+    expect(after?.familyMembers[0]?.allergyStatus).toBe('present');
+    expect(after?.familyMembers[0]?.allergyNote).toBe('卵(加熱済みは可)');
+    // 取込が正の項目(自由記述)はCSVの新しい内容で上書きされる。
+    expect(after?.familyMembers[0]?.info).toBe('保育園児 年中');
+  });
+
+  it('同姓同名が2人いる世帯では、取り違えを避けるためアレルギーを引き継がない', async () => {
+    const created = await createCustomer(deps, {
+      tenantId,
+      name: '佐藤 花子',
+      familyMembers: [
+        { name: '佐藤 太郎', dob: '2019/1/19' },
+        { name: '佐藤 太郎', dob: '2021/6/20' },
+      ],
+    });
+    const before = await getCustomerDetail(deps, tenantId, created.id);
+    const first = before?.familyMembers[0];
+    if (!first) throw new Error('世帯構成員が作られていない');
+    await updateFamilyMemberAllergy(deps, tenantId, created.id, first.id, {
+      status: 'present',
+      note: '卵',
+    });
+
+    await updateCustomer(deps, tenantId, created.id, {
+      tenantId,
+      name: '佐藤 花子',
+      familyMembers: [
+        { name: '佐藤 太郎', dob: '2019/1/19' },
+        { name: '佐藤 太郎', dob: '2021/6/20' },
+      ],
+    });
+
+    // どちらの子のものか決められないので、未確認に戻して現場に入れ直してもらう。
+    const after = await getCustomerDetail(deps, tenantId, created.id);
+    expect(after?.familyMembers.map((m) => m.allergyStatus)).toEqual(['unknown', 'unknown']);
   });
 
   it('updateCustomerBirthdayで生年月日だけを更新でき、空文字を渡すと消える', async () => {

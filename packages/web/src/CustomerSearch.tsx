@@ -5,6 +5,7 @@ import { CustomerDetail } from './CustomerDetail';
 import { getRecentCustomerIds } from './recentCustomers';
 import { HistoryModal } from './reports/HistoryModal';
 import { ReportModal } from './reports/ReportModal';
+import { clearReportDraft, loadReportDraft } from './reports/reportDraft';
 
 /**
  * 「訪問先一覧」タブ。GAS版のtabVisitors(index.html)と同じく、有効な顧客を一度に全件取得して
@@ -41,6 +42,10 @@ export function CustomerSearch({
     onInitialSearchConsumed?.();
   }, [initialSearchText]);
   const [reportCustomerId, setReportCustomerId] = useState<string | null>(null);
+  /** ReportModalを開くとき、端末に残っていた書きかけを流し込むかどうか。 */
+  const [restoreDraft, setRestoreDraft] = useState(false);
+  /** 未保存の書きかけ。タブを開いた時点で1度だけ読む(以後は案内を閉じるまで保持)。 */
+  const [pendingDraft, setPendingDraft] = useState(() => loadReportDraft());
   const [detailCustomerId, setDetailCustomerId] = useState<string | null>(null);
   const [historyCustomer, setHistoryCustomer] = useState<{ id: string; name: string } | null>(null);
   // 報告作成モーダルを閉じるたびに1増やし、useMemoに「最近使った顧客」の並びを再評価させる
@@ -120,6 +125,41 @@ export function CustomerSearch({
         </div>
       </div>
 
+      {/* 前回の書きかけがあれば、開き直せることを知らせる(GAS版restoreReportDraftIfAny相当)。
+          GAS版は問答無用でダイアログを開いていたが、別の訪問をしようとして開いた場面でも
+          前の書きかけが開くと紛らわしいので、案内を出して利用者に選んでもらう形にした。 */}
+      {pendingDraft && !reportCustomerId && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm text-amber-900 font-bold">保存していない書きかけがあります</p>
+          <p className="text-xs text-amber-800 mt-0.5 break-words">
+            {pendingDraft.customerName}・{pendingDraft.visitDate}(
+            {pendingDraft.mode === 'daily' ? '日報' : '事故報告'})
+          </p>
+          <div className="flex gap-2 mt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setRestoreDraft(true);
+                setReportCustomerId(pendingDraft.customerId);
+              }}
+              className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-lg"
+            >
+              続きを書く
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                clearReportDraft();
+                setPendingDraft(null);
+              }}
+              className="px-3 py-1.5 text-sm text-amber-800"
+            >
+              破棄する
+            </button>
+          </div>
+        </div>
+      )}
+
       {query.isError && <p className="text-red-500 text-sm mb-3">{(query.error as Error).message}</p>}
 
       {query.isPending && (
@@ -196,9 +236,13 @@ export function CustomerSearch({
       {reportCustomerId && (
         <ReportModal
           customerId={reportCustomerId}
+          restoreDraft={restoreDraft}
           onClose={() => {
             setReportCustomerId(null);
+            setRestoreDraft(false);
             setRecentTick((t) => t + 1);
+            // 閉じたあとも書きかけは残る(保存が済んでいれば ReportModal 側で消えている)。
+            setPendingDraft(loadReportDraft());
           }}
         />
       )}
