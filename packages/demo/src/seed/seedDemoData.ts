@@ -1,18 +1,14 @@
 import type { Container } from '@katahimo/api';
-import {
-  assignCouponToCustomer,
-  createCoupon,
-  createCustomer,
-  registerStaff,
-  saveAccidentReport,
-  saveAttendanceDay,
-  saveDailyReport,
-  uploadReceipts,
-} from '@katahimo/core';
-import type { AttendanceRowData } from '@katahimo/shared';
-import { MAX_MOVE_LEGS } from '@katahimo/shared';
+import { assignCouponToCustomer, createCoupon, createCustomer, registerStaff } from '@katahimo/core';
 import { DEMO_FIGURES, DEMO_OFFICE, DEMO_STAFF, DEMO_TENANT } from './figures';
-import { planVisitsForDate, recentBusinessDates, toJstDateIso, upcomingWeekDates } from './visitPlan';
+import {
+  birthDateFromAgeMonths,
+  type DemoDayContext,
+  seedAttendanceForDate,
+  seedReceiptsForDate,
+  seedVisitsForDate,
+} from './seedDays';
+import { recentBusinessDates, toJstDateIso, upcomingWeekDates } from './visitPlan';
 
 /**
  * 訪問履歴を作る期間(日)。
@@ -22,10 +18,24 @@ import { planVisitsForDate, recentBusinessDates, toJstDateIso, upcomingWeekDates
  * ダンプを配らない)を優先しているので、体感を保てる範囲で打ち止めにしている。
  * 勤怠タブが「先月ぶんも入っている」状態に見える程度は必要なので6週間。
  */
-const HISTORY_DAYS = 42;
+export const HISTORY_DAYS = 42;
 
-/** 何日に1回、事故報告(ヒヤリハット)を混ぜるか。 */
-const ACCIDENT_EVERY_N_VISITS = 37;
+/**
+ * 期間限定クーポン(SPRING10)の有効期間を「今日」の前後何日に置くか。
+ *
+ * 訪問履歴はHISTORY_DAYSぶん遡って作るため、それより広く取って期間外エラーで
+ * シードそのものが失敗しないようにする。日付が変わったあとの追い足し
+ * (topUpDemoData.ts)も同じ幅で引き直す。
+ */
+export const COUPON_VALIDITY_DAYS = 60;
+
+/** テナント内で一意なクーポンコード。追い足し側が引き直すためにここを正とする。 */
+export const DEMO_COUPON_CODES = {
+  welcome: 'WELCOME500',
+  spring: 'SPRING10',
+  birthday: 'BIRTHDAY10',
+  thanks: 'THANKS1000',
+} as const;
 
 export interface SeedProgress {
   /** 画面に出す進捗メッセージ。 */
@@ -51,85 +61,25 @@ function fullAddress(index: number): string {
 /**
  * 世帯代表者の生年月日を「今月」で作る('YYYY/M/D' の手入力と同じ表記)。年は固定で構わない
  * (誕生月クーポンは年を見ず月だけで判定するため。usecases/coupons.tsのfindBirthdayPerson)。
+ *
+ * 月が変わったあともデモに誕生月クーポンが出るよう、追い足し(topUpDemoData.ts)が
+ * 同じ関数で引き直して顧客の生年月日を更新する。
  */
-function representativeBirthdayThisMonth(today: Date): string {
+export function representativeBirthdayThisMonth(today: Date): string {
   // UTCの月ではなくJSTの月を使う。月初/月末の日本時間の夜はUTCではまだ前月で、
   // そのまま使うと「今月生まれ」のつもりが先月生まれになり、誕生月クーポンがデモに出ない。
   const jstMonth = Number(toJstDateIso(today).slice(5, 7));
   return `1990/${jstMonth}/15`;
 }
 
-/** 月齢から生年月日('YYYY-MM-DD')を作る。「今日」基準なので、いつ見ても年齢が古びない。 */
-function birthDateFromAgeMonths(today: Date, ageMonths: number): string {
-  const dob = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - ageMonths, 15));
-  return dob.toISOString().slice(0, 10);
+/** 「今日」を基準にした期間限定クーポンの有効期間。 */
+export function couponValidityWindow(today: Date): { validFrom: string; validTo: string } {
+  const dayMs = 24 * 60 * 60 * 1000;
+  return {
+    validFrom: toJstDateIso(new Date(today.getTime() - COUPON_VALIDITY_DAYS * dayMs)),
+    validTo: toJstDateIso(new Date(today.getTime() + COUPON_VALIDITY_DAYS * dayMs)),
+  };
 }
-
-/**
- * デモ用の領収書画像(1x1の透明PNG)。実物の写真を同梱せずに「画像を見る」の導線まで
- * 確かめられるようにするための最小データ。
- */
-const DEMO_RECEIPT_IMAGE =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-
-/**
- * デモ用の領収書。金額が'よみとれず'の行は、OCRが数値にできなかった場合(amount_yenがnull)を
- * 再現する。一覧の合計は読めた分だけなので、その枚数が警告として出ることまで見せられる。
- */
-const DEMO_RECEIPTS: {
-  time: string;
-  amount: string;
-  storeName: string;
-  billingType: 'customer_billable' | 'company_expense';
-  handoffText: string;
-}[] = [
-  {
-    time: '10:30',
-    amount: '1280',
-    storeName: 'スーパーみどり',
-    billingType: 'customer_billable',
-    handoffText: 'おやつと飲み物を購入しました',
-  },
-  {
-    time: '12:15',
-    amount: '600',
-    storeName: 'コインパーキング仙台駅前',
-    billingType: 'company_expense',
-    handoffText: '訪問先の駐車場代',
-  },
-  {
-    time: '15:40',
-    amount: '2450',
-    storeName: 'ドラッグストアあおば',
-    billingType: 'customer_billable',
-    handoffText: 'おむつを買い足しました',
-  },
-  {
-    time: '17:05',
-    amount: 'よみとれず',
-    storeName: '',
-    billingType: 'company_expense',
-    handoffText: 'レシートが薄く、金額を読み取れませんでした',
-  },
-];
-
-const VISIT_NOTES = [
-  '室内遊びを中心に過ごしました。積み木を高く積むことに繰り返し挑戦していました。',
-  '午前中は機嫌がよく、手遊び歌に合わせて体を動かしていました。',
-  '食事の場面を見守りました。スプーンを自分で持とうとする様子が見られました。',
-  '外気浴のため、玄関先まで一緒に出ました。風が強かったため短時間で切り上げています。',
-  '絵本の読み聞かせを行いました。同じページを何度も指差して反応していました。',
-  '午睡の寝つきについて保護者から相談があり、入眠前の環境づくりを一緒に確認しました。',
-  '着替えの練習に取り組みました。袖を通すところまで自分でできていました。',
-  '前回お伝えした遊びを継続されており、集中して取り組む時間が伸びていました。',
-];
-
-const ACCIDENT_NOTES = [
-  '室内を歩行中にバランスを崩し、テーブルの角に肩をぶつけました。外傷はありません。',
-  '積み木で遊んでいる際に指を挟みそうになりました。実際の受傷はありません。',
-];
-
-const WEATHER = ['晴れ', '曇り', '雨', '晴れ'];
 
 /**
  * デモ用のデータを一式投入する。
@@ -167,7 +117,7 @@ export async function seedDemoData(
   // クーポン選択の両方をすぐ触れるよう、金額引き/率引き・無期限/有効期間ありを1つずつ混ぜる。
   onProgress({ message: 'クーポンを登録しています…', ratio: 0.1 });
   const welcomeCoupon = await createCoupon(container, tenant.id, {
-    code: 'WELCOME500',
+    code: DEMO_COUPON_CODES.welcome,
     name: '紹介キャンペーン 500円引き',
     discountKind: 'amount',
     discountAmountYen: 500,
@@ -175,15 +125,15 @@ export async function seedDemoData(
   });
   if (!welcomeCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${welcomeCoupon.reason})`);
 
-  // 有効期間ありのクーポンも1件混ぜる。訪問履歴はHISTORY_DAYS(42日)ぶん遡って作るため、
-  // それより広い前後60日を有効期間にして、期間外エラーでシードそのものが失敗しないようにする。
+  // 有効期間ありのクーポンも1件混ぜる。有効期間は履歴の範囲(HISTORY_DAYS)より広く取る。
+  const validity = couponValidityWindow(today);
   const springCoupon = await createCoupon(container, tenant.id, {
-    code: 'SPRING10',
+    code: DEMO_COUPON_CODES.spring,
     name: '春のキャンペーン 10%引き',
     discountKind: 'percent',
     discountPercent: 10,
-    validFrom: toJstDateIso(new Date(today.getTime() - 60 * 24 * 60 * 60 * 1000)),
-    validTo: toJstDateIso(new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000)),
+    validFrom: validity.validFrom,
+    validTo: validity.validTo,
     note: '期間限定キャンペーン',
   });
   if (!springCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${springCoupon.reason})`);
@@ -192,7 +142,7 @@ export async function seedDemoData(
   // 出るのは、世帯代表またはお子さまの誕生月に当たる世帯だけになる。下で1世帯目の代表者に
   // 「今月」の生年月日を入れてあるので、デモをいつ開いてもこの動きを1件は見られる。
   const birthdayCoupon = await createCoupon(container, tenant.id, {
-    code: 'BIRTHDAY10',
+    code: DEMO_COUPON_CODES.birthday,
     name: 'お誕生月 10%引き',
     discountKind: 'percent',
     discountPercent: 10,
@@ -206,7 +156,7 @@ export async function seedDemoData(
   // 顧客ごとに配るクーポン。配っていない世帯では日報タブの選択肢に出ない
   // (顧客カルテの「クーポン」から配ると出てくる)。
   const thankYouCoupon = await createCoupon(container, tenant.id, {
-    code: 'THANKS1000',
+    code: DEMO_COUPON_CODES.thanks,
     name: '長期ご利用のお礼 1000円引き',
     discountKind: 'amount',
     discountAmountYen: 1000,
@@ -269,67 +219,29 @@ export async function seedDemoData(
     }
   }
 
+  const dayContext: DemoDayContext = {
+    tenantId: tenant.id,
+    adminStaffId,
+    adminStaffName,
+    customerIdByName,
+  };
+
   // 今日ぶんも入れる。「今日の訪問がまだ1件も無い」状態でデモが始まると、
   // 予定タブに出ている今日の予定と履歴が食い違って見える。
   const businessDates = [...recentBusinessDates(today, HISTORY_DAYS), toJstDateIso(today)];
-  let visitCounter = 0;
 
   for (const [dateIndex, businessDate] of businessDates.entries()) {
     onProgress({
       message: `訪問履歴を作成しています… (${dateIndex + 1}/${businessDates.length}日)`,
       ratio: 0.45 + (0.4 * (dateIndex + 1)) / businessDates.length,
     });
-
-    const visits = planVisitsForDate(businessDate, adminStaffName, DEMO_FIGURES.length);
-    if (visits.length === 0) continue;
-
-    for (const visit of visits) {
-      const figure = DEMO_FIGURES[visit.figureIndex];
-      if (!figure) continue;
-      const customerId = customerIdByName.get(`${figure.familyName} ${figure.givenName}`);
-      if (!customerId) continue;
-
-      visitCounter++;
-      const note = VISIT_NOTES[visitCounter % VISIT_NOTES.length] ?? VISIT_NOTES[0] ?? '';
-
-      await saveDailyReport(container, tenant.id, {
-        staffId: adminStaffId,
-        customerId,
-        reportDate: businessDate,
-        startTime: visit.start,
-        endTime: visit.end,
-        inputText: note,
-        internalText: `【訪問時間】${visit.start}〜${visit.end}\n【記録】${note}`,
-        customerText: `本日は${visit.start}〜${visit.end}でご訪問しました。${note}`,
-        riskRating: (visitCounter % 5) + 1,
-        esRating: (visitCounter % 4) + 2,
-        // 最初の1件にだけ適用しておく(doc/14 §9の適用記録表示が、デモでは常に空という
-        // 状態にならないように)。2件とも渡すことで「1回の訪問に複数のクーポンを適用できる」
-        // ことも合わせて示す。
-        couponIds: visitCounter === 1 ? [welcomeCoupon.couponId, springCoupon.couponId] : undefined,
-      });
-
-      if (visitCounter % ACCIDENT_EVERY_N_VISITS === 0) {
-        const child = figure.children[0];
-        const accidentNote = ACCIDENT_NOTES[visitCounter % ACCIDENT_NOTES.length] ?? ACCIDENT_NOTES[0] ?? '';
-        await saveAccidentReport(container, tenant.id, {
-          staffId: adminStaffId,
-          customerId,
-          reportType: 'ヒヤリハット',
-          targetName: child ? `${figure.familyName} ${child.givenName}` : `${figure.familyName} 様`,
-          targetDob: child ? birthDateFromAgeMonths(today, child.ageMonths) : '',
-          occurrenceTime: `${businessDate} ${visit.start}`,
-          location: '訪問先ご自宅内',
-          accidentContent: accidentNote,
-          situation: '室内で遊んでいる最中に発生しました。',
-          immediateResponse: '直ちに状態を確認し、痛みや腫れがないことを保護者と一緒に確認しました。',
-          parentCorrespondence: 'その場で状況をご説明し、ご了承をいただいています。',
-          diagnosisTreatment: '外傷なし。受診は不要と判断しました。',
-          prevention: '遊び始める前に動線上の家具の位置を確認します。',
-          inputText: accidentNote,
-        });
-      }
-    }
+    await seedVisitsForDate(container, dayContext, businessDate, {
+      today,
+      // 最初の1日の1件目にだけ適用しておく(doc/14 §9の適用記録表示が、デモでは常に空という
+      // 状態にならないように)。2件とも渡すことで「1回の訪問に複数のクーポンを適用できる」
+      // ことも合わせて示す。
+      couponIds: dateIndex === 0 ? [welcomeCoupon.couponId, springCoupon.couponId] : undefined,
+    });
   }
 
   // 出勤簿はスタッフ全員ぶん作る。管理者ぶんだけだと、スタッフのアカウントで
@@ -345,103 +257,17 @@ export async function seedDemoData(
       message: `出勤簿を作成しています… (${staffIndex + 1}/${staffIds.length}人)`,
       ratio: 0.85 + (0.14 * (staffIndex + 1)) / staffIds.length,
     });
-    for (const [dateIndex, businessDate] of attendanceDates.entries()) {
+    for (const businessDate of attendanceDates) {
       // 予定タブと同じ純関数から引くので、出勤簿の訪問先と予定が一致する。
-      const visits = planVisitsForDate(businessDate, staffName, DEMO_FIGURES.length);
-      if (visits.length === 0) continue;
-      await saveAttendanceDay(
-        container,
-        tenant.id,
-        staffId,
-        businessDate,
-        buildAttendanceRow(visits, dateIndex),
-      );
+      await seedAttendanceForDate(container, tenant.id, { id: staffId, name: staffName }, businessDate);
     }
   }
 
   // 領収書(doc/14 §10)。勤怠タブの「🧾 領収書」を開いたときに一覧が空にならないよう、
-  // 今月ぶんを何枚か入れておく。請求区分の両方・顧客に紐付かない経費・OCRが金額を読めなかった
-  // 場合の3つを混ぜて、一覧の見え方(合計に入らない枚数の警告を含む)をそのまま確かめられるようにする。
+  // 今月ぶんを何枚か入れておく。
   onProgress({ message: '領収書を登録しています…', ratio: 0.95 });
-  const receiptCustomerId = customerIdByName.get(
-    `${DEMO_FIGURES[0]?.familyName} ${DEMO_FIGURES[0]?.givenName}`,
-  );
-  if (receiptCustomerId) {
-    for (const receipt of DEMO_RECEIPTS) {
-      await uploadReceipts(container, tenant.id, {
-        staffId: adminStaffId,
-        // 駐車場代のような会社経費は顧客に紐付かない(customer_billableにはできない)。
-        customerId: receipt.billingType === 'customer_billable' ? receiptCustomerId : null,
-        images: [
-          {
-            data: DEMO_RECEIPT_IMAGE,
-            amount: receipt.amount,
-            storeName: receipt.storeName,
-            billingType: receipt.billingType,
-          },
-        ],
-        fallbackTimestamp: `${toJstDateIso(today).replaceAll('-', '/')} ${receipt.time}:00`,
-        handoffText: receipt.handoffText,
-      });
-    }
-  }
+  await seedReceiptsForDate(container, dayContext, toJstDateIso(today));
 
   onProgress({ message: '仕上げ中…', ratio: 1 });
   return { tenantId: tenant.id, customerIdByName, addressLatLng };
-}
-
-/** #1・#2訪問の「あとの移動」項目(MAX_MOVE_LEGS件目まで)。indexごとに値を変えて、月次の集計に多少の幅を持たせている。 */
-const MOVE_AFTER_VISIT: ReadonlyArray<{ plannedMoveMin: number; distanceKm: number }> = [
-  { plannedMoveMin: 35, distanceKm: 12.4 },
-  { plannedMoveMin: 30, distanceKm: 9.8 },
-];
-
-/**
- * 出勤簿1日分。doc/14 §2の段階1で永続形式(row_data)が意味のあるキーの配列(visits/officeWork)
- * になったのに合わせている(以前は列記号C/D/E…をキーにしたオブジェクトだった)。
- *
- * visitsは「計画された件数ぶんだけ」作る。visitPlan.tsのvisitCountForDateは土曜2件・日曜1件を
- * 返すため、ここで常に3件分の枠を作ってしまうと、予定の無い枠にVISIT_SLOTS[0]の時刻だけが
- * 入った「幻の訪問」ができる(placeが空なのにstart/endだけ埋まり、
- * buildScheduleEventsFromRowDataが先頭訪問の時刻でイベントを出してしまう)。
- *
- * MAX_MOVE_LEGS件目より後の訪問(3件目)にはweatherAfter/plannedMoveMin/distanceKmを付けない
- * (attendanceRowDataSchema/columnRow.tsのコメント参照。元のスプレッドシートにも#3訪問の
- * 「あとの移動」を書く列は無く、付けるとtoColumnRowが例外を投げる)。
- */
-function buildAttendanceRow(
-  visits: ReturnType<typeof planVisitsForDate>,
-  dateIndex: number,
-): AttendanceRowData {
-  const nameOf = (i: number): string => {
-    const visit = visits[i];
-    if (!visit) return '';
-    const figure = DEMO_FIGURES[visit.figureIndex];
-    return figure ? `${figure.familyName} ${figure.givenName}` : '';
-  };
-  const weather = (i: number): string => WEATHER[(dateIndex + i) % WEATHER.length] ?? '晴れ';
-  const note = dateIndex % 9 === 0 ? '道路工事による渋滞あり' : undefined;
-
-  return {
-    visits: visits.map((visit, i) => {
-      const move = i < MAX_MOVE_LEGS ? MOVE_AFTER_VISIT[i] : undefined;
-      return {
-        place: nameOf(i),
-        start: visit.start,
-        end: visit.end,
-        ...(move
-          ? { weatherAfter: weather(i), plannedMoveMin: move.plannedMoveMin, distanceKm: move.distanceKm }
-          : {}),
-      };
-    }),
-    officeWork: [{ name: '記録作成', start: '17:15', end: '17:45' }],
-    commuteDistanceKm: 7.2,
-    returnDistanceKm: 15.1,
-    ...(note ? { note } : {}),
-  };
-}
-
-/** 今日の日付(JST)。デモ画面の初期表示に使う。 */
-export function todayIso(): string {
-  return toJstDateIso(new Date());
 }

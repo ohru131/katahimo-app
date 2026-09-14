@@ -9,11 +9,15 @@ import type { DemoMail } from './ports/demoMailerPort';
 import type { DemoNotification } from './ports/demoNotifierPort';
 import { DEMO_FIGURES, DEMO_OFFICE, DEMO_TENANT } from './seed/figures';
 import { type SeedProgress, seedDemoData } from './seed/seedDemoData';
+import { topUpDemoData } from './seed/topUpDemoData';
+import { toJstDateIso } from './seed/visitPlan';
+import { type DemoSeedState, ensureSeedStateTable, readSeedState, writeSeedState } from './seedState';
 
 export type { DemoMail } from './ports/demoMailerPort';
 export type { DemoNotification } from './ports/demoNotifierPort';
 export { DEMO_STAFF, DEMO_TENANT } from './seed/figures';
 export type { SeedProgress } from './seed/seedDemoData';
+export type { DemoSeedState } from './seedState';
 
 export interface DemoHandle {
   /** Google Chat通知の代わりに画面へ出すための購読。 */
@@ -103,27 +107,73 @@ export async function startDemo(onProgress: (progress: SeedProgress) => void): P
   const customerIdByName = new Map<string, string>();
   const container = createDemoContainer({ db, customerIdByName, addressLatLng: buildAddressLatLng() });
 
+  // 「どこまでデモデータを作ったか」の記録。日付が変わったときの追い足しに使う。
+  await ensureSeedStateTable(client);
+  const seedStateStore = {
+    read: () => readSeedState(client),
+    write: (state: DemoSeedState) => writeSeedState(client, state),
+  };
+
   if (isFresh) {
     const seeded = await seedDemoData(container, onProgress);
     for (const [name, id] of seeded.customerIdByName) customerIdByName.set(name, id);
+    const todayIso = toJstDateIso(new Date());
+    await seedStateStore.write({
+      reportsThrough: todayIso,
+      receiptsMonth: todayIso.slice(0, 7),
+      birthdayMonth: todayIso.slice(0, 7),
+    });
     // シードはrelaxedDurabilityのまま流しているので、ここで確実に書き出す。
     // 書き出す前にタブを閉じられると、次回起動時に中途半端なデータで立ち上がる。
     await flushDemoDatabase(client);
   } else {
     onProgress({ message: '保存済みのデモデータを読み込んでいます…', ratio: 0.8 });
     await loadCustomerIds(container, customerIdByName);
+    // 前回の起動から日付が進んでいれば、足りない日を初回シードと同じ関数で埋める。
+    // これをしないと「今日の日報も出勤簿も無い」状態でデモが始まる。
+    await topUpDemoData(container, seedStateStore, customerIdByName, onProgress);
+    await flushDemoDatabase(client);
   }
 
   const jar = new CookieJar();
   const warningListeners = new Set<(message: string) => void>();
-  const shim = installFetchShim(
-    createDemoApiHandler(container, jar, {
-      flush: () => flushDemoDatabase(client),
-      onFailure: () => {
-        for (const listener of warningListeners) listener(PERSIST_FAILURE_MESSAGE);
-      },
-    }),
-  );
+  const apiHandler = createDemoApiHandler(container, jar, {
+    flush: () => flushDemoDatabase(client),
+    onFailure: () => {
+      for (const listener of warningListeners) listener(PERSIST_FAILURE_MESSAGE);
+    },
+  });
+
+  // タブを開いたまま日付をまたいだ場合(夜間に放置、翌朝そのままログイン)も、
+  // 起動時と同じように足りない日を埋める。リクエストのたびに文字列を比べるだけなので、
+  // 日付が変わっていなければ実質ゼロコスト。
+  let toppedUpFor = toJstDateIso(new Date());
+  let topUpInFlight: Promise<void> | null = null;
+  const ensureTodayData = (): Promise<void> => {
+    const today = toJstDateIso(new Date());
+    if (today === toppedUpFor) return Promise.resolve();
+    if (!topUpInFlight) {
+      // 走らせる前に印を進める。失敗したときにリクエストのたびに再試行して、
+      // デモが重くなるのを避ける(次の日付またぎでまた試される)。
+      toppedUpFor = today;
+      topUpInFlight = topUpDemoData(container, seedStateStore, customerIdByName)
+        .then(async (result) => {
+          if (result.changed) await flushDemoDatabase(client);
+        })
+        .catch((error) => {
+          console.error('[demo] 日付またぎのデモデータ追加に失敗しました', error);
+        })
+        .finally(() => {
+          topUpInFlight = null;
+        });
+    }
+    return topUpInFlight;
+  };
+
+  const shim = installFetchShim(async (request) => {
+    await ensureTodayData();
+    return apiHandler(request);
+  });
 
   onProgress({ message: '準備ができました', ratio: 1 });
 

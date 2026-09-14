@@ -91,6 +91,11 @@ describe('seedDemoData(公開デモの初期データ投入)', () => {
     // 配布型クーポン(THANKS1000)は配った1世帯目にだけ出る。
     expect(selectable.some((c) => c.code === 'THANKS1000')).toBe(true);
 
+    // 事故報告(ヒヤリハット)も履歴に混ぜている。ここが0件だと事故報告の一覧・帳票が
+    // 空のままのデモになるので、日数で判定するようにしたうえで件数を見張る。
+    const accidents = await client.query<{ n: number }>('SELECT count(*)::int AS n FROM accident_reports;');
+    expect(accidents.rows[0]?.n ?? 0).toBeGreaterThan(0);
+
     // 勤怠タブの「🧾 領収書」が空にならないよう、今月ぶんの領収書が入っていること。
     // 金額を読み取れなかった1枚は合計に入らず、枚数として出る(doc/14 §10)。
     const receipts = await listReceiptsForStaff(container, tenantId, adminStaffId, today.slice(0, 7));
