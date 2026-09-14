@@ -6,7 +6,13 @@ import {
   getAttendanceScheduleEvents,
   saveAttendanceDay,
 } from './attendance';
-import { FakeAttendanceDayRepository, FakeOutboxRepository, FakeUnitOfWork } from './testDoubles';
+import {
+  FakeAttendanceDayRepository,
+  FakeOutboxRepository,
+  FakeReceiptRepository,
+  FakeStaffRepository,
+  FakeUnitOfWork,
+} from './testDoubles';
 
 describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
   let deps: AttendanceDeps;
@@ -21,6 +27,8 @@ describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
       mirror,
       mirrorAttendanceAggregate: false,
       unitOfWork: new FakeUnitOfWork([attendanceDays, mirror]),
+      staff: new FakeStaffRepository(),
+      receipts: new FakeReceiptRepository(),
     };
   });
 
@@ -98,9 +106,33 @@ describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
     });
 
     const month = await getAttendanceMonth(deps, tenantId, staffId, '2026-08');
-    expect(month.days.map((d) => d.businessDate)).toEqual(['2026-08-01', '2026-08-02']);
     expect(month.totals.laborMinutes).toBe(180);
     expect(month.totals.shoppingErrandTotal).toBe(1);
+    expect(month.days.filter((d) => d.derived.laborMinutes > 0).map((d) => d.businessDate)).toEqual([
+      '2026-08-01',
+      '2026-08-02',
+    ]);
+  });
+
+  it('月次集計は記録の無い日も含めて月の全日を並べる(GAS版と同じ日付一覧の情報量)', async () => {
+    await saveAttendanceDay(deps, tenantId, staffId, '2026-09-02', {
+      visits: [{ start: '10:00', end: '14:00' }],
+    });
+
+    const month = await getAttendanceMonth(deps, tenantId, staffId, '2026-09');
+
+    expect(month.days).toHaveLength(30); // 9月は30日
+    expect(month.days[0]?.businessDate).toBe('2026-09-01');
+    expect(month.days[29]?.businessDate).toBe('2026-09-30');
+    // 記録が無い日は空のrowDataと0の派生値で並ぶ(画面が月の日数を組み立て直さなくて済む)。
+    expect(month.days[0]?.rowData).toEqual({});
+    expect(month.days[0]?.derived.laborMinutes).toBe(0);
+    expect(month.days[1]?.derived.laborMinutes).toBe(240);
+  });
+
+  it('2月の日数は閏年かどうかで変わる', async () => {
+    expect((await getAttendanceMonth(deps, tenantId, staffId, '2027-02')).days).toHaveLength(28);
+    expect((await getAttendanceMonth(deps, tenantId, staffId, '2028-02')).days).toHaveLength(29);
   });
 
   it('他スタッフ・他テナントの勤怠は取得できない', async () => {
@@ -146,5 +178,108 @@ describe('getAttendanceDay / saveAttendanceDay / getAttendanceMonth', () => {
         end: '15:00',
       },
     ]);
+  });
+});
+
+describe('getAttendanceMonth の領収書集計(GAS版 getReceiptsForMonth_ 相当)', () => {
+  const tenantId = 'tenant-1';
+  let deps: AttendanceDeps;
+  let receipts: FakeReceiptRepository;
+  let staffId: string;
+
+  /** 指定日時(JST)・金額の領収書を1件作る。cancel=trueなら取り消し済みにする。 */
+  async function addReceipt(
+    jstTimestamp: string,
+    amountYen: number | null,
+    options: { cancelled?: boolean; staffId?: string } = {},
+  ) {
+    const record = await receipts.create({
+      tenantId,
+      staffId: options.staffId ?? staffId,
+      customerId: null,
+      receiptTimestamp: new Date(jstTimestamp),
+      dedupeKey: null,
+      amountYen,
+      amountRaw: amountYen === null ? '読めない' : String(amountYen),
+      storeName: '店',
+      handoffText: null,
+      fileKey: `${tenantId}/receipts/${jstTimestamp}.jpg`,
+      contentType: 'image/jpeg',
+      billingType: 'company_expense',
+      cancellableUntil: '2099-12-31',
+    });
+    if (options.cancelled) {
+      await receipts.cancel(tenantId, record.id, { cancelledByStaffId: staffId, reason: null });
+    }
+    return record;
+  }
+
+  beforeEach(async () => {
+    const attendanceDays = new FakeAttendanceDayRepository();
+    const mirror = new FakeOutboxRepository();
+    const staff = new FakeStaffRepository();
+    receipts = new FakeReceiptRepository();
+    staffId = (
+      await staff.create({ tenantId, name: '蒔田 歩未', email: 'maita@example.com', isAdmin: false })
+    ).id;
+    deps = {
+      attendanceDays,
+      mirror,
+      mirrorAttendanceAggregate: false,
+      unitOfWork: new FakeUnitOfWork([attendanceDays, mirror]),
+      staff,
+      receipts,
+    };
+  });
+
+  it('対象月の領収書を日別に合算し、月合計も返す', async () => {
+    await addReceipt('2026-09-09T10:00:00+09:00', 1000);
+    await addReceipt('2026-09-09T18:00:00+09:00', 500);
+    await addReceipt('2026-09-02T10:00:00+09:00', 300);
+
+    const month = await getAttendanceMonth(deps, tenantId, staffId, '2026-09');
+
+    expect(month.receipts.byDay).toEqual([
+      { date: '2026-09-02', amountYen: 300 },
+      { date: '2026-09-09', amountYen: 1500 },
+    ]);
+    expect(month.receipts.totalYen).toBe(1800);
+  });
+
+  it('月の境界はJSTで切る(月末23:00 JSTは当月、月初00:00 JSTは翌月)', async () => {
+    await addReceipt('2026-09-30T23:00:00+09:00', 100);
+    await addReceipt('2026-10-01T00:30:00+09:00', 999);
+
+    const month = await getAttendanceMonth(deps, tenantId, staffId, '2026-09');
+
+    expect(month.receipts.byDay).toEqual([{ date: '2026-09-30', amountYen: 100 }]);
+    expect(month.receipts.totalYen).toBe(100);
+  });
+
+  it('取り消し済みと金額を読めなかった分は合計に入れず、件数だけ返す', async () => {
+    await addReceipt('2026-09-05T10:00:00+09:00', 1000);
+    await addReceipt('2026-09-06T10:00:00+09:00', 700, { cancelled: true });
+    await addReceipt('2026-09-07T10:00:00+09:00', null);
+
+    const month = await getAttendanceMonth(deps, tenantId, staffId, '2026-09');
+
+    expect(month.receipts.totalYen).toBe(1000);
+    expect(month.receipts.byDay).toEqual([{ date: '2026-09-05', amountYen: 1000 }]);
+    expect(month.receipts.cancelledCount).toBe(1);
+    expect(month.receipts.unreadableAmountCount).toBe(1);
+  });
+
+  it('他スタッフの領収書は混ざらない', async () => {
+    await addReceipt('2026-09-05T10:00:00+09:00', 1000, { staffId: 'staff-other' });
+
+    const month = await getAttendanceMonth(deps, tenantId, staffId, '2026-09');
+
+    expect(month.receipts.byDay).toEqual([]);
+    expect(month.receipts.totalYen).toBe(0);
+  });
+
+  it('対象スタッフの氏名を見出し用に返す', async () => {
+    const month = await getAttendanceMonth(deps, tenantId, staffId, '2026-09');
+    expect(month.staffName).toBe('蒔田 歩未');
   });
 });

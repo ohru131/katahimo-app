@@ -252,6 +252,8 @@ describe('runOutboxBatch / processOutboxJob', () => {
       mirror: outbox,
       mirrorAttendanceAggregate: false,
       unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
+      staff: new FakeStaffRepository(),
+      receipts: new FakeReceiptRepository(),
     };
 
     await saveAttendanceDay(attendanceDeps, tenantId, staffId, '2026-08-30', {
@@ -290,6 +292,8 @@ describe('runOutboxBatch / processOutboxJob', () => {
       mirror: outbox,
       mirrorAttendanceAggregate: true,
       unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
+      staff: new FakeStaffRepository(),
+      receipts: new FakeReceiptRepository(),
     };
 
     await saveAttendanceDay(attendanceDeps, tenantId, staffId, '2026-08-30', {
@@ -331,6 +335,8 @@ describe('runOutboxBatch / processOutboxJob', () => {
       mirror: outbox,
       mirrorAttendanceAggregate: false,
       unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
+      staff: new FakeStaffRepository(),
+      receipts: new FakeReceiptRepository(),
     };
 
     await saveAttendanceDay(attendanceDeps, tenantId, staffId, '2026-08-30', {

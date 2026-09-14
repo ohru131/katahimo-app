@@ -253,6 +253,8 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
       mirror: new FailingMirrorPort(),
       mirrorAttendanceAggregate: false,
       unitOfWork: new FakeUnitOfWork([attendanceDays, outbox]),
+      staff: new FakeStaffRepository(),
+      receipts: new FakeReceiptRepository(),
     };
 
     await expect(
