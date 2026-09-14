@@ -46,6 +46,8 @@ export function CustomerSearch({
   const [restoreDraft, setRestoreDraft] = useState(false);
   /** 未保存の書きかけ。タブを開いた時点で1度だけ読む(以後は案内を閉じるまで保持)。 */
   const [pendingDraft, setPendingDraft] = useState(() => loadReportDraft());
+  /** 顧客に紐付かない経費の領収書を登録するダイアログを開いているか。 */
+  const [expenseReceiptOpen, setExpenseReceiptOpen] = useState(false);
   const [detailCustomerId, setDetailCustomerId] = useState<string | null>(null);
   const [historyCustomer, setHistoryCustomer] = useState<{ id: string; name: string } | null>(null);
   // 報告作成モーダルを閉じるたびに1増やし、useMemoに「最近使った顧客」の並びを再評価させる
@@ -124,6 +126,21 @@ export function CustomerSearch({
           </div>
         </div>
       </div>
+
+      {/* 顧客に紐付かない経費(駐車場代など)の領収書を登録する入口。GAS版も訪問先一覧タブの
+          先頭に同じボタンを置いている(openStandaloneReceiptModal)。顧客を選んでから開く
+          ダイアログと同じものを、顧客なしで開く。 */}
+      <button
+        type="button"
+        onClick={() => {
+          setRestoreDraft(false);
+          setReportCustomerId(null);
+          setExpenseReceiptOpen(true);
+        }}
+        className="w-full mb-3 py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow transition-colors"
+      >
+        🧾 領収書登録(顧客に紐付かない経費)
+      </button>
 
       {/* 前回の書きかけがあれば、開き直せることを知らせる(GAS版restoreReportDraftIfAny相当)。
           GAS版は問答無用でダイアログを開いていたが、別の訪問をしようとして開いた場面でも
@@ -233,12 +250,13 @@ export function CustomerSearch({
         </div>
       )}
 
-      {reportCustomerId && (
+      {(reportCustomerId || expenseReceiptOpen) && (
         <ReportModal
           customerId={reportCustomerId}
           restoreDraft={restoreDraft}
           onClose={() => {
             setReportCustomerId(null);
+            setExpenseReceiptOpen(false);
             setRestoreDraft(false);
             setRecentTick((t) => t + 1);
             // 閉じたあとも書きかけは残る(保存が済んでいれば ReportModal 側で消えている)。

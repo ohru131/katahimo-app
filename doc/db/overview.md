@@ -268,7 +268,7 @@ sequenceDiagram
 | `tenant_keys` | テナントごとのDEK(ラップ済み) | ○ | 主キーは`(tenant_id, dek_version)`。世代ごとに1行(第3章参照) |
 | `staff` | スタッフ(認証情報を兼ねる) | ○ | `(tenant_id, id)`にUNIQUE。ログイン試行の絞り込み(`failed_login_attempts`/`locked_until`)もここ。訪問割当の最適化用に`home_address`/`home_lat`/`home_lng`/`preferred_transport_mode`を持つ(第2.5節) |
 | `customers` | 顧客(利用世帯の代表者) | ○ | RESERVA CSVの全列に対応、39列。`(tenant_id, id)`にUNIQUE。緯度経度は`lat`/`lng`の数値2列(`doc/db/guidelines.md` §7)。生年月日は`dob_date`+`dob_raw`(`doc/db/guidelines.md` §6。CSVに列が無いため手入力で入り、再取込では上書きしない) |
-| `family_members` | 世帯構成員(子ども等) | ○ | `customers`の1:N。氏名・付帯情報は平文。生年月日は`dob_date`(日付型)+`dob_raw`(元表記)の2列(`doc/db/guidelines.md` §6) |
+| `family_members` | 世帯構成員(子ども等) | ○ | `customers`の1:N。氏名・付帯情報は平文。生年月日は`dob_date`(日付型)+`dob_raw`(元表記)の2列(`doc/db/guidelines.md` §6)。アレルギーは自由記述と分けて`allergy_status`(未確認/なし/あり)+`allergy_note`の2列で持ち、取込での全件入れ替え時は氏名で突き合わせて引き継ぐ(`doc/db/guidelines.md` §11) |
 | `daily_reports` | 保育日報 | ○ | `staff`・`customers`双方への複合FK。本文は項目ごとの平文`text`列。開始・終了は`started_at`/`ended_at`(timestamptz)(`doc/db/guidelines.md` §6)。`reservation_id`で対応する予約に紐付け(任意。第2.3節) |
 | `accident_reports` | 事故報告/ヒヤリハット | ○ | 同上。本文は項目ごとの平文`text`列。対象児の生年月日は`target_dob_date`+`target_dob_raw`の2列(`doc/db/guidelines.md` §6) |
 | `receipts` | 領収書登録(実費報告) | ○ | `customer_id`はnullable(経費のみの領収書を許容)。重複検出は平文`dedupe_key`の等値一致(取り消した行は対象外)。金額は`amount_yen`(整数)+`amount_raw`(生文字列)の2列、`billing_type`で顧客請求/会社経費を区別(`doc/db/guidelines.md` §1・§10)。訂正は編集ではなく`cancelled_at`を立てる論理削除で、行は消さない(`doc/db/guidelines.md` §10)。`(tenant_id, id)`にUNIQUE(`invoice_lines`からの複合FKの参照先。第2.4節) |

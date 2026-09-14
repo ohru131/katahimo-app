@@ -2,7 +2,7 @@
 """doc/slides/architecture.pptx を生成する。
 
 doc/slides/db-review.pptx(DB構造レビュー資料)の対になる、アプリ構成の説明資料。
-一次情報は packages/*/package.json、packages/core/src/ports/、doc/proposal/tech-stack.md・doc/proposal/gas-bridge.md・doc/slides/architecture.html。
+一次情報は packages/*/package.json、packages/core/src/ports/、doc/proposal/tech-stack.md・doc/proposal/gas-bridge.md。
 """
 import sys
 from pathlib import Path
@@ -118,9 +118,9 @@ card(s, ML + 4.15, 1.25, 4.0, 2.5, "目指す先", accent=ACCENT, items=[
 ], body_size=10.5)
 card(s, ML + 8.3, 1.25, 4.03, 2.5, "規模", accent=GREEN, items=[
     {"t": [("9パッケージ", {"bold": True}), ("(pnpm workspace)", {})]},
-    {"t": [("TypeScript 246ファイル / 約32,100行", {"bold": True}), ("(テストを除く)", {})]},
-    {"t": [("テスト 62ファイル / 828件", {"bold": True}), ("。CIで毎回実行", {})]},
-    {"t": [("データベース 34テーブル", {"bold": True}), (" / マイグレーション4本", {})]},
+    {"t": [("TypeScript 248ファイル / 約32,900行", {"bold": True}), ("(テストを除く)", {})]},
+    {"t": [("テスト 63ファイル / 842件", {"bold": True}), ("。CIで毎回実行", {})]},
+    {"t": [("データベース 34テーブル", {"bold": True}), (" / マイグレーション5本", {})]},
 ], body_size=10.5)
 
 text(s, ML, 3.95, CW, 0.3, "いまどこにいるか", size=13, color=INK, bold=True)
@@ -398,7 +398,7 @@ for ttl, col, fl, items in groups:
     cx += w + 0.14
 card(s, ML, 5.8, 6.0, 1.1, "「窓口だけ定義する」ことの実利", accent=GREEN, items=[
     {"t": "テストでは偽の実装を渡すだけで済む。データベースも外部APIも起動しないため、"
-          "828件のテストが約35秒で終わる"},
+          "842件のテストが約35秒で終わる"},
 ], body_size=10.5)
 note(s, ML + 6.33, 5.8, 6.0, 1.1, "窓口の束(Container)",
      "全ポートの実装をまとめた「束」を1つ作り、それを usecase に渡します。"
@@ -652,7 +652,7 @@ sec_("第 4 章", "品質と現状", "何をテストしていて、何をして
 # ══════════════════════════════════════════════════════════════
 # 18. テスト戦略
 # ══════════════════════════════════════════════════════════════
-s = sl_("何をテストし、何をしていないか", "テスト62ファイル / 828件。分布は意図的に偏らせている",
+s = sl_("何をテストし、何をしていないか", "テスト63ファイル / 842件。分布は意図的に偏らせている",
         source="vitest.config.ts / packages/core/src/usecases/testDoubles.ts")
 card(s, ML, 1.28, 6.0, 3.3, "やっていること", accent=GREEN, items=[
     {"t": [("ドメインの純関数の回帰", {"bold": True}),
@@ -788,7 +788,7 @@ card(s, ML, 1.28, 6.0, 4.6, "この構成で守れていると考えているも
     {"t": "テナント分離が二重(アプリ側とデータベース側)。効いていることを静的検査と実DBの両方で検証"},
     {"t": "認証の失敗経路(列挙・総当たり・割り込み・部分更新・クロスサイト)を数え上げて塞いだ"},
     {"t": "34テーブルすべてで同じスキーマ規約。新しい表を足す手順が決まっている"},
-    {"t": "毎pushで静的検査・型検査・828件のテスト・本番ビルド・混入検査まで自動実行"},
+    {"t": "毎pushで静的検査・型検査・842件のテスト・本番ビルド・混入検査まで自動実行"},
 ], body_size=11, line=1.32, gap=7)
 card(s, ML + 6.33, 1.28, 6.0, 4.6, "判断をいただきたいもの", accent=VIOLET, items=[
     {"t": "GASブリッジ1本への依存と、その運用設計(判断事項①)"},

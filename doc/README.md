@@ -42,7 +42,6 @@
 | `db-review.pptx` | データベースの有識者 | 34テーブルの構成・設計上の問題点・相談事項(全29枚) | `scripts/slides/build_db_review.py` |
 | `db-for-business.pptx` | パートナー企業の実務担当・責任者 | 記録する項目を業務の言葉で並べ、抜けが無いかを確認いただくもの(全51枚) | `scripts/slides/build_db_for_business.py` |
 | `architecture.pptx` | 技術の有識者 | アプリ構成・外部連携・品質の現状(全21枚) | `scripts/slides/build_architecture.py` |
-| `architecture.html` | 同上 | `architecture.pptx` と同じ内容のHTML版。ブラウザで開ける | 手書き(pptxとは別管理) |
 
 `.pptx` はすべてスクリプトが組み立てている。PowerPointで直接編集しても
 次の生成で消えるので、直すときはスクリプト側を直す。
@@ -56,6 +55,3 @@ python3 scripts/slides/build_architecture.py     # → doc/slides/architecture.p
 
 図形・文字・表はすべてネイティブの図形として出力しているので、
 生成したあとPowerPoint側で自由に手直しできる(画像の貼り込みではない)。
-
-`architecture.html` だけは生成元が無く、`architecture.pptx` と同じ内容を
-二重に持っている。どちらかを直したらもう一方も直す。

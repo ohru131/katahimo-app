@@ -321,7 +321,7 @@ rows = [
     ["sessions", "ログインセッション", "生トークンは保存せずSHA-256のみ", "○"],
     ["password_reset_codes", "パスワード再設定の6桁コード", "HMACの検証子のみ保存。30分・5回で無効", "○"],
     ["customers", "顧客(利用世帯の代表者)。39列", "UNIQUE(tenant_id, external_source, external_id)", "○"],
-    ["family_members", "世帯構成員(子ども等)", "customers への複合FK。生年月日は date + 元表記", "○"],
+    ["family_members", "世帯構成員。アレルギーは専用の2列", "customers への複合FK。未確認/なし/ありを区別", "○"],
     ["daily_reports", "保育日報。本文は項目ごとの5列", "staff と customers 双方への複合FK", "○"],
     ["accident_reports", "事故報告 / ヒヤリハット。本文11列", "同上。report_type は CHECK で2値に限定", "○"],
     ["receipts", "領収書。取消は行を消さず cancelled_at", "金額は整数の円。cancellable_until を登録時に固定", "○"],
