@@ -75,11 +75,22 @@ describe('マイグレーションの分割', () => {
         expect(broken).toEqual([]);
       });
 
-      it('どの断片の中でもドル引用符($$)が閉じている', () => {
-        // 関数定義($$ 〜 $$)の内側で切られると、断片ごとに $$ の数が奇数になる。
+      it('どの断片の中でもドル引用符が閉じている', () => {
+        // 関数定義($$ 〜 $$)の内側で切られると、断片ごとにドル引用符の数が奇数になる。
+        //
+        // PostgreSQLのドル引用符はタグを付けられる($function$ 〜 $function$ など)。
+        // 素の $$ だけを数えると、タグ付きの本体が切られたときに「偶数(=0個)」と見えてしまい、
+        // しかも後続の断片が UPDATE 等の許可キーワードで始まっていれば上の検査も通る。
+        // タグごとに数えて、1つでも奇数のものがあれば落とす。
         const unbalanced = migration.sql
-          .map((statement, index) => ({ index, count: (statement.match(/\$\$/g) ?? []).length }))
-          .filter(({ count }) => count % 2 !== 0)
+          .map((statement, index) => {
+            const counts = new Map<string, number>();
+            for (const [delimiter] of statement.matchAll(/\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$/g)) {
+              counts.set(delimiter, (counts.get(delimiter) ?? 0) + 1);
+            }
+            return { index, counts };
+          })
+          .filter(({ counts }) => [...counts.values()].some((count) => count % 2 !== 0))
           .map(({ index }) => index);
 
         expect(unbalanced).toEqual([]);
