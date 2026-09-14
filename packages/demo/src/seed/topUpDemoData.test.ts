@@ -183,7 +183,10 @@ describe('topUpDemoData(日付が変わったあとの追い足し)', () => {
    * 記録の両方を見張る。
    */
   it('何か月も空いていたら直近42日だけを作り、記録は今日まで進める', async () => {
-    const { client, container, customerIdByName, store } = await setupSeededDemo('2026-05-10');
+    // 初回シードを対象範囲より前に置く(2026-01-10なら履歴は2025-11-29〜2026-01-10)。
+    // 対象範囲に初回シードの履歴が被っていると、追い足しが1件も書けなくても
+    // 「日報がある」で通ってしまい、このテストが42日経路の壊れを見逃す。
+    const { client, container, customerIdByName, store } = await setupSeededDemo('2026-01-10');
     // 4か月以上前まで遡った記録。素直に埋めると130日ぶんを作ることになる。
     await store.write({ reportsThrough: '2026-01-01', receiptsMonth: '2026-01', birthdayMonth: '2026-01' });
 
@@ -195,9 +198,13 @@ describe('topUpDemoData(日付が変わったあとの追い足し)', () => {
     expect(result.addedDates.at(0)).toBe('2026-04-02');
     expect(result.addedDates.at(-1)).toBe('2026-05-13');
 
-    // 切り落とした側は作らない(初回シードの履歴も届いていない日で確かめる)。
     const counts = await countReportsByDate(client);
-    expect(counts.get('2026-02-01')).toBeUndefined();
+    // 範囲内は実際に書けていること。
+    for (const date of result.addedDates) {
+      expect(counts.get(date) ?? 0).toBeGreaterThan(0);
+    }
+    // 切り落とした側(範囲の1日前)は作らない。
+    expect(counts.get('2026-04-01')).toBeUndefined();
 
     // 記録は今日まで進める。ここを止めると、次に開くたびに同じ範囲を作り直す。
     expect(result.reportsThrough).toBe('2026-05-13');
