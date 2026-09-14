@@ -428,17 +428,20 @@ export interface AttendanceDayRepositoryPort {
     businessDate: string,
   ): Promise<AttendanceDayRecord | null>;
   /**
-   * 同じ日の行を書き込みロック付きで読む(`SELECT ... FOR UPDATE`)。
+   * 同じ日の行を書き込みロック付きで読む。読んだ内容に手を加えて書き戻す処理
+   * (カレンダー反映の非破壊マージ、usecases/calendarSync.ts)の入口。
    *
-   * rowDataは「丸ごと置き換え」なので、読んだ内容に手を加えて書き戻す処理
-   * (カレンダー反映の非破壊マージ、usecases/calendarSync.ts)は、読みと書きの間に
-   * 他のリクエストが同じ日を保存すると、その編集を古い内容で踏み潰してしまう。
-   * 読みと書きを同じトランザクションに入れるだけでは足りない(READ COMMITTEDでは、
-   * 読んだ後にコミットされた変更が見えないまま上書きできてしまう)ため、行ロックを取る。
+   * rowDataは「丸ごと置き換え」なので、読みと書きの間に他のリクエストが同じ日を保存すると、
+   * その編集を古い内容で踏み潰してしまう。読みと書きを同じトランザクションに入れるだけでは
+   * 足りない(READ COMMITTEDでは、読んだ後にコミットされた変更が見えないまま上書きできる)。
    *
-   * 行がまだ無い場合はロックする対象が無くnullを返すが、その後のupsertが
-   * 一意インデックス(tenant_id, staff_id, business_date)で直列化されるので、
-   * 二重に作られることはない。
+   * 【実装が守る約束】このメソッドと `upsert` は、同じ(tenantId, staffId, businessDate)に
+   * 対する書き込みが必ず直列になるようロックを取る。**行がまだ無い日も含む**
+   * ――行ロックだけでは、返る行が無いとロックする対象も無く、その隙に手入力の保存が
+   * 同じ日を新規作成すると、こちらの upsert がそれを上書きしてしまうため
+   * (packages/db/src/repositories/attendanceDayRepository.ts の lockAttendanceDay 参照)。
+   *
+   * 行がまだ無い日は null を返す。呼び出し側は「空の勤怠」として突き合わせてよい。
    */
   findByStaffAndDateForUpdate(
     tenantId: string,
@@ -446,7 +449,12 @@ export interface AttendanceDayRepositoryPort {
     businessDate: string,
     scope: TransactionScope,
   ): Promise<AttendanceDayRecord | null>;
-  /** 指定日のrowDataを丸ごと置き換える(無ければ作成)。入力列だけを持つ設計のため部分更新の概念が無い。 */
+  /**
+   * 指定日のrowDataを丸ごと置き換える(無ければ作成)。入力列だけを持つ設計のため部分更新の概念が無い。
+   *
+   * findByStaffAndDateForUpdate と同じキーでロックを取り、同じ日への書き込みを直列化する
+   * (行がまだ無い日も含む。理由はそちらのコメント参照)。
+   */
   upsert(
     tenantId: string,
     staffId: string,

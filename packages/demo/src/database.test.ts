@@ -273,12 +273,53 @@ describe('attendance_days の行ロック付き読み取り(FOR UPDATE)', () => 
 
     const { locked, missing } = await unitOfWork.run(tenantId, async (scope) => ({
       locked: await repo.findByStaffAndDateForUpdate(tenantId, staffId, '2026-09-01', scope),
-      // まだ行が無い日はロックする対象が無いのでnull(後続のupsertが一意インデックスで直列化される)。
+      // まだ行が無い日はnullを返す。行が無くてもadvisory lockは取れている(下のケース参照)。
       missing: await repo.findByStaffAndDateForUpdate(tenantId, staffId, '2026-09-02', scope),
     }));
 
     expect(locked?.rowData).toEqual(rowData);
     expect(missing).toBeNull();
+
+    await client.close();
+  });
+
+  it('行がまだ無い日でも、読み直し→書き込みを同じトランザクションで通せる', async () => {
+    // カレンダー反映が一番よく通る経路(過去の月を一括反映すると、行がまだ無い日の方が多い)。
+    // ここでは pg_advisory_xact_lock / hashtextextended が実際に使えることを確かめる
+    // ――行ロックだけでは行が無い日を直列化できないため、この2つが無いと
+    // 手入力の保存を上書きする不具合に戻る。
+    const client = new PGlite();
+    await client.waitReady;
+    await applyPendingMigrations(client, loadMigrations());
+    const db = serializeTransactions(
+      drizzle(client, { schema, casing: 'snake_case' }) as unknown as Database,
+    );
+
+    const { rows: tenants } = await client.query<{ id: string }>(
+      "INSERT INTO tenants (name, slug) VALUES ('テスト法人', 'demo') RETURNING id;",
+    );
+    const tenantId = tenants[0]?.id;
+    if (!tenantId) throw new Error('テナントの準備に失敗しました');
+    const { rows: staff } = await client.query<{ id: string }>(
+      "INSERT INTO staff (tenant_id, name, email) VALUES ($1, 'スタッフ', 's@example.test') RETURNING id;",
+      [tenantId],
+    );
+    const staffId = staff[0]?.id;
+    if (!staffId) throw new Error('スタッフの準備に失敗しました');
+
+    const repo = new DrizzleAttendanceDayRepository(db);
+    const unitOfWork = new DrizzleUnitOfWork(db);
+    const rowData = { visits: [{ place: 'カレンダーの訪問', start: '09:00', end: '10:00' }] };
+
+    const before = await unitOfWork.run(tenantId, async (scope) => {
+      const found = await repo.findByStaffAndDateForUpdate(tenantId, staffId, '2026-09-03', scope);
+      // 同じトランザクションで同じキーのロックを取り直す(advisory lockは再入可能)。
+      await repo.upsert(tenantId, staffId, '2026-09-03', rowData, scope);
+      return found;
+    });
+
+    expect(before).toBeNull();
+    expect((await repo.findByStaffAndDate(tenantId, staffId, '2026-09-03'))?.rowData).toEqual(rowData);
 
     await client.close();
   });
