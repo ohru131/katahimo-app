@@ -34,12 +34,12 @@ import { tenants } from './tenants';
  * 正規化済み文字列をそのまま入れる(等値一致で照合。GAS版processReceiptImagesのbuildKeyと同じ挙動)。
  * 金額または店舗名が空の場合はGAS版と同様に重複判定自体を行わないためnullになる。
  *
- * 【doc/14 §1】金額はamountYen(集計・請求用の整数)とamountRaw(OCRの生文字列)の2列で持つ。
+ * 【doc/db/guidelines.md §1】金額はamountYen(集計・請求用の整数)とamountRaw(OCRの生文字列)の2列で持つ。
  * dedupeKeyはamountYenではなくnormalizeAmount()の出力から作る(GAS版buildKeyと1文字も
  * 違えてはいけないため。移行期に同じ領収書を重複と判定できなくなる)。amountYenはこのキーの材料に
  * 使い替えない。
  *
- * 【doc/14 §10】billingTypeは「顧客に請求する分/会社が立て替える分」を区別する。既定を
+ * 【doc/db/guidelines.md §10】billingTypeは「顧客に請求する分/会社が立て替える分」を区別する。既定を
  * company_expense にしているのは、取りこぼし(スタッフが選び忘れた場合)が「うっかり顧客に
  * 請求してしまう」方向に転ばないようにするため。顧客に紐付かない領収書はcustomer_billableに
  * できない(receipts_billable_requires_customer)。
@@ -80,7 +80,7 @@ export const receipts = pgTable(
     billingType: text().notNull().default('company_expense'),
 
     /**
-     * 取り消した時刻。nullなら有効(doc/14 §10)。
+     * 取り消した時刻。nullなら有効(doc/db/guidelines.md §10)。
      *
      * 【物理削除にしない理由】
      * 領収書は会計の記録なので、「あったはずのものが痕跡なく消える」状態を作らない。
@@ -97,7 +97,7 @@ export const receipts = pgTable(
     cancelledByStaffId: uuid(),
 
     /**
-     * ミラーワーカーが送信に取りかかった時刻(doc/14 §10)。
+     * ミラーワーカーが送信に取りかかった時刻(doc/db/guidelines.md §10)。
      *
      * **取り消しと送信開始を同じ行の上で直列化するための列。** 外部へのHTTP送信はDBの
      * トランザクションに入れられないので、「送る直前に cancelled_at を見る」だけでは
@@ -111,7 +111,7 @@ export const receipts = pgTable(
     mirrorClaimedAt: timestamp({ withTimezone: true }),
 
     /**
-     * この領収書を取り消せる最終日(JSTの'YYYY-MM-DD'。doc/14 §10)。
+     * この領収書を取り消せる最終日(JSTの'YYYY-MM-DD'。doc/db/guidelines.md §10)。
      *
      * **登録した時点の締め日設定で計算し、以後動かさない。** 締め日設定(app_settings)は
      * 後から変えられるが、それを判定のたびに読み直すと、同じ領収書の期限が設定変更のたびに
@@ -160,7 +160,7 @@ export const receipts = pgTable(
     // (null同士は重複とみなさない=金額/店舗名が空でdedupeKeyがnullの行は複数許容)。
     //
     // 取り消した行を対象から外すのは、「取り消して登録し直す」が唯一の訂正手段だから
-    // (doc/14 §10)。顧客の紐付けだけを直したい場合、金額も店舗名も日時も同じ領収書を
+    // (doc/db/guidelines.md §10)。顧客の紐付けだけを直したい場合、金額も店舗名も日時も同じ領収書を
     // もう一度登録することになり、dedupe_keyが完全に一致する。取り消した行を残したまま
     // この索引の対象にしていると、訂正のたびに23505で弾かれて登録し直せない
     // (invoice_lines の superseded_at 付き部分索引と同じ理由)。
@@ -168,18 +168,18 @@ export const receipts = pgTable(
       .on(t.tenantId, t.dedupeKey)
       .where(sql`${t.dedupeKey} IS NOT NULL AND ${t.cancelledAt} IS NULL`),
     // 勤怠タブの領収書一覧(そのスタッフが登録した分を月で絞り、新しい順)を索引だけで返すため
-    // (doc/14 §3)。登録画面からしか入れられなかった請求区分を後から直せるようにした画面が
+    // (doc/db/guidelines.md §3)。登録画面からしか入れられなかった請求区分を後から直せるようにした画面が
     // 毎回引く経路なので、索引が無いとテナントの全領収書のスキャンになる。
     index('receipts_tenant_staff_timestamp_idx').on(t.tenantId, t.staffId, t.receiptTimestamp.desc()),
     // 取り消しの3列は揃って埋まるか、揃って空かのどちらかにする。理由は任意なので縛らないが、
     // 「取り消し済みなのに誰が取り消したか分からない」行は会計の記録として使えない。
-    // IS NULL / IS NOT NULL しか使っていないのでこの式がNULLに評価されることはない(doc/14 §8.3)。
+    // IS NULL / IS NOT NULL しか使っていないのでこの式がNULLに評価されることはない(doc/db/guidelines.md §8.3)。
     check(
       'receipts_cancellation_pair_check',
       sql`(${t.cancelledAt} IS NULL AND ${t.cancelledByStaffId} IS NULL AND ${t.cancellationReason} IS NULL)
         OR (${t.cancelledAt} IS NOT NULL AND ${t.cancelledByStaffId} IS NOT NULL)`,
     ),
-    // 顧客の領収書一覧を新しい順に返すクエリを索引だけで返すため(doc/14 §3)。
+    // 顧客の領収書一覧を新しい順に返すクエリを索引だけで返すため(doc/db/guidelines.md §3)。
     // customerIdはnull許容だが、それでも(tenant_id, customer_id, ...)の複合索引として作る
     // (customerIdがnullの行はこの索引の対象外になるだけで、絞り込み自体は害にならない)。
     index('receipts_tenant_customer_timestamp_idx').on(t.tenantId, t.customerId, t.receiptTimestamp.desc()),

@@ -109,7 +109,7 @@ function ReceiptRow({
 
       {receipt.handoffText && <p className="text-xs mt-1 break-words opacity-80">{receipt.handoffText}</p>}
 
-      {/* ミラー送信の状態(doc/14 §10)。送信は登録と同時に始まるが、ワーカーが拾うまでの
+      {/* ミラー送信の状態(doc/db/guidelines.md §10)。送信は登録と同時に始まるが、ワーカーが拾うまでの
           間と、失敗して再試行待ちの間は「登録したのにシートに出ていない」状態になる。
           止まっていないかを行に出しておかないと、締めのときに取り残しに気付けない。
           再試行待ち(pendingなのに前回の失敗が残っている)は、ただの順番待ちと区別して出す。 */}

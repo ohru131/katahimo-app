@@ -8,7 +8,7 @@ import type { DemoMigration } from './database';
 import { applyPendingMigrations } from './database';
 
 /**
- * doc/14 §4: CHECK制約が「実際に」不正値のINSERTを拒否することを、本番と同じマイグレーションを
+ * doc/db/guidelines.md §4: CHECK制約が「実際に」不正値のINSERTを拒否することを、本番と同じマイグレーションを
  * 当てた本物のPostgres(PGlite/WASM)で確かめる。
  *
  * rlsEnforcement.test.ts と違い、CHECK制約はテーブル所有者/superuserでも(RLSと違って)
@@ -405,7 +405,7 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
     });
   });
 
-  describe('attendance_days_row_data_object(doc/14 §2)', () => {
+  describe('attendance_days_row_data_object(doc/db/guidelines.md §2)', () => {
     // row_data(jsonb)の中身の形はアプリ境界(attendanceRowDataSchema)で検証しており、DB側は
     // 「そもそもオブジェクトかどうか」だけを縛っている。その最低線が実際に効いていることを
     // 固定する(配列やスカラを入れられると、アプリが visits/officeWork を読む前に壊れる)。
@@ -442,7 +442,7 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
     });
   });
 
-  describe('daily_reports_time_order(doc/14 §6)', () => {
+  describe('daily_reports_time_order(doc/db/guidelines.md §6)', () => {
     it('started_at <= ended_at、またはどちらかがnullなら通る', async () => {
       for (const [startedAt, endedAt] of [
         ["'2026-08-30 09:00:00+09'", "'2026-08-30 11:00:00+09'"],
@@ -474,7 +474,7 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
 
     it('日跨ぎ勤務(22:00〜翌01:00)は、endedAtを翌日にずらして保存すれば通る', async () => {
       // usecases/reports.tsのcomputeDailyReportTimesが行う「end<startなら翌日にずらす」
-      // 変換を経た後の値がCHECK制約を通ることを固定する(doc/14 §6の検証項目)。
+      // 変換を経た後の値がCHECK制約を通ることを固定する(doc/db/guidelines.md §6の検証項目)。
       await expect(
         fixture.client.query(
           `INSERT INTO daily_reports (tenant_id, staff_id, customer_id, occurred_at, started_at, ended_at)
@@ -485,7 +485,7 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
     });
   });
 
-  describe('customers_lat_range / customers_lng_range(doc/14 §7)', () => {
+  describe('customers_lat_range / customers_lng_range(doc/db/guidelines.md §7)', () => {
     it('値域内、またはnullは通る', async () => {
       for (const [lat, lng] of [
         ['38.26', '140.87'],
@@ -526,7 +526,7 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
     });
   });
 
-  describe('coupons_discount_kind_check / coupons_discount_value_check(doc/14 §9)', () => {
+  describe('coupons_discount_kind_check / coupons_discount_value_check(doc/db/guidelines.md §9)', () => {
     it("discount_kind='amount'でdiscount_amount_yenのみ入っている(discount_percentはNULL)組み合わせは通る", async () => {
       await expect(
         fixture.client.query(
@@ -835,7 +835,7 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
       );
     });
   });
-  describe('receipts の取り消し(doc/14 §10)', () => {
+  describe('receipts の取り消し(doc/db/guidelines.md §10)', () => {
     /** 有効な領収書を1件作る。 */
     async function createReceipt(dedupeKey: string | null): Promise<string> {
       const {

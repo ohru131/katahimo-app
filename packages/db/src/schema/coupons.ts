@@ -27,7 +27,7 @@ import { dailyReports } from './dailyReports';
 import { tenants } from './tenants';
 
 /**
- * 割引クーポン(金額引き/率引き)。doc/14 §9。
+ * 割引クーポン(金額引き/率引き)。doc/db/guidelines.md §9。
  *
  * 回数券(枚数を発行して減らしていくもの)は運用に無いことを確認済みのため持たない
  * (残枚数を管理する列も、消費履歴から残数を算出するロジックも不要)。
@@ -44,7 +44,7 @@ import { tenants } from './tenants';
  * - usageLimitKind  何回使えるか('unlimited' / 'once_per_customer' / 'once_per_customer_per_year')
  * この3つは互いに独立で、組み合わせて「誕生月に年1回、全顧客が使える」「特定の顧客にだけ
  * 配った1回限りのクーポン」のどちらも表せる。汎用の条件式をJSONで持つルールエンジンには
- * しない(DBが中身を検証できない列を増やすだけになるため。doc/14 §2と同じ理由)。
+ * しない(DBが中身を検証できない列を増やすだけになるため。doc/db/guidelines.md §2と同じ理由)。
  *
  * 【廃止時に行を消さない理由】
  * activeをfalseにするだけで、行自体は削除しない。過去の適用記録(coupon_redemptions)から
@@ -123,7 +123,7 @@ export const coupons = pgTable(
       'coupons_valid_period_check',
       sql`${t.validTo} IS NULL OR ${t.validFrom} IS NULL OR ${t.validTo} >= ${t.validFrom}`,
     ),
-    // 許可値は @katahimo/shared の contracts が正(doc/14 §4・§8.1)。
+    // 許可値は @katahimo/shared の contracts が正(doc/db/guidelines.md §4・§8.1)。
     check('coupons_audience_check', sql`${t.audience} IN ${sqlInList(COUPON_AUDIENCES)}`),
     check(
       'coupons_eligibility_kind_check',
@@ -135,7 +135,7 @@ export const coupons = pgTable(
     ),
     // 誕生月クーポンは対象者が必須、それ以外は指定できない。
     //
-    // 最初の枝の `IS NOT NULL` を省いてはいけない(doc/14 §8.3)。birthday_subject が NULL だと
+    // 最初の枝の `IS NOT NULL` を省いてはいけない(doc/db/guidelines.md §8.3)。birthday_subject が NULL だと
     // `NULL IN (...)` は FALSE ではなく NULL になり、式全体が `NULL OR FALSE` = NULL に評価されて
     // CHECK が「通った」ことになる。つまり「誕生月クーポンなのに対象者が無い」行、
     // すなわち条件を判定できない行がDBに入ってしまう(実際にこれで一度素通りさせた)。
@@ -149,7 +149,7 @@ export const coupons = pgTable(
 ).enableRLS();
 
 /**
- * 顧客へのクーポン割当(「この顧客が使えるクーポン」)。doc/14 §9。
+ * 顧客へのクーポン割当(「この顧客が使えるクーポン」)。doc/db/guidelines.md §9。
  *
  * 【クーポンを顧客ごとに複製しない理由】
  * 「紹介してくれた世帯にだけ500円引きを配る」のようなクーポンを coupons テーブルだけで
@@ -202,7 +202,7 @@ export const customerCoupons = pgTable(
     }),
     // 同じ顧客に同じクーポンを2回割り当てない(2行あるとどちらの有効期間が正か決まらない)。
     // 「この顧客に配ってあるクーポン一覧」(tenant_id + customer_id)の絞り込みも、この
-    // 一意制約の索引が先頭2列で支える(別に索引は張らない。doc/14 §8.5)。
+    // 一意制約の索引が先頭2列で支える(別に索引は張らない。doc/db/guidelines.md §8.5)。
     unique('customer_coupons_tenant_customer_coupon_uk').on(t.tenantId, t.customerId, t.couponId),
     check(
       'customer_coupons_valid_period_check',
@@ -212,7 +212,7 @@ export const customerCoupons = pgTable(
 ).enableRLS();
 
 /**
- * 日報1件(サービス提供1件)への割引クーポン適用記録。doc/14 §9。
+ * 日報1件(サービス提供1件)への割引クーポン適用記録。doc/db/guidelines.md §9。
  *
  * 【日報1件に紐付ける理由】
  * 領収書を日報の画面から登録している今の運用と同じ粒度で追えるようにするため。
@@ -326,8 +326,8 @@ export const couponRedemptions = pgTable(
       sql`${t.usageLimitKind} IN ${sqlInList(COUPON_USAGE_LIMIT_KINDS)}`,
     ),
     // 上限のあるクーポンには必ず数える単位が入っている。ここが抜けると下の部分一意索引の
-    // 対象外になり、上限が静かに効かなくなる(doc/14 §8.6)。usage_limit_kindがNOT NULLなので
-    // この式がNULLに評価されて素通りすることはない(doc/14 §8.3)。
+    // 対象外になり、上限が静かに効かなくなる(doc/db/guidelines.md §8.6)。usage_limit_kindがNOT NULLなので
+    // この式がNULLに評価されて素通りすることはない(doc/db/guidelines.md §8.3)。
     check(
       'coupon_redemptions_usage_scope_key_check',
       sql`(${t.usageLimitKind} = 'unlimited' AND ${t.usageScopeKey} IS NULL)
@@ -335,7 +335,7 @@ export const couponRedemptions = pgTable(
     ),
     // 使用上限(「その顧客につき1回」「年1回」)をDB側で守る。usecase(listCouponsForSelection/
     // resolveCouponRedemptionSnapshots)も同じ判定をするが、同時リクエストは検索と登録の
-    // 間をすり抜けるため、最後の砦としてここで弾く(doc/14 §8.4)。
+    // 間をすり抜けるため、最後の砦としてここで弾く(doc/db/guidelines.md §8.4)。
     uniqueIndex('coupon_redemptions_usage_scope_uidx')
       .on(t.tenantId, t.couponId, t.customerId, t.usageScopeKey)
       .where(sql`${t.usageScopeKey} IS NOT NULL`),
@@ -343,7 +343,7 @@ export const couponRedemptions = pgTable(
     index('coupon_redemptions_tenant_coupon_idx').on(t.tenantId, t.couponId),
     // 「この顧客がこのクーポンをもう使ったか」を日報画面のたびに引く(listCouponsForSelection)。
     // 上の部分一意索引は usage_scope_key がある行だけを対象にするため、上限なしのクーポンも含めて
-    // 顧客単位で引くにはこちらが要る(doc/14 §3)。
+    // 顧客単位で引くにはこちらが要る(doc/db/guidelines.md §3)。
     index('coupon_redemptions_tenant_customer_idx').on(t.tenantId, t.customerId),
   ],
 ).enableRLS();

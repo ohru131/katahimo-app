@@ -42,6 +42,7 @@ import type {
   CustomerRepositoryPort,
   DailyReportRecord,
   DailyReportRepositoryPort,
+  FamilyAllergyStatus,
   FamilyMemberRecord,
   FamilyMemberRepositoryPort,
   IssuePasswordResetCodeInput,
@@ -457,6 +458,8 @@ export class FakeFamilyMemberRepository implements FamilyMemberRepositoryPort {
       dobDate: input.dobDate,
       dobRaw: input.dobRaw,
       info: input.info,
+      allergyStatus: input.allergyStatus,
+      allergyNote: input.allergyNote,
     };
   }
 
@@ -483,6 +486,20 @@ export class FakeFamilyMemberRepository implements FamilyMemberRepositoryPort {
     this.rows.length = 0;
     this.rows.push(...keep);
     return this.createMany(inputs);
+  }
+
+  async updateAllergy(
+    tenantId: string,
+    customerId: string,
+    memberId: string,
+    allergy: { status: FamilyAllergyStatus; note: string | null },
+  ): Promise<FamilyMemberRecord | null> {
+    const row = this.rows.find(
+      (r) => r.record.tenantId === tenantId && r.record.customerId === customerId && r.record.id === memberId,
+    );
+    if (!row) return null;
+    row.record = { ...row.record, allergyStatus: allergy.status, allergyNote: allergy.note };
+    return row.record;
   }
 }
 
@@ -594,7 +611,7 @@ export class FakeAppSettingsRepository implements AppSettingsRepositoryPort {
       geminiOcrModel: null,
       gchatReportWebhookUrl: null,
       gchatReceiptWebhookUrl: null,
-      // DBのDEFAULTと同じ既定値(doc/14 §10)。
+      // DBのDEFAULTと同じ既定値(doc/db/guidelines.md §10)。
       receiptClosingDay: null,
       receiptCancellableDays: 2,
     };
@@ -738,7 +755,7 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
    */
   async create(input: NewReceiptInput): Promise<ReceiptRecord> {
     if (input.dedupeKey !== null) {
-      // 取り消し済みの行は receipts_tenant_dedupe_key_uidx の対象外(doc/14 §10)。
+      // 取り消し済みの行は receipts_tenant_dedupe_key_uidx の対象外(doc/db/guidelines.md §10)。
       // 取り消して登録し直す訂正が、重複判定に引っかからないようにするため。
       const conflict = this.rows.some(
         (r) =>

@@ -95,7 +95,7 @@ export interface OutboxRepositoryPort extends MirrorPort {
    * 指定した種別・対象IDのジョブの状態を返す(画面に「まだ外部へ送っていない」を出すため)。
    *
    * 送信は登録と同時に始まるが、送信に失敗して止まった分は放っておくといつまでも出ない。
-   * 管理者がそれを見られないと、締めのときに取り残しに気付けない(doc/14 §10)。
+   * 管理者がそれを見られないと、締めのときに取り残しに気付けない(doc/db/guidelines.md §10)。
    */
   listStatusByTargets(tenantId: string, kind: MirrorKind, targetIds: string[]): Promise<MirrorJobStatus[]>;
 }

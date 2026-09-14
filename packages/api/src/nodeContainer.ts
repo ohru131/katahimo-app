@@ -85,7 +85,7 @@ export function createContainer(env: Env, db: Database): Container {
       },
     }),
     // パスワード再設定コード・初期パスワードの通知。GAS版と同じくMailApp経由で送る
-    // (doc/10「新規GCP APIより既存GASブリッジを優先」)。未設定ならログに出すだけ。
+    // (doc/proposal/gas-bridge.md「新規GCP APIより既存GASブリッジを優先」)。未設定ならログに出すだけ。
     mailer: gasBridgeOptions
       ? new GasBridgeMailerPort(gasBridgeOptions)
       : new LoggingMailerPort(env.NODE_ENV !== 'production'),

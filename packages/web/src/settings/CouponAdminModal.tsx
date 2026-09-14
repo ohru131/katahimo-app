@@ -10,7 +10,7 @@ import type {
 } from '../api';
 import { createCoupon, fetchCouponsForAdmin, updateCoupon } from '../api';
 
-/** 割引条件の表示(例 '500円引き' '10%引き')。doc/14 §9の2種別に対応。 */
+/** 割引条件の表示(例 '500円引き' '10%引き')。doc/db/guidelines.md §9の2種別に対応。 */
 function discountLabel(coupon: Pick<CouponView, 'discountKind' | 'discountAmountYen' | 'discountPercent'>) {
   return coupon.discountKind === 'amount'
     ? `${coupon.discountAmountYen}円引き`
@@ -44,7 +44,7 @@ function periodLabel(coupon: Pick<CouponView, 'validFrom' | 'validTo'>) {
 }
 
 /**
- * 管理者による割引クーポンの登録・廃止管理(doc/14 §9)。StaffAdminModalと同じ構成
+ * 管理者による割引クーポンの登録・廃止管理(doc/db/guidelines.md §9)。StaffAdminModalと同じ構成
  * (追加フォーム+一覧+行内操作)にしている。
  *
  * 編集はStaffAdminModal(名前・メールは変更不可、権限や在籍状態の切り替えのみ)に合わせ、
@@ -251,7 +251,7 @@ export function CouponAdminModal({ onClose }: { onClose: () => void }) {
             </div>
             <p className="text-[10px] text-gray-400">※ 空欄はそれぞれ「下限なし」「無期限」になります。</p>
 
-            {/* 適用条件・配布先・使用上限(doc/14 §9)。ここで決めた条件はサーバー側が判定するので、
+            {/* 適用条件・配布先・使用上限(doc/db/guidelines.md §9)。ここで決めた条件はサーバー側が判定するので、
                 現場のスタッフは日報画面で「使えるものだけ」を見ることになる。 */}
             <div className="flex gap-2 items-center">
               <label className="text-xs text-gray-500 shrink-0 w-14" htmlFor="couponEligibilityKind">

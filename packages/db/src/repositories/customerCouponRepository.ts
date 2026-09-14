@@ -40,7 +40,7 @@ export class DrizzleCustomerCouponRepository implements CustomerCouponRepository
    * 割り当てる。既に同じ(顧客, クーポン)の行があれば有効期間・メモを上書きする。
    *
    * 「先に引いて、無ければINSERT」にせず ON CONFLICT に任せるのは、同時に2回押されたときに
-   * 検索とINSERTの間をすり抜けて23505で落ちるのを避けるため(doc/14 §8.4)。
+   * 検索とINSERTの間をすり抜けて23505で落ちるのを避けるため(doc/db/guidelines.md §8.4)。
    */
   async upsert(input: NewCustomerCouponInput): Promise<CustomerCouponRecord> {
     return withTenant(this.db, input.tenantId, async (tx) => {

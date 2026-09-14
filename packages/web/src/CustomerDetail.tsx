@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAdminTargetStaff } from './AdminTargetStaffContext';
 import { fetchCustomerDetail } from './api';
 import { CustomerCouponSection } from './CustomerCouponSection';
+import { FamilyAllergyEditor } from './FamilyAllergyEditor';
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
@@ -115,7 +116,7 @@ function AddressField({
   lng: number | null | undefined;
 }) {
   if (!value) return null;
-  // doc/14 §7でlat/lngが数値になった。数値として分かっていれば住所文字列より優先して
+  // doc/db/guidelines.md §7でlat/lngが数値になった。数値として分かっていれば住所文字列より優先して
   // クエリに使う(GAS版と同じ、住所文字列よりも正確なため)。
   const mapQuery = lat != null && lng != null ? `${lat},${lng}` : value;
   const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
@@ -266,9 +267,12 @@ export function CustomerDetail({ customerId, onClose }: { customerId: string; on
                 <ul className="space-y-1">
                   {query.data.familyMembers.map((m) => (
                     <li key={m.id} className="text-sm text-gray-800 bg-gray-50 rounded-lg p-2">
-                      {m.name}
-                      {(m.dobRaw ?? m.dobDate) && `(${m.dobRaw ?? m.dobDate})`}
-                      {m.info && ` - ${m.info}`}
+                      <div>
+                        {m.name}
+                        {(m.dobRaw ?? m.dobDate) && `(${m.dobRaw ?? m.dobDate})`}
+                        {m.info && ` - ${m.info}`}
+                      </div>
+                      <FamilyAllergyEditor customerId={customerId} member={m} />
                     </li>
                   ))}
                 </ul>

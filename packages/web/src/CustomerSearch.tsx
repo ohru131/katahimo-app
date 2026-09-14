@@ -5,6 +5,7 @@ import { CustomerDetail } from './CustomerDetail';
 import { getRecentCustomerIds } from './recentCustomers';
 import { HistoryModal } from './reports/HistoryModal';
 import { ReportModal } from './reports/ReportModal';
+import { clearReportDraft, loadReportDraft, type ReportDraftOwner } from './reports/reportDraft';
 
 /**
  * 「訪問先一覧」タブ。GAS版のtabVisitors(index.html)と同じく、有効な顧客を一度に全件取得して
@@ -26,9 +27,12 @@ import { ReportModal } from './reports/ReportModal';
 export function CustomerSearch({
   initialSearchText,
   onInitialSearchConsumed,
+  draftOwner,
 }: {
   initialSearchText?: string;
   onInitialSearchConsumed?: () => void;
+  /** 書きかけの控えの持ち主(共有端末で他の利用者の入力が出ないようにするため)。 */
+  draftOwner: ReportDraftOwner;
 }) {
   const [searchText, setSearchText] = useState('');
   const [cityFilter, setCityFilter] = useState('');
@@ -41,6 +45,12 @@ export function CustomerSearch({
     onInitialSearchConsumed?.();
   }, [initialSearchText]);
   const [reportCustomerId, setReportCustomerId] = useState<string | null>(null);
+  /** ReportModalを開くとき、端末に残っていた書きかけを流し込むかどうか。 */
+  const [restoreDraft, setRestoreDraft] = useState(false);
+  /** 未保存の書きかけ。タブを開いた時点で1度だけ読む(以後は案内を閉じるまで保持)。 */
+  const [pendingDraft, setPendingDraft] = useState(() => loadReportDraft(draftOwner));
+  /** 顧客に紐付かない経費の領収書を登録するダイアログを開いているか。 */
+  const [expenseReceiptOpen, setExpenseReceiptOpen] = useState(false);
   const [detailCustomerId, setDetailCustomerId] = useState<string | null>(null);
   const [historyCustomer, setHistoryCustomer] = useState<{ id: string; name: string } | null>(null);
   // 報告作成モーダルを閉じるたびに1増やし、useMemoに「最近使った顧客」の並びを再評価させる
@@ -120,6 +130,56 @@ export function CustomerSearch({
         </div>
       </div>
 
+      {/* 顧客に紐付かない経費(駐車場代など)の領収書を登録する入口。GAS版も訪問先一覧タブの
+          先頭に同じボタンを置いている(openStandaloneReceiptModal)。顧客を選んでから開く
+          ダイアログと同じものを、顧客なしで開く。 */}
+      <button
+        type="button"
+        onClick={() => {
+          setRestoreDraft(false);
+          setReportCustomerId(null);
+          setExpenseReceiptOpen(true);
+        }}
+        className="w-full mb-3 py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow transition-colors"
+      >
+        🧾 領収書登録(顧客に紐付かない経費)
+      </button>
+
+      {/* 前回の書きかけがあれば、開き直せることを知らせる(GAS版restoreReportDraftIfAny相当)。
+          GAS版は問答無用でダイアログを開いていたが、別の訪問をしようとして開いた場面でも
+          前の書きかけが開くと紛らわしいので、案内を出して利用者に選んでもらう形にした。 */}
+      {pendingDraft && !reportCustomerId && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm text-amber-900 font-bold">保存していない書きかけがあります</p>
+          <p className="text-xs text-amber-800 mt-0.5 break-words">
+            {pendingDraft.customerName}・{pendingDraft.visitDate}(
+            {pendingDraft.mode === 'daily' ? '日報' : '事故報告'})
+          </p>
+          <div className="flex gap-2 mt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setRestoreDraft(true);
+                setReportCustomerId(pendingDraft.customerId);
+              }}
+              className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-lg"
+            >
+              続きを書く
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                clearReportDraft(draftOwner);
+                setPendingDraft(null);
+              }}
+              className="px-3 py-1.5 text-sm text-amber-800"
+            >
+              破棄する
+            </button>
+          </div>
+        </div>
+      )}
+
       {query.isError && <p className="text-red-500 text-sm mb-3">{(query.error as Error).message}</p>}
 
       {query.isPending && (
@@ -193,12 +253,18 @@ export function CustomerSearch({
         </div>
       )}
 
-      {reportCustomerId && (
+      {(reportCustomerId || expenseReceiptOpen) && (
         <ReportModal
           customerId={reportCustomerId}
+          draftOwner={draftOwner}
+          restoreDraft={restoreDraft}
           onClose={() => {
             setReportCustomerId(null);
+            setExpenseReceiptOpen(false);
+            setRestoreDraft(false);
             setRecentTick((t) => t + 1);
+            // 閉じたあとも書きかけは残る(保存が済んでいれば ReportModal 側で消えている)。
+            setPendingDraft(loadReportDraft(draftOwner));
           }}
         />
       )}

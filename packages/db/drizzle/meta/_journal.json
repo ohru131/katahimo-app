@@ -29,6 +29,13 @@
       "when": 1789279937459,
       "tag": "0003_drop_receipt_mirror_lead_days",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789426260116,
+      "tag": "0004_family_member_allergy",
+      "breakpoints": true
     }
   ]
 }

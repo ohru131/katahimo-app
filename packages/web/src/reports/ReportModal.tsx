@@ -20,6 +20,7 @@ import {
   DAILY_MEMO_PLACEHOLDER,
   HIYARI_WRITING_HINT,
 } from './promptDefaults';
+import { clearReportDraft, loadReportDraft, type ReportDraftOwner, saveReportDraft } from './reportDraft';
 import { useVoiceInput } from './useVoiceInput';
 
 type Mode = 'daily' | 'accident';
@@ -38,6 +39,31 @@ function formatDateDisplay(d: Date): string {
 /** 'YYYY-MM-DD'(タイムゾーンのずれを避けるためtoLocaleDateString('sv-SE')を使う。AttendanceTabと同じ手法)。 */
 function formatDateKey(d: Date): string {
   return d.toLocaleDateString('sv-SE');
+}
+
+/** 前回の発生時刻(GAS版のlast_acc_time)。読めなければ空で始める。 */
+function readLastOccurrenceTime(): string {
+  try {
+    return localStorage.getItem('last_acc_time') || '';
+  } catch {
+    return '';
+  }
+}
+
+/** 次回の既定値として発生時刻を控える。控えられなくても保存は成功している。 */
+function writeLastOccurrenceTime(value: string): void {
+  try {
+    localStorage.setItem('last_acc_time', value);
+  } catch {
+    // 次回に前回値が出ないだけで、事故報告そのものは保存できている。
+  }
+}
+
+/** formatDateKeyの逆。書きかけの控えから訪問日を戻すときに使う(ローカル時刻の0時にする)。 */
+function parseDateKey(key: string): Date {
+  const [y, m, d] = key.split('-').map(Number);
+  if (!y || !m || !d) return new Date();
+  return new Date(y, m - 1, d);
 }
 
 /**
@@ -216,7 +242,7 @@ interface ReceiptImageState {
   /** OCR失敗時のエラーメッセージ(表示用)。成功時・未実行時はnull。 */
   ocrError: string | null;
   /**
-   * 請求区分(doc/14 §10)。領収書1枚ごとに選べる。既定は'company_expense'
+   * 請求区分(doc/db/guidelines.md §10)。領収書1枚ごとに選べる。既定は'company_expense'
    * (取りこぼしが「うっかり顧客に請求してしまう」向きに転ばないようにするため。
    * DB側のデフォルトと同じ理由)。
    */
@@ -295,10 +321,29 @@ function formatNowForReceipt(): string {
  * 2タブ+領収書登録)に対応。「顧客情報」「活動記録」は別モーダル(CustomerDetail/HistoryModal)
  * に分かれている点もGAS版と同じ(openModal(customer)は常にこの報告モーダルを開く)。
  */
-export function ReportModal({ customerId, onClose }: { customerId: string; onClose: () => void }) {
+export function ReportModal({
+  customerId,
+  onClose,
+  draftOwner,
+  restoreDraft = false,
+}: {
+  /**
+   * 対象の顧客。nullのときは「経費の領収書だけを登録する」モードで開く
+   * (GAS版のopenStandaloneReceiptModal相当。駐車場代など顧客に紐付かない立替が実際にある)。
+   * このモードでは日報・事故報告のタブを出さず、請求区分も会社立替に固定される
+   * (DB制約 receipts_billable_requires_customer と同じ制限)。
+   */
+  customerId: string | null;
+  onClose: () => void;
+  /** 書きかけの控えの持ち主(共有端末で他の利用者の入力が出ないようにするため)。 */
+  draftOwner: ReportDraftOwner;
+  /** 端末に残っていた書きかけを流し込むか。開く側が利用者に確認したうえでtrueにする。 */
+  restoreDraft?: boolean;
+}) {
   const customerQuery = useQuery({
     queryKey: ['customer', customerId],
-    queryFn: () => fetchCustomerDetail(customerId),
+    queryFn: () => fetchCustomerDetail(customerId as string),
+    enabled: customerId !== null,
   });
 
   const [mode, setMode] = useState<Mode>('daily');
@@ -350,6 +395,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     setSendingVisitComplete(true);
     setVisitCompleteMessage(null);
     try {
+      if (!customerId) return;
       await sendVisitCompleteNotification(
         customerId,
         formatDateKey(visitDate),
@@ -388,7 +434,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [dailySavedId, setDailySavedId] = useState<string | null>(null);
   const [dailySavedSnapshot, setDailySavedSnapshot] = useState<string | null>(null);
 
-  // ── 適用クーポン(doc/14 §9。日報タブのみ) ──
+  // ── 適用クーポン(doc/db/guidelines.md §9。日報タブのみ) ──
   // 「使えるかどうか」の判定は全てサーバー側(listCouponsForSelection)で済ませ、ここには
   // 使える条件を満たすものだけが返ってくる。スタッフが「今月はこの子の誕生月か」「この世帯に
   // 配ってあるクーポンか」を自分で確かめる必要は無い。
@@ -398,7 +444,8 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const dateKey = formatDateKey(visitDate);
   const couponsQuery = useQuery({
     queryKey: ['coupons', customerId, dateKey, dailySavedId],
-    queryFn: () => fetchCouponsForSelection(customerId, dateKey, dailySavedId),
+    queryFn: () => fetchCouponsForSelection(customerId as string, dateKey, dailySavedId),
+    enabled: customerId !== null,
   });
   const [selectedCouponIds, setSelectedCouponIds] = useState<string[]>([]);
   // 訪問日を変えて一覧が入れ替わったとき、選択済みだったが新しい一覧には無くなった
@@ -436,7 +483,8 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   );
   const [accTargetName, setAccTargetName] = useState('');
   const [accTargetDob, setAccTargetDob] = useState('');
-  const [occurrenceTime, setOccurrenceTime] = useState('');
+  // GAS版のlast_acc_timeと同じ。同じ訪問で続けて書くことが多く、毎回入れ直さずに済ませる。
+  const [occurrenceTime, setOccurrenceTime] = useState(readLastOccurrenceTime);
   const [location, setLocation] = useState('');
   const [accidentContent, setAccidentContent] = useState('');
   const [situation, setSituation] = useState('');
@@ -466,7 +514,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     setSelectedFamilyId(id);
     const fam = customerQuery.data?.familyMembers.find((f) => f.id === id);
     setAccTargetName(fam?.name ?? '');
-    // doc/14 §6でdobはdobDate/dobRawに分かれた。ここは自由記述テキストとして事故報告の
+    // doc/db/guidelines.md §6でdobはdobDate/dobRawに分かれた。ここは自由記述テキストとして事故報告の
     // 対象者生年月日欄に流し込む用途のため、元表記(dobRaw)を優先する。
     setAccTargetDob(fam?.dobRaw ?? fam?.dobDate ?? '');
   };
@@ -531,7 +579,12 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     setDailyMessage(null);
     setDailyError(null);
     try {
-      const report = await saveDailyReport({ ...payload, reportId: dailySavedId ?? undefined });
+      if (!customerId) return;
+      const report = await saveDailyReport({
+        ...payload,
+        customerId,
+        reportId: dailySavedId ?? undefined,
+      });
       setDailySavedId(report.id);
       setDailySavedSnapshot(snapshot);
       // サーバーが実際に確定させた適用記録で選択状態を揃える(同じクーポンIDが重複して
@@ -541,7 +594,9 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
       // サーバー側の状態と選択状態を合わせ直している)。
       setSelectedCouponIds(report.coupons.map((c) => c.couponId));
       setDailyMessage('日報を保存しました');
-      markCustomerRecentlyUsed(customerId);
+      // 確定したので書きかけの控えは不要(残すと次回「書きかけがあります」と出てしまう)。
+      clearReportDraft(draftOwner);
+      if (customerId) markCustomerRecentlyUsed(customerId);
     } catch (e) {
       setDailyError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -603,17 +658,136 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     setAccidentMessage(null);
     setAccidentError(null);
     try {
-      const report = await saveAccidentReport({ ...payload, reportId: accidentSavedId ?? undefined });
+      if (!customerId) return;
+      const report = await saveAccidentReport({
+        ...payload,
+        customerId,
+        reportId: accidentSavedId ?? undefined,
+      });
       setAccidentSavedId(report.id);
       setAccidentSavedSnapshot(snapshot);
       setAccidentMessage(`${reportType}を保存しました`);
-      markCustomerRecentlyUsed(customerId);
+      clearReportDraft(draftOwner);
+      writeLastOccurrenceTime(occurrenceTime);
+      if (customerId) markCustomerRecentlyUsed(customerId);
     } catch (e) {
       setAccidentError(e instanceof Error ? e.message : String(e));
     } finally {
       setSavingAccident(false);
     }
   };
+
+  /** 控えの復元を一度試したか。自動保存はこれが立つまで動かさない。 */
+  const [restoreAttempted, setRestoreAttempted] = useState(false);
+
+  /**
+   * 入力が変わるたびに端末へ控えを書く(GAS版saveReportDraftSnapshotと同じ役割)。
+   * 保存に成功した時点でclearReportDraft()が消すので、残っているのは常に「未保存の書きかけ」だけ。
+   */
+  useEffect(() => {
+    // 復元の試行が済むまでは書かない。先に走らせると、空の初期値で isEmpty と判定されて
+    // clearReportDraft() が控えを消し、そのあとの復元が空振りする。
+    if (!restoreAttempted) return;
+    if (!customerId || !customerQuery.data) return;
+    saveReportDraft({
+      owner: draftOwner,
+      customerId,
+      customerName: customerQuery.data.name,
+      mode,
+      visitDate: formatDateKey(visitDate),
+      startHour,
+      startMinute,
+      endHour,
+      endMinute,
+      memoText,
+      accidentMemo,
+      internalText,
+      customerText,
+      riskRating,
+      esRating,
+      accident: {
+        reportType,
+        targetName: accTargetName,
+        targetDob: accTargetDob,
+        occurrenceTime,
+        location,
+        accidentContent,
+        situation,
+        immediateResponse,
+        parentCorrespondence,
+        diagnosisTreatment,
+        prevention,
+      },
+      savedAt: Date.now(),
+    });
+  }, [
+    restoreAttempted,
+    draftOwner,
+    customerQuery.data,
+    customerId,
+    mode,
+    visitDate,
+    startHour,
+    startMinute,
+    endHour,
+    endMinute,
+    memoText,
+    accidentMemo,
+    internalText,
+    customerText,
+    riskRating,
+    esRating,
+    reportType,
+    accTargetName,
+    accTargetDob,
+    occurrenceTime,
+    location,
+    accidentContent,
+    situation,
+    immediateResponse,
+    parentCorrespondence,
+    diagnosisTreatment,
+    prevention,
+  ]);
+
+  /**
+   * 前回の書きかけを、同じ顧客のダイアログを開いたときに一度だけ流し込む。
+   * 復元するかどうかは開く側(CustomerSearch)が確認済みで、ここへは「復元する」と決まった
+   * ものだけが来る。
+   */
+  useEffect(() => {
+    if (restoreAttempted) return;
+    const draft = loadReportDraft(draftOwner);
+    if (!draft || draft.customerId !== customerId || !restoreDraft) {
+      // 復元するものが無い場合も「試した」ことにして、自動保存を動かし始める。
+      setRestoreAttempted(true);
+      return;
+    }
+    setRestoreAttempted(true);
+    setMode(draft.mode);
+    setVisitDate(parseDateKey(draft.visitDate));
+    setStartHour(draft.startHour);
+    setStartMinute(draft.startMinute);
+    setEndHour(draft.endHour);
+    setEndMinute(draft.endMinute);
+    setMemoText(draft.memoText);
+    setAccidentMemo(draft.accidentMemo);
+    setInternalText(draft.internalText);
+    setCustomerText(draft.customerText);
+    setRiskRating(draft.riskRating);
+    setEsRating(draft.esRating);
+    setReportType(draft.accident.reportType);
+    setAccTargetName(draft.accident.targetName);
+    setAccTargetDob(draft.accident.targetDob);
+    setOccurrenceTime(draft.accident.occurrenceTime);
+    setLocation(draft.accident.location);
+    setAccidentContent(draft.accident.accidentContent);
+    setSituation(draft.accident.situation);
+    setImmediateResponse(draft.accident.immediateResponse);
+    setParentCorrespondence(draft.accident.parentCorrespondence);
+    setDiagnosisTreatment(draft.accident.diagnosisTreatment);
+    setPrevention(draft.accident.prevention);
+  }, [customerId, restoreDraft, restoreAttempted, draftOwner]);
 
   const MAX_RECEIPT_IMAGES = 6;
 
@@ -709,7 +883,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
         billingType: img.billingType,
       }));
       const result = await uploadReceipts({ customerId, images: payloadImages, handoffText });
-      markCustomerRecentlyUsed(customerId);
+      if (customerId) markCustomerRecentlyUsed(customerId);
       const duplicateIndexes = new Set(result.duplicates.map((d) => d.index));
       setImages((prev) => prev.filter((_, idx) => duplicateIndexes.has(idx)));
       if (duplicateIndexes.size === 0) setHandoffText('');
@@ -737,8 +911,14 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
       <div className="bg-white w-full max-w-md h-[92vh] sm:h-auto sm:max-h-[90vh] sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col">
         <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl shrink-0">
           <div>
-            <h2 className="font-bold text-lg text-gray-800">{customerQuery.data?.name ?? '読み込み中…'}</h2>
-            {customerQuery.data?.city && <p className="text-xs text-gray-500">{customerQuery.data.city}</p>}
+            <h2 className="font-bold text-lg text-gray-800">
+              {customerId === null ? '領収書の登録' : (customerQuery.data?.name ?? '読み込み中…')}
+            </h2>
+            {customerId === null ? (
+              <p className="text-xs text-gray-500">顧客に紐付かない経費(駐車場代など)</p>
+            ) : (
+              customerQuery.data?.city && <p className="text-xs text-gray-500">{customerQuery.data.city}</p>
+            )}
           </div>
           <button
             type="button"
@@ -749,157 +929,167 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
           </button>
         </div>
 
-        <div className="flex border-b shrink-0">
-          <button
-            type="button"
-            onClick={() => setMode('daily')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-              mode === 'daily' ? 'text-blue-600 border-blue-600' : 'text-gray-500 border-transparent'
-            }`}
-          >
-            📝 保育日報
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('accident')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-              mode === 'accident' ? 'text-blue-600 border-blue-600' : 'text-gray-500 border-transparent'
-            }`}
-          >
-            ⚠️ 事故報告
-          </button>
-        </div>
+        {customerId !== null && (
+          <div className="flex border-b shrink-0">
+            <button
+              type="button"
+              onClick={() => setMode('daily')}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                mode === 'daily' ? 'text-blue-600 border-blue-600' : 'text-gray-500 border-transparent'
+              }`}
+            >
+              📝 保育日報
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('accident')}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                mode === 'accident' ? 'text-blue-600 border-blue-600' : 'text-gray-500 border-transparent'
+              }`}
+            >
+              ⚠️ 事故報告
+            </button>
+          </div>
+        )}
 
         <div className="flex-grow overflow-y-auto p-4 space-y-4">
-          {customerQuery.isPending && (
+          {customerId !== null && customerQuery.isPending && (
             <div className="flex justify-center py-8">
               <div className="w-8 h-8 rounded-full border-4 border-gray-200 loading-spinner" />
             </div>
           )}
 
-          {/* GAS版familySelectorContainerと同じく、事故報告タブでのみ表示する
+          {/* 顧客に紐付かない経費の領収書だけを登録するときは、対象者・日付・時間・訪問完了を
+              出さない(GAS版openStandaloneReceiptModalが隠している範囲と同じ)。 */}
+          {customerId !== null && (
+            <>
+              {/* GAS版familySelectorContainerと同じく、事故報告タブでのみ表示する
               (対象者氏名/生年月日の自動入力に使うため。日報タブでは非表示)。 */}
-          {mode === 'accident' && customerQuery.data && customerQuery.data.familyMembers.length > 0 && (
-            <div>
-              <label htmlFor="familySelector" className="text-xs text-gray-500 block mb-1">
-                対象者(ご家族)
-              </label>
-              <select
-                id="familySelector"
-                value={selectedFamilyId}
-                onChange={(e) => handleFamilySelect(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
-              >
-                <option value="">(選択してください)</option>
-                {customerQuery.data.familyMembers.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name} {calculateAgeLabel(f.dobDate ?? f.dobRaw)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* 日付(保育日報/事故報告で共有)。GAS版modalDateSectionと同じ。 */}
-          <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-300">
-            <button
-              type="button"
-              onClick={() => changeDate(-1)}
-              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
-            >
-              ‹
-            </button>
-            <div className="text-base font-bold text-gray-800">{formatDateDisplay(visitDate)}</div>
-            <button
-              type="button"
-              onClick={() => changeDate(1)}
-              disabled={isNextDateDisabled}
-              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              ›
-            </button>
-          </div>
-
-          {/* 時間(保育日報/事故報告で共有)。GAS版modalTimeSectionと同じ(hour/minuteセレクト)。 */}
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="startHour" className="text-xs text-gray-500 block mb-1">
-                開始時間/発生時間
-              </label>
-              <div className="flex items-center gap-2">
-                <select
-                  id="startHour"
-                  value={startHour}
-                  onChange={(e) => handleStartHourChange(e.target.value)}
-                  className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
-                >
-                  {HOURS.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-gray-400">:</span>
-                <select
-                  value={startMinute}
-                  onChange={(e) => handleStartMinuteChange(e.target.value)}
-                  className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
-                >
-                  {MINUTES.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {mode === 'daily' && (
-              <div>
-                <label htmlFor="endHour" className="text-xs text-gray-500 block mb-1">
-                  終了時間
-                </label>
-                <div className="flex items-center gap-2">
+              {mode === 'accident' && customerQuery.data && customerQuery.data.familyMembers.length > 0 && (
+                <div>
+                  <label htmlFor="familySelector" className="text-xs text-gray-500 block mb-1">
+                    対象者(ご家族)
+                  </label>
                   <select
-                    id="endHour"
-                    value={endHour}
-                    onChange={(e) => setEndHour(e.target.value)}
-                    className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
+                    id="familySelector"
+                    value={selectedFamilyId}
+                    onChange={(e) => handleFamilySelect(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
                   >
-                    {HOURS.map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-gray-400">:</span>
-                  <select
-                    value={endMinute}
-                    onChange={(e) => setEndMinute(e.target.value)}
-                    className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
-                  >
-                    {MINUTES.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
+                    <option value="">(選択してください)</option>
+                    {customerQuery.data.familyMembers.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name} {calculateAgeLabel(f.dobDate ?? f.dobRaw)}
                       </option>
                     ))}
                   </select>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="text-right">
-              <button
-                type="button"
-                onClick={handleVisitComplete}
-                disabled={sendingVisitComplete}
-                className="text-xs bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-3 py-1.5 rounded-md font-bold transition-colors"
-              >
-                {sendingVisitComplete ? '送信中...' : '訪問完了'}
-              </button>
-              {visitCompleteMessage && <p className="text-xs text-gray-500 mt-1">{visitCompleteMessage}</p>}
-            </div>
-          </div>
+              {/* 日付(保育日報/事故報告で共有)。GAS版modalDateSectionと同じ。 */}
+              <div className="flex items-center justify-between bg-gray-50 p-2 rounded-lg border border-gray-300">
+                <button
+                  type="button"
+                  onClick={() => changeDate(-1)}
+                  className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                >
+                  ‹
+                </button>
+                <div className="text-base font-bold text-gray-800">{formatDateDisplay(visitDate)}</div>
+                <button
+                  type="button"
+                  onClick={() => changeDate(1)}
+                  disabled={isNextDateDisabled}
+                  className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  ›
+                </button>
+              </div>
+
+              {/* 時間(保育日報/事故報告で共有)。GAS版modalTimeSectionと同じ(hour/minuteセレクト)。 */}
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="startHour" className="text-xs text-gray-500 block mb-1">
+                    開始時間/発生時間
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      id="startHour"
+                      value={startHour}
+                      onChange={(e) => handleStartHourChange(e.target.value)}
+                      className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
+                    >
+                      {HOURS.map((h) => (
+                        <option key={h} value={h}>
+                          {h}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-gray-400">:</span>
+                    <select
+                      value={startMinute}
+                      onChange={(e) => handleStartMinuteChange(e.target.value)}
+                      className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
+                    >
+                      {MINUTES.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {mode === 'daily' && (
+                  <div>
+                    <label htmlFor="endHour" className="text-xs text-gray-500 block mb-1">
+                      終了時間
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        id="endHour"
+                        value={endHour}
+                        onChange={(e) => setEndHour(e.target.value)}
+                        className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
+                      >
+                        {HOURS.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-gray-400">:</span>
+                      <select
+                        value={endMinute}
+                        onChange={(e) => setEndMinute(e.target.value)}
+                        className="flex-1 border rounded-lg p-2 text-sm bg-gray-50"
+                      >
+                        {MINUTES.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-right">
+                  <button
+                    type="button"
+                    onClick={handleVisitComplete}
+                    disabled={sendingVisitComplete}
+                    className="text-xs bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-3 py-1.5 rounded-md font-bold transition-colors"
+                  >
+                    {sendingVisitComplete ? '送信中...' : '訪問完了'}
+                  </button>
+                  {visitCompleteMessage && (
+                    <p className="text-xs text-gray-500 mt-1">{visitCompleteMessage}</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
           {/* 領収書登録(日報タブのみ)。GAS版imageUploadSectionと同じ位置(訪問完了ボタンの直後)・
               構成(見出し行の右に「領収書登録」ボタン、サムネイル+カメラ撮影/アルバムボタンを
@@ -975,7 +1165,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                       placeholder="店舗名"
                       className="w-full p-1 text-sm border border-gray-300 rounded text-center"
                     />
-                    {/* 請求区分(doc/14 §10)。日時・金額・店舗名と違い、選択肢の欄には
+                    {/* 請求区分(doc/db/guidelines.md §10)。日時・金額・店舗名と違い、選択肢の欄には
                         プレースホルダで「何の欄か」を書けない。ラベルを付けないと既定値の
                         「会社立替」だけが見えている状態になり、何を選ぶ欄なのか分からないまま
                         素通りされる(=顧客に請求すべき領収書が会社立替のまま登録される)。
@@ -1104,62 +1294,66 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
             </div>
           )}
 
-          {/* 適用クーポン(doc/14 §9。日報タブのみ)。1回の訪問に複数適用しうるので
+          {/* 適用クーポン(doc/db/guidelines.md §9。日報タブのみ)。1回の訪問に複数適用しうるので
               チェックボックスの複数選択にしている。クーポンを1件も登録していないテナントでは、
               一覧が確実に空だと分かった時点でセクションごと隠す。空の一覧をそのまま見せると
               「クーポン機能が壊れている」ように見えてしまい、登録の予定が無いテナントには
               単なる邪魔になるため(登録は設定→クーポン管理から行う)。 */}
-          {mode === 'daily' && !(couponsQuery.data && couponsQuery.data.length === 0) && (
-            <div className="border-t pt-3">
-              <span className="text-xs font-medium text-gray-500 block mb-2">適用クーポン</span>
-              {couponsQuery.isPending && (
-                <div className="flex justify-center py-2">
-                  <div className="w-5 h-5 rounded-full border-4 border-gray-200 loading-spinner" />
-                </div>
-              )}
-              {couponsQuery.isError && (
-                <p className="text-red-500 text-xs">{(couponsQuery.error as Error).message}</p>
-              )}
-              <div className="space-y-1">
-                {(couponsQuery.data ?? []).map((coupon) => (
-                  <label
-                    key={coupon.id}
-                    className={`flex items-center gap-2 p-2 rounded-lg border text-xs ${
-                      coupon.alreadyUsed
-                        ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
-                        : selectedCouponIds.includes(coupon.id)
-                          ? 'bg-blue-50 border-blue-300 cursor-pointer'
-                          : 'border-gray-200 hover:bg-gray-50 cursor-pointer'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedCouponIds.includes(coupon.id)}
-                      onChange={() => toggleCoupon(coupon.id)}
-                      disabled={coupon.alreadyUsed}
-                      className="w-4 h-4"
-                    />
-                    <span className={coupon.alreadyUsed ? '' : 'font-bold text-gray-700'}>{coupon.name}</span>
-                    <span className="text-gray-400">
-                      (
-                      {coupon.discountKind === 'amount'
-                        ? `${coupon.discountAmountYen}円引き`
-                        : `${coupon.discountPercent}%引き`}
-                      )
-                    </span>
-                    {/* なぜ今このクーポンが出ているのかを一目で分かるようにする
+          {customerId !== null &&
+            mode === 'daily' &&
+            !(couponsQuery.data && couponsQuery.data.length === 0) && (
+              <div className="border-t pt-3">
+                <span className="text-xs font-medium text-gray-500 block mb-2">適用クーポン</span>
+                {couponsQuery.isPending && (
+                  <div className="flex justify-center py-2">
+                    <div className="w-5 h-5 rounded-full border-4 border-gray-200 loading-spinner" />
+                  </div>
+                )}
+                {couponsQuery.isError && (
+                  <p className="text-red-500 text-xs">{(couponsQuery.error as Error).message}</p>
+                )}
+                <div className="space-y-1">
+                  {(couponsQuery.data ?? []).map((coupon) => (
+                    <label
+                      key={coupon.id}
+                      className={`flex items-center gap-2 p-2 rounded-lg border text-xs ${
+                        coupon.alreadyUsed
+                          ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed'
+                          : selectedCouponIds.includes(coupon.id)
+                            ? 'bg-blue-50 border-blue-300 cursor-pointer'
+                            : 'border-gray-200 hover:bg-gray-50 cursor-pointer'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCouponIds.includes(coupon.id)}
+                        onChange={() => toggleCoupon(coupon.id)}
+                        disabled={coupon.alreadyUsed}
+                        className="w-4 h-4"
+                      />
+                      <span className={coupon.alreadyUsed ? '' : 'font-bold text-gray-700'}>
+                        {coupon.name}
+                      </span>
+                      <span className="text-gray-400">
+                        (
+                        {coupon.discountKind === 'amount'
+                          ? `${coupon.discountAmountYen}円引き`
+                          : `${coupon.discountPercent}%引き`}
+                        )
+                      </span>
+                      {/* なぜ今このクーポンが出ているのかを一目で分かるようにする
                         (スタッフが誕生月を自分で確かめなくて済むのがこの機能の目的のため)。 */}
-                    {coupon.birthdaySubjectName && (
-                      <span className="text-pink-500">🎂 {coupon.birthdaySubjectName}さんの誕生月</span>
-                    )}
-                    {coupon.alreadyUsed && <span className="ml-auto text-gray-400">使用済み</span>}
-                  </label>
-                ))}
+                      {coupon.birthdaySubjectName && (
+                        <span className="text-pink-500">🎂 {coupon.birthdaySubjectName}さんの誕生月</span>
+                      )}
+                      {coupon.alreadyUsed && <span className="ml-auto text-gray-400">使用済み</span>}
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {mode === 'daily' && (
+          {customerId !== null && mode === 'daily' && (
             <div className="space-y-4">
               <div className="space-y-1">
                 <StarRating

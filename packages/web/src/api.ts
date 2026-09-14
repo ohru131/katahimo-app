@@ -8,6 +8,8 @@ import type {
   CouponUpdateRequest,
   CouponUsageLimitKind,
   CustomerCouponUpsertRequest,
+  FamilyAllergyStatus,
+  FamilyMemberAllergyUpdateRequest,
 } from '@katahimo/shared';
 
 export type {
@@ -43,11 +45,14 @@ export interface CustomerView {
 export interface FamilyMemberView {
   id: string;
   name: string;
-  /** 'YYYY-MM-DD'。解析できた場合のみ(doc/14 §6)。 */
+  /** 'YYYY-MM-DD'。解析できた場合のみ(doc/db/guidelines.md §6)。 */
   dobDate: string | null;
   /** 生年月日の元表記。dobDateの解析成否によらず常に入る。 */
   dobRaw: string | null;
   info: string | null;
+  /** 'unknown'(未確認) / 'none'(確認して無し) / 'present'(あり)。doc/db/guidelines.md §11。 */
+  allergyStatus: FamilyAllergyStatus;
+  allergyNote: string | null;
 }
 
 export interface CustomerDetailView {
@@ -71,7 +76,7 @@ export interface CustomerDetailView {
   address2: string | null;
   address2StartDate: string | null;
   address2EndDate: string | null;
-  /** 緯度・経度(doc/14 §7)。解析できた場合のみ数値、解析できない場合はlatLngRawだけが入る。 */
+  /** 緯度・経度(doc/db/guidelines.md §7)。解析できた場合のみ数値、解析できない場合はlatLngRawだけが入る。 */
   lat: number | null;
   lng: number | null;
   latLngRaw: string | null;
@@ -262,7 +267,7 @@ export interface AdminSettingsView {
   geminiOcrModel: string;
   gchatReportWebhookUrl: string;
   gchatReceiptWebhookUrl: string;
-  /** 会計の締め日(1〜28)。nullは月末(doc/14 §10)。 */
+  /** 会計の締め日(1〜28)。nullは月末(doc/db/guidelines.md §10)。 */
   receiptClosingDay: number | null;
   /** 領収書を取り消せる日数(暦日)。 */
   receiptCancellableDays: number;
@@ -305,7 +310,7 @@ export function saveGoogleChatWebhookSettings(
 }
 
 /**
- * 領収書の締め日設定を保存する(doc/14 §10)。
+ * 領収書の締め日設定を保存する(doc/db/guidelines.md §10)。
  * 領収書を取り消せる期限がこの2つから決まる。
  */
 export function saveReceiptDeadlineSettings(input: {
@@ -465,7 +470,7 @@ export async function fetchAttendanceMonth(
 export type ScheduleEventType = 'CUSTOMER APPOINTMENT' | 'OFFICE WORK';
 
 /**
- * どの枠のイベントかを、配列の種類と添字で表す。doc/14 §2の段階1で訪問・事務作業が固定5枠
+ * どの枠のイベントかを、配列の種類と添字で表す。doc/db/guidelines.md §2の段階1で訪問・事務作業が固定5枠
  * (slot1〜3, office1〜2)から配列になったのに合わせ、'slot1'のような固定キーではなく
  * { kind, index } にした(packages/core/src/domain/attendance/scheduleEvents.tsのScheduleEventと
  * 同じ形。@katahimo/coreはwebの依存に入っていないため、ここに複製している)。
@@ -546,7 +551,7 @@ export async function applyCalendarSync(date: string, staffId?: string): Promise
   return body.result;
 }
 
-// ── 割引クーポン(doc/14 §9。日報画面の選択UIと、管理者向けクーポン管理画面の両方で使う) ──
+// ── 割引クーポン(doc/db/guidelines.md §9。日報画面の選択UIと、管理者向けクーポン管理画面の両方で使う) ──
 // リクエストの形は@katahimo/sharedのzodスキーマ(CouponCreateRequest/CouponUpdateRequest、
 // ファイル冒頭でimport済み)をそのまま使う。web側で同じ形を再定義すると、DBのCHECK制約に
 // 合わせた値域(割引率1〜100等)の二重管理になってしまうため。
@@ -587,7 +592,7 @@ export interface CouponView {
   birthdaySubject: CouponBirthdaySubject | null;
   /** 同じ顧客が何回使えるか。 */
   usageLimitKind: CouponUsageLimitKind;
-  /** false=廃止済み。廃止しても行は消さない(doc/14 §9)ので一覧には引き続き出る。 */
+  /** false=廃止済み。廃止しても行は消さない(doc/db/guidelines.md §9)ので一覧には引き続き出る。 */
   active: boolean;
   note: string | null;
 }
@@ -622,7 +627,7 @@ export interface DailyReportCouponView {
 
 /**
  * 日報画面のクーポン選択用一覧。その顧客がその日に使える条件を満たすものだけが返る
- * (doc/14 §9)。誕生月でない月の誕生月クーポンや、その顧客に配られていないクーポンは
+ * (doc/db/guidelines.md §9)。誕生月でない月の誕生月クーポンや、その顧客に配られていないクーポンは
  * 返ってこないので、画面側で条件を判定する必要はない。
  *
  * reportIdは編集中の日報。その日報が既に使っている分を「使用済み」に数えないために渡す。
@@ -652,6 +657,28 @@ export async function updateCustomerBirthday(customerId: string, dob: string): P
   });
   const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
   if (!body.success) throw new Error(body.message || '生年月日の更新に失敗しました');
+}
+
+/**
+ * 世帯構成員のアレルギーを登録・更新する。訪問の現場で聞き取る情報なので管理者に限らない。
+ * 「あり」にするときは内容が必須(サーバー側とDBの制約でも縛っている)。
+ */
+export async function updateFamilyMemberAllergy(
+  customerId: string,
+  memberId: string,
+  allergy: FamilyMemberAllergyUpdateRequest,
+): Promise<void> {
+  const res = await fetch(
+    `/api/customers/${encodeURIComponent(customerId)}/family/${encodeURIComponent(memberId)}/allergy`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(allergy),
+    },
+  );
+  const body = await parseJsonOrThrow<{ success: boolean; message?: string }>(res);
+  if (!body.success) throw new Error(body.message || 'アレルギーの更新に失敗しました');
 }
 
 /** 顧客カルテの「この顧客が使えるクーポン」一覧(管理者のみ)。 */
@@ -783,7 +810,7 @@ export interface SaveDailyReportInput {
   customerText: string;
   riskRating: number | null;
   esRating: number | null;
-  /** 適用する割引クーポンのID配列(doc/14 §9)。省略/空配列は「クーポン無し」。 */
+  /** 適用する割引クーポンのID配列(doc/db/guidelines.md §9)。省略/空配列は「クーポン無し」。 */
   couponIds?: string[];
 }
 
@@ -794,7 +821,7 @@ export interface DailyReportView {
   customerId: string;
   riskRating: number | null;
   esRating: number | null;
-  /** この日報に適用された割引クーポン(doc/14 §9)。 */
+  /** この日報に適用された割引クーポン(doc/db/guidelines.md §9)。 */
   coupons: DailyReportCouponView[];
 }
 
@@ -889,7 +916,7 @@ export async function fetchCustomerHistory(customerId: string, before?: string):
   return body.items;
 }
 
-/** 領収書の請求区分。'customer_billable'=顧客に請求する、'company_expense'=会社が立て替える(doc/14 §10)。 */
+/** 領収書の請求区分。'customer_billable'=顧客に請求する、'company_expense'=会社が立て替える(doc/db/guidelines.md §10)。 */
 export type ReceiptBillingType = 'customer_billable' | 'company_expense';
 
 export interface ReceiptImageUpload {
@@ -988,7 +1015,7 @@ export async function fetchReceipts(yearMonth: string, staffId?: string): Promis
 }
 
 /**
- * 領収書を取り消す(論理削除。doc/14 §10)。
+ * 領収書を取り消す(論理削除。doc/db/guidelines.md §10)。
  * 会計の記録なので編集はできない。訂正は「取り消して登録し直す」。
  *
  * 戻り値の `mirrorAlreadySent` は「取り消した時点で既に外部シートへ送られていた」ことを表す。

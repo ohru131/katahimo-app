@@ -13,7 +13,7 @@ katahimo-app(マルチテナントSaaS版)のPostgreSQLスキーマについて�
 - データ保護の方針(業務データは平文列+保存時暗号化+RLS、アプリ層で暗号化するのは資格情報のみ)と、資格情報用の鍵管理の妥当性
 - スキーマ上の制約(PK/FK/UNIQUE)が実際にデータ整合性を守れているか
 
-将来の拡張予定(予約・決済・カルテ・分析ダッシュボード)は `doc/07_技術構成提案書.md` 第4〜7章を参照。本書は現時点で実装済みのスキーマのみを対象とする。
+将来の拡張予定(予約・決済・カルテ・分析ダッシュボード)は `doc/proposal/tech-stack.md` 第4〜7章を参照。本書は現時点で実装済みのスキーマのみを対象とする。
 
 ---
 
@@ -34,7 +34,7 @@ WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid)
 
 RLSは`SELECT`/`UPDATE`/`DELETE`を絞り込むだけで、**PostgreSQLのFK制約(参照整合性チェック)はRLSを常にバイパスする**という仕様上の落とし穴がある。単一列FK(例: `daily_reports.customer_id → customers.id`)のままだと、アプリのバグでテナントAのセッション中にテナントBの`customer_id`を書き込んでも、DBはそれを検知できない。
 
-これに対応するため、`customers`/`staff`に`UNIQUE(tenant_id, id)`を追加し、参照元テーブルのFKを`(tenant_id, xxx_id) → (tenant_id, id)`の複合FKにしている(`doc/16` 第2章の「外部キー」参照)。これにより「そのIDが本当にそのテナントの行か」をDBの制約自体が強制する。
+これに対応するため、`customers`/`staff`に`UNIQUE(tenant_id, id)`を追加し、参照元テーブルのFKを`(tenant_id, xxx_id) → (tenant_id, id)`の複合FKにしている(`doc/db/reference.md` 第2章の「外部キー」参照)。これにより「そのIDが本当にそのテナントの行か」をDBの制約自体が強制する。
 
 ## 1.3 データ保護(アプリ層のフィールド暗号化は資格情報のみ)
 
@@ -44,7 +44,7 @@ RLSは`SELECT`/`UPDATE`/`DELETE`を絞り込むだけで、**PostgreSQLのFK制�
 
 業務データをアプリ層で暗号化しない理由は次の3点。
 
-- **検索性**: 日報・事故報告・勤怠・領収書を SQL で絞り込み・集計・全文検索できる。暗号文のままでは「ある顧客の日報から特定の語を探す」だけでも全件復号が要る。このため日報・事故報告の本文は JSON 1本ではなく項目ごとの `text` 列に分けた(`doc/16` の `daily_reports`/`accident_reports` 参照)。勤怠は常に1日分をまるごと読み書きする動的なオブジェクト(訪問・事務作業を配列で持つ。キーの決め方は `doc/14` §2)のため `jsonb` 1列のまま(分解する利点が無い)。
+- **検索性**: 日報・事故報告・勤怠・領収書を SQL で絞り込み・集計・全文検索できる。暗号文のままでは「ある顧客の日報から特定の語を探す」だけでも全件復号が要る。このため日報・事故報告の本文は JSON 1本ではなく項目ごとの `text` 列に分けた(`doc/db/reference.md` の `daily_reports`/`accident_reports` 参照)。勤怠は常に1日分をまるごと読み書きする動的なオブジェクト(訪問・事務作業を配列で持つ。キーの決め方は `doc/db/guidelines.md` §2)のため `jsonb` 1列のまま(分解する利点が無い)。
 - **日報データの AI 活用**: 傾向分析・要約など日報を機械的に読む用途では、アプリ層暗号化は都度復号のコストと鍵の配線を分析側まで広げることになる。
 - **契約が求める水準**: 実証協力事業者との秘密保持契約(案)第6条の安全管理措置は「アクセス制限、通信および保存時の暗号化、パスワード管理等」であり、フィールド単位の暗号化は要求していない。保存時の暗号化は本番配備時に Cloud SQL の既定機能で満たす想定(未配備)。第3条2・第4条(仙台市への報告は統計化・匿名化、スタッフ氏名は仮名化、住所は座標化)は分析・出力側の要件で、DB が平文であるほうが SQL で匿名化処理を実施しやすい。
 
@@ -83,25 +83,25 @@ RLSは`SELECT`/`UPDATE`/`DELETE`を絞り込むだけで、**PostgreSQLのFK制�
 - `packages/db/src/rlsPolicies.test.ts`: Drizzleスキーマの export から全テーブルを動的に集め、マイグレーションSQLに `ENABLE ROW LEVEL SECURITY` と `FORCE ROW LEVEL SECURITY` の両方があること、`tenant_isolation` ポリシーの `USING` / `WITH CHECK` が揃っていることを検査する。除外は `tenants` のみ。`FORCE` はdrizzle-kitが生成しないため手で追記しており、これが無いとテーブル所有者ロールでRLSが素通りする。新しいテーブルを足して書き忘れるとCIで落ちる。
 - `packages/demo/src/rlsEnforcement.test.ts`: PGlite上に非特権ロールを作り、実際にクロステナントの読み書きが止まることを検証する。`FORCE` を付けたテーブルと付けないテーブルを並べて比較し、「FORCEの有無で挙動が変わる」ところまで固定している(テストが本当にFORCEを見ていることの裏付け)。
 
-## 1.6 DBの CHECK 制約で値域を縛る方針(`doc/14` §4)
+## 1.6 DBの CHECK 制約で値域を縛る方針(`doc/db/guidelines.md` §4)
 
 値域が決まっている列には、スキーマ定義で明示的にCHECK制約を張る。`outbox_jobs.status`/`kind`/`attempts`、`accident_reports.report_type`、`daily_reports.risk_rating`/`es_rating`、`staff.failed_login_attempts`、`password_reset_codes.failed_attempts`、`tenant_keys.dek_version`/`kek_version`、`receipts.amount_yen`/`billing_type`、`customers.lat`/`lng`、`coupons`/`coupon_redemptions` の割引種別と値の組み合わせ、および第2.2〜2.5節のテーブル群がこれに当たる。入口(API)側でも、文字列かどうかではなく許可された値かどうかで判定する(DB制約は最後の砦であり、ここで弾かないとスプレッドシートへの書き出しまで進んでしまうため)。
 
-この方針が要る理由は、Drizzleの `text({ enum: [...] })` が **TypeScript 上の型付けにすぎず、CHECK 制約としてDBには反映されない**ためである(drizzle-kitが生成するSQLに`CHECK`文は出力されない)。型で縛ったつもりでも `psql` から直接 `outbox_jobs.status='でたらめ'` を書き込めてしまい、書き込めばワーカーが永久に拾わない行になる。詳しくは `doc/14` §8.1。
+この方針が要る理由は、Drizzleの `text({ enum: [...] })` が **TypeScript 上の型付けにすぎず、CHECK 制約としてDBには反映されない**ためである(drizzle-kitが生成するSQLに`CHECK`文は出力されない)。型で縛ったつもりでも `psql` から直接 `outbox_jobs.status='でたらめ'` を書き込めてしまい、書き込めばワーカーが永久に拾わない行になる。詳しくは `doc/db/guidelines.md` §8.1。
 
 `outbox_jobs.kind` の許可値はDDLに固定で書き写さず、`Record<MirrorKind, true>`(`packages/db/src/schema/outbox.ts`)から組み立てている。`MirrorKind`(`packages/core/src/ports/mirror.ts`)に追加・削除があればここが型エラーになるため、DB制約とアプリのポート型がズレたまま気付けない事態を防いでいる。
 
 `packages/demo/src/checkConstraints.test.ts` が、本番と同じマイグレーションを当てたPGlite上で各制約の「正常値は通る」「不正値は拒否される」の両方を検証する。拒否側はエラーメッセージに制約名が含まれることまで確認しており、NOT NULLやFK等の別の理由でたまたま拒否されて「検証したつもりで何も検証していない」状態になることを防いでいる。
 
-## 1.7 `updated_at` をDBトリガーで一元管理する方針(`doc/14` §5)
+## 1.7 `updated_at` をDBトリガーで一元管理する方針(`doc/db/guidelines.md` §5)
 
 更新日時はアプリのコードではなく、`set_updated_at()` トリガー関数を `updated_at` 列を持つ全テーブルにBEFORE UPDATEトリガーとして張って更新する(現在30テーブル。`receipts`/`sessions`/`password_reset_codes` は `created_at` のみで更新経路が無いため対象外)。アプリから `updatedAt` を明示指定しても、トリガーが常に `now()` で上書きする。唯一の正をDBに置くための意図した挙動である。
 
-アプリ側でのセットを方針にしない理由は、ミラー書き込みジョブの冪等キーが `buildMirrorIdempotencyKey(kind, targetId, record.updatedAt)` のように更新時刻を材料にしているためである。UPDATE経路で `updated_at` のセットを書き忘れると冪等キーが前回と同一になり、`UNIQUE(tenant_id, idempotency_key)` に弾かれて編集内容がスプレッドシートへ永久に反映されなくなる。しかもエラーにならないため気付けない(`doc/14` §5)。
+アプリ側でのセットを方針にしない理由は、ミラー書き込みジョブの冪等キーが `buildMirrorIdempotencyKey(kind, targetId, record.updatedAt)` のように更新時刻を材料にしているためである。UPDATE経路で `updated_at` のセットを書き忘れると冪等キーが前回と同一になり、`UNIQUE(tenant_id, idempotency_key)` に弾かれて編集内容がスプレッドシートへ永久に反映されなくなる。しかもエラーにならないため気付けない(`doc/db/guidelines.md` §5)。
 
 トリガーはDrizzleのスキーマ定義では表現できないため、マイグレーションSQLは手書きになる。**張り忘れが新しい書き忘れの種になる**ため、`packages/db/src/rlsPolicies.test.ts`(RLSの張り忘れ検出。第1.5節)と同じ方式の静的検査 `packages/db/src/updatedAtTriggers.test.ts` を追加した。Drizzleスキーマのexportから `updated_at` 列を持つテーブルを動的に集め、マイグレーションSQLの `CREATE`/`DROP TRIGGER` を出現順に畳み込んだ最終状態を見る(対象一覧をベタ書きすると、その一覧の更新し忘れ自体がトリガーの張り忘れと同じ壊れ方をテストがしてしまう)。`packages/demo/src/updatedAtTrigger.test.ts` はPGlite上で実際にUPDATE後 `updated_at` が進むこと、`customers` の編集で進むこと(この不具合の回帰テスト)、アプリから明示指定してもトリガーに上書きされることを確認する。
 
-## 1.8 主要な検索経路にインデックスを張る方針(`doc/14` §3)
+## 1.8 主要な検索経路にインデックスを張る方針(`doc/db/guidelines.md` §3)
 
 PostgreSQLは**外部キーの参照する側に索引を自動作成しない**。主キーだけに任せると、`tenant_id`/`customer_id`/`staff_id` で絞り込む主要な読み取りがすべて全件走査になる。とくに「顧客の日報履歴」を開くたびに走る `listByCustomer`(`WHERE customer_id=? ORDER BY occurred_at DESC LIMIT n`)は最も頻度の高い読み取りで、日報は毎日積み上がる追記型のデータのため放置すれば必ず遅くなる。
 
@@ -131,12 +131,12 @@ CHECK制約の右辺にDDLとして値を直接書き写さない理由は、区
 
 # 2. テーブル構成(ドメイン別)
 
-ER図と全列の一覧は `doc/16_データベース構造リファレンス.md` にある。あちらは
+ER図と全列の一覧は `doc/db/reference.md` にある。あちらは
 `packages/db/src/schema/*.ts` から自動生成しており(`pnpm db:docs`)、スキーマを変えたのに
 図が古いままになっていないことをCIで検査している。図をここに手書きで置くと本書だけが
 必ず古くなるため、本章は「どう分けたか・なぜその形か」の説明に絞る。
 
-ドメインの区切り(2.1〜2.5)は `doc/16` の第1章・第2章と同じ順・同じ区切り。
+ドメインの区切り(2.1〜2.5)は `doc/db/reference.md` の第1章・第2章と同じ順・同じ区切り。
 
 ## 2.1 既存の業務データ
 
@@ -163,9 +163,9 @@ Stripeによるカード決済等を扱う。設計上の判断(カード番号�
 ### 関係の読み方の補足
 
 - 複合FK(`(tenant_id, xxx_id) → (tenant_id, id)`)は、mermaidのerDiagram記法では関係線を1本しか
-  引けないため `doc/16` の図では単線になる。実際に張られている列の組は `doc/16` 第2章の
+  引けないため `doc/db/reference.md` の図では単線になる。実際に張られている列の組は `doc/db/reference.md` 第2章の
   「外部キー」、実体は `packages/db/drizzle/*.sql` のDDLを参照。
-- `doc/16` の図では、外部キーがNULL可な関係を「親を持たない子があり得る」形(`|o`)で描いている。
+- `doc/db/reference.md` の図では、外部キーがNULL可な関係を「親を持たない子があり得る」形(`|o`)で描いている。
   `receipts`と`customers`がその代表で、`customer_id`をnullableにしているのは経費のみの領収書
   (駐車場代等)を許容するため。
 
@@ -267,19 +267,19 @@ sequenceDiagram
 | `tenants` | テナント(法人)マスタ | 対象外(ログイン前のテナント特定に必要) | `slug`でテナントを特定後、RLSスコープ内で`staff`を検索する2段階方式 |
 | `tenant_keys` | テナントごとのDEK(ラップ済み) | ○ | 主キーは`(tenant_id, dek_version)`。世代ごとに1行(第3章参照) |
 | `staff` | スタッフ(認証情報を兼ねる) | ○ | `(tenant_id, id)`にUNIQUE。ログイン試行の絞り込み(`failed_login_attempts`/`locked_until`)もここ。訪問割当の最適化用に`home_address`/`home_lat`/`home_lng`/`preferred_transport_mode`を持つ(第2.5節) |
-| `customers` | 顧客(利用世帯の代表者) | ○ | RESERVA CSVの全列に対応、39列。`(tenant_id, id)`にUNIQUE。緯度経度は`lat`/`lng`の数値2列(`doc/14` §7)。生年月日は`dob_date`+`dob_raw`(`doc/14` §6。CSVに列が無いため手入力で入り、再取込では上書きしない) |
-| `family_members` | 世帯構成員(子ども等) | ○ | `customers`の1:N。氏名・付帯情報は平文。生年月日は`dob_date`(日付型)+`dob_raw`(元表記)の2列(`doc/14` §6) |
-| `daily_reports` | 保育日報 | ○ | `staff`・`customers`双方への複合FK。本文は項目ごとの平文`text`列。開始・終了は`started_at`/`ended_at`(timestamptz)(`doc/14` §6)。`reservation_id`で対応する予約に紐付け(任意。第2.3節) |
-| `accident_reports` | 事故報告/ヒヤリハット | ○ | 同上。本文は項目ごとの平文`text`列。対象児の生年月日は`target_dob_date`+`target_dob_raw`の2列(`doc/14` §6) |
-| `receipts` | 領収書登録(実費報告) | ○ | `customer_id`はnullable(経費のみの領収書を許容)。重複検出は平文`dedupe_key`の等値一致(取り消した行は対象外)。金額は`amount_yen`(整数)+`amount_raw`(生文字列)の2列、`billing_type`で顧客請求/会社経費を区別(`doc/14` §1・§10)。訂正は編集ではなく`cancelled_at`を立てる論理削除で、行は消さない(`doc/14` §10)。`(tenant_id, id)`にUNIQUE(`invoice_lines`からの複合FKの参照先。第2.4節) |
-| `attendance_days` | 勤怠(出勤簿)1日分 | ○ | 入力値は`row_data jsonb`(平文)。キーは`visits`/`officeWork`等の意味のあるキー(`doc/14` §2)。派生値(残業時間等)は保存せず都度計算 |
+| `customers` | 顧客(利用世帯の代表者) | ○ | RESERVA CSVの全列に対応、39列。`(tenant_id, id)`にUNIQUE。緯度経度は`lat`/`lng`の数値2列(`doc/db/guidelines.md` §7)。生年月日は`dob_date`+`dob_raw`(`doc/db/guidelines.md` §6。CSVに列が無いため手入力で入り、再取込では上書きしない) |
+| `family_members` | 世帯構成員(子ども等) | ○ | `customers`の1:N。氏名・付帯情報は平文。生年月日は`dob_date`(日付型)+`dob_raw`(元表記)の2列(`doc/db/guidelines.md` §6)。アレルギーは自由記述と分けて`allergy_status`(未確認/なし/あり)+`allergy_note`の2列で持ち、取込での全件入れ替え時は氏名で突き合わせて引き継ぐ(`doc/db/guidelines.md` §11) |
+| `daily_reports` | 保育日報 | ○ | `staff`・`customers`双方への複合FK。本文は項目ごとの平文`text`列。開始・終了は`started_at`/`ended_at`(timestamptz)(`doc/db/guidelines.md` §6)。`reservation_id`で対応する予約に紐付け(任意。第2.3節) |
+| `accident_reports` | 事故報告/ヒヤリハット | ○ | 同上。本文は項目ごとの平文`text`列。対象児の生年月日は`target_dob_date`+`target_dob_raw`の2列(`doc/db/guidelines.md` §6) |
+| `receipts` | 領収書登録(実費報告) | ○ | `customer_id`はnullable(経費のみの領収書を許容)。重複検出は平文`dedupe_key`の等値一致(取り消した行は対象外)。金額は`amount_yen`(整数)+`amount_raw`(生文字列)の2列、`billing_type`で顧客請求/会社経費を区別(`doc/db/guidelines.md` §1・§10)。訂正は編集ではなく`cancelled_at`を立てる論理削除で、行は消さない(`doc/db/guidelines.md` §10)。`(tenant_id, id)`にUNIQUE(`invoice_lines`からの複合FKの参照先。第2.4節) |
+| `attendance_days` | 勤怠(出勤簿)1日分 | ○ | 入力値は`row_data jsonb`(平文)。キーは`visits`/`officeWork`等の意味のあるキー(`doc/db/guidelines.md` §2)。派生値(残業時間等)は保存せず都度計算 |
 | `sessions` | ログインセッション | ○ | 生トークンはCookieのみ、DBにはSHA-256ハッシュだけ保存 |
 | `password_reset_codes` | パスワード再設定の6桁コード | ○ | DBに保存するのはペッパー(環境変数、DBには置かない)を鍵にしたHMAC-SHA256の検証子。有効期限30分・誤入力5回で無効 |
 | `outbox_jobs` | スプレッドシート等へのミラー書き込みジョブキュー | ○ | `(tenant_id, idempotency_key)`にUNIQUE。失敗は指数バックオフで再試行(`next_attempt_at`)し、上限8回に達した分だけ`failed`(デッドレター) |
-| `app_settings` | テナント単位の管理者設定(APIキー等) | ○ | 1テナント1行、`tenant_id`がPK。資格情報3列がリポジトリ内で唯一のアプリ層暗号化列(第3章)。領収書の締め日(`receipt_closing_day`/`receipt_cancellable_days`)もここに置く。取り消し期限がこの2列から導かれる(`doc/14` §10) |
-| `coupons` | 割引クーポンの種別マスタ(金額引き/率引き) | ○ | `(tenant_id, code)`・`(tenant_id, id)`にUNIQUE。適用条件は`audience`/`eligibility_kind`/`usage_limit_kind`の3列で表す。廃止は`active=false`(行は消さない。`doc/14` §9) |
-| `customer_coupons` | 顧客へのクーポン配布(`audience='assigned'`のクーポンが使えるようになる) | ○ | `customers`・`coupons`双方への複合FK。`(tenant_id, customer_id, coupon_id)`にUNIQUE。顧客ごとの有効期間はマスタの期間に重ねて効く(`doc/14` §9) |
-| `coupon_redemptions` | 日報1件への割引クーポン適用記録 | ○ | `(tenant_id, daily_report_id, customer_id)`で`daily_reports`への複合FK(日報の顧客と食い違う行を作れない)。`(tenant_id, daily_report_id, coupon_id)`にUNIQUE(二重適用防止)。使用上限は`(tenant_id, coupon_id, customer_id, usage_scope_key)`の部分UNIQUEで守る。適用時点の割引条件をスナップショットして保持(`doc/14` §9)。`(tenant_id, id)`にUNIQUE(`invoice_lines`からの複合FKの参照先。第2.4節) |
+| `app_settings` | テナント単位の管理者設定(APIキー等) | ○ | 1テナント1行、`tenant_id`がPK。資格情報3列がリポジトリ内で唯一のアプリ層暗号化列(第3章)。領収書の締め日(`receipt_closing_day`/`receipt_cancellable_days`)もここに置く。取り消し期限がこの2列から導かれる(`doc/db/guidelines.md` §10) |
+| `coupons` | 割引クーポンの種別マスタ(金額引き/率引き) | ○ | `(tenant_id, code)`・`(tenant_id, id)`にUNIQUE。適用条件は`audience`/`eligibility_kind`/`usage_limit_kind`の3列で表す。廃止は`active=false`(行は消さない。`doc/db/guidelines.md` §9) |
+| `customer_coupons` | 顧客へのクーポン配布(`audience='assigned'`のクーポンが使えるようになる) | ○ | `customers`・`coupons`双方への複合FK。`(tenant_id, customer_id, coupon_id)`にUNIQUE。顧客ごとの有効期間はマスタの期間に重ねて効く(`doc/db/guidelines.md` §9) |
+| `coupon_redemptions` | 日報1件への割引クーポン適用記録 | ○ | `(tenant_id, daily_report_id, customer_id)`で`daily_reports`への複合FK(日報の顧客と食い違う行を作れない)。`(tenant_id, daily_report_id, coupon_id)`にUNIQUE(二重適用防止)。使用上限は`(tenant_id, coupon_id, customer_id, usage_scope_key)`の部分UNIQUEで守る。適用時点の割引条件をスナップショットして保持(`doc/db/guidelines.md` §9)。`(tenant_id, id)`にUNIQUE(`invoice_lines`からの複合FKの参照先。第2.4節) |
 | `customer_notes` | 顧客カルテの記載事項(カルテ/申し送り/鍵の位置/ガレージ場所/引き継ぎ事項/注意点) | ○ | `category`はCHECK制約。`pinned`で一覧上部に固定表示、`resolved_at`/`resolved_by_staff_id`は必ず対で入る(CHECK)。第2.2節 |
 | `customer_note_photos` | カルテ記載に添付する写真 | ○ | 実体はStoragePort(GCS想定)、DBは`file_key`のみ保持(UNIQUE)。`sort_order`に一意制約は付けない(人が2枚を入れ替えるUPDATEが一意制約の即時検査で必ず衝突するため。並び順の決定性は`ORDER BY sort_order, id`で担保)。第2.2節 |
 | `service_menus` | 予約時に選ぶサービスメニュー(所要時間・基本料金) | ○ | `(tenant_id, code)`にUNIQUE。取込元と取込元IDは対で必須。値上げは行を書き換えず、過去の請求は`invoice_lines`側にスナップショット。第2.3節 |
@@ -301,7 +301,7 @@ sequenceDiagram
 
 ## 4.1 `customers` の列の設計意図
 
-全39列の一覧(型・NULL可否・既定値・制約)は `doc/16` の `customers` の節にある。
+全39列の一覧(型・NULL可否・既定値・制約)は `doc/db/reference.md` の `customers` の節にある。
 ここでは列の持ち方を決めた理由だけを挙げる。暗号化列は無い(第1.3節)。
 
 - **氏名**: `family_name`は`(tenant_id, family_name)`のインデックスで苗字検索に使うため、
@@ -309,12 +309,12 @@ sequenceDiagram
 - **連絡先・住所**: RLSで保護。保存時暗号化は本番のCloud SQL配備時に満たす前提条件で、現時点では未配備(ローカル開発のPostgreSQLと公開デモのPGliteには掛かっていない。第1.3節)。分析・報告時は除外/座標化の対象(NDA 第3条2・第4条)。
 - **第三者情報・自由記述**(緊急連絡先・避難場所・メモ): 検索性・AI活用のため平文(第1.3節)。
 - **位置情報**: 計算(距離・ジオフェンス・座標化しての仙台市報告)に使うため、`numeric(9,6)`の
-  数値2列(`lat`/`lng`)+元表記(`lat_lng_raw`)に分けて持つ(`doc/14` §7)。`lat`/`lng`には
+  数値2列(`lat`/`lng`)+元表記(`lat_lng_raw`)に分けて持つ(`doc/db/guidelines.md` §7)。`lat`/`lng`には
   CHECKで実在する座標の範囲(緯度-90〜90、経度-180〜180)を課す。
 - **分類情報**(会員区分・支払方法・性別・年代等): 個人特定に直結しない運用区分。
-- **生年月日**: 誕生月クーポン(`doc/14` §9)の判定に使う。RESERVA CSVに列が無いため取り込みでは
+- **生年月日**: 誕生月クーポン(`doc/db/guidelines.md` §9)の判定に使う。RESERVA CSVに列が無いため取り込みでは
   埋まらず、顧客カルテからの手入力で入る(再取り込みでは上書きしない)。日付型(`dob_date`)と
-  元表記(`dob_raw`)の2列に分けるのは`doc/14` §6。
+  元表記(`dob_raw`)の2列に分けるのは`doc/db/guidelines.md` §6。
 
 ---
 
@@ -322,7 +322,7 @@ sequenceDiagram
 
 1. 複合PK/FK(第1.2節)によるテナント跨ぎ防止は、RLSと組み合わせた「二重の防御」として妥当か。他に見落としているPostgreSQLの仕様上の落とし穴はないか。
 2. エンベロープ暗号化(第3章)の鍵階層(KEK→DEK→実データ)は、本番のCloud KMS移行を見据えた設計として妥当か。DEKの世代を並存させる方式(新しい書き込みだけ最新世代)を採っているが、既存データを新世代へ移す再暗号化の推奨手順(オンライン再暗号化 vs メンテナンス時間を確保したバッチ)に定石はあるか。
-3. 復号の監査ログ(第3.4節)について、「誰が」まで記録する必要性・優先度をどう評価すべきか(認証・権限まわりのイベントは「誰が・誰を」まで記録している一方、平文列への参照は監査の網に入らない。医療系記録(将来の訪問看護展開、`doc/07`第7章)を扱う場合のコンプライアンス要件との関係)。
+3. 復号の監査ログ(第3.4節)について、「誰が」まで記録する必要性・優先度をどう評価すべきか(認証・権限まわりのイベントは「誰が・誰を」まで記録している一方、平文列への参照は監査の網に入らない。医療系記録(将来の訪問看護展開、`doc/proposal/tech-stack.md`第7章)を扱う場合のコンプライアンス要件との関係)。
 4. フィールド暗号化の対象は資格情報3列のみとし、業務データは平文+保存時暗号化+RLS としている(第1.3節)。論点: 秘密保持契約(案)第3条2・第4条の匿名化ルール(氏名・連絡先・住所列の除外、スタッフ氏名の仮名化、住所の座標化)を分析・AI 利用時に SQL/ビューで実施する運用は妥当か。第7条(返還・廃棄)をテナント単位の物理 DELETE + バックアップ保持期間の満了で担保する整理に不足はないか。
 5. 日報・事故報告の本文は項目ごとの平文`text`列に分け、勤怠は`jsonb`1列としている(第1.3節・第2章)。論点: 業務データが平文であるため復号監査(第3.4節)が資格情報にしか効かなくなったため、DB 側監査(pgaudit 等)を入れるべき時期・粒度と、全文検索インデックス(`tsvector`/`pg_bigm` 等)を日報本文に付与する際の注意点。
 6. 本番配備時のチェックリスト(TLS・保存時暗号化・バックアップ保持・削除手順)の妥当性(第1.3節。本番環境は未配備のため、配備前にこのチェックリストで確認する)。

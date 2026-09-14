@@ -4,7 +4,7 @@
  * GAS版は Maps.newGeocoder() / Maps.newDirectionFinder() (APIキー不要のGAS内蔵サービス)を
  * 使っていたが、サーバー実装では Google Maps Platform の Geocoding API と Routes API になる。
  * 2025年3月以降の新規GCPプロジェクトではレガシーのDirections APIを有効化できないため、
- * 経路計算は Routes API 前提(doc/07 第10.3章)。
+ * 経路計算は Routes API 前提(doc/proposal/tech-stack.md 第10.3章)。
  */
 export interface LatLng {
   lat: number;

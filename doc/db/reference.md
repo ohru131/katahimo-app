@@ -17,25 +17,25 @@ drizzleがDDLを起こすときと同じ解釈を通しているので、`packag
 実際に適用される形と一致する。
 
 ここに書くのはスキーマから導ける事実だけで、**なぜその形にしたのか**は扱わない。
-設計の意図・テナント分離の方針・暗号化の構成は `doc/09_データベース構造解説.md`、
-設計時に踏んだ落とし穴は `doc/14_データベース設計の指針と落とし穴.md` を参照。
+設計の意図・テナント分離の方針・暗号化の構成は `doc/db/overview.md`、
+設計時に踏んだ落とし穴は `doc/db/guidelines.md` を参照。
 
 ## 規模
 
 | 項目 | 数 |
 |---|---|
 | テーブル | 34 |
-| 列 | 462 |
+| 列 | 464 |
 | 外部キー | 83 |
 | インデックス | 54 |
-| CHECK制約 | 111 |
+| CHECK制約 | 113 |
 | RLSポリシー | 33 |
 
 ---
 
 # 1. ER図
 
-1枚に収めると読めないため、業務ドメインごとに分ける(区切り方は `doc/09` 第2章と同じ)。
+1枚に収めると読めないため、業務ドメインごとに分ける(区切り方は `doc/db/overview.md` 第2章と同じ)。
 図に出すのは主キーと外部キーの列だけで、全列は第2章にある。
 枠だけのテーブルは、そのドメインでは参照されるだけで定義は別の節にあることを示す。
 
@@ -550,6 +550,8 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 | `dob_date` | `date` | NULL可 | — |
 | `dob_raw` | `text` | NULL可 | — |
 | `info` | `text` | NULL可 | — |
+| `allergy_status` | `text` | NOT NULL | `'unknown'` |
+| `allergy_note` | `text` | NULL可 | — |
 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |
 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |
 
@@ -557,6 +559,11 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 
 - `(tenant_id)` → `tenants(id)`
 - `(tenant_id, customer_id)` → `customers(tenant_id, id)`
+
+**CHECK制約**
+
+- `family_members_allergy_status_check` — `"family_members"."allergy_status" IN ('unknown', 'none', 'present')`
+- `family_members_allergy_note_required` — `"family_members"."allergy_status" <> 'present' OR NULLIF(btrim("family_members"."allergy_note"), '') IS NOT NULL`
 
 **インデックス**
 

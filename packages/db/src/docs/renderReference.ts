@@ -2,10 +2,10 @@ import type { IndexInfo, TableInfo } from './collectSchema';
 import { SCHEMA_DOMAINS } from './domains';
 
 /**
- * 収集したスキーマ情報を doc/16 のMarkdownに組み立てる。
+ * 収集したスキーマ情報を doc/db/reference.md のMarkdownに組み立てる。
  *
  * 書くのは「スキーマ定義から機械的に導ける事実」だけに限る。なぜその形にしたのかは
- * doc/09(手書き)と各schemaファイルのコメントが持つ。両方に同じ説明を置くと、
+ * doc/db/overview.md(手書き)と各schemaファイルのコメントが持つ。両方に同じ説明を置くと、
  * 生成されない側だけが古くなって食い違うため。
  */
 
@@ -212,7 +212,7 @@ function mustGet(tables: Map<string, TableInfo>, name: string): TableInfo {
   return table;
 }
 
-/** doc/16 の全文を組み立てる。 */
+/** doc/db/reference.md の全文を組み立てる。 */
 export function renderReference(tables: Map<string, TableInfo>): string {
   const all = [...tables.values()];
   const totals = {
@@ -244,8 +244,8 @@ export function renderReference(tables: Map<string, TableInfo>): string {
     '実際に適用される形と一致する。',
     '',
     'ここに書くのはスキーマから導ける事実だけで、**なぜその形にしたのか**は扱わない。',
-    '設計の意図・テナント分離の方針・暗号化の構成は `doc/09_データベース構造解説.md`、',
-    '設計時に踏んだ落とし穴は `doc/14_データベース設計の指針と落とし穴.md` を参照。',
+    '設計の意図・テナント分離の方針・暗号化の構成は `doc/db/overview.md`、',
+    '設計時に踏んだ落とし穴は `doc/db/guidelines.md` を参照。',
     '',
     '## 規模',
     '',
@@ -262,7 +262,7 @@ export function renderReference(tables: Map<string, TableInfo>): string {
     '',
     '# 1. ER図',
     '',
-    '1枚に収めると読めないため、業務ドメインごとに分ける(区切り方は `doc/09` 第2章と同じ)。',
+    '1枚に収めると読めないため、業務ドメインごとに分ける(区切り方は `doc/db/overview.md` 第2章と同じ)。',
     '図に出すのは主キーと外部キーの列だけで、全列は第2章にある。',
     '枠だけのテーブルは、そのドメインでは参照されるだけで定義は別の節にあることを示す。',
     '',

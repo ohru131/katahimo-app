@@ -25,7 +25,7 @@ export interface CouponDeps {
 
 /**
  * 管理者のクーポン管理画面用の一覧。廃止済み(active=false)も含む全件を、コード順で返す
- * (doc/14 §9。廃止しても行は消さない方針のため、一覧からも隠さず「廃止済み」として見せる)。
+ * (doc/db/guidelines.md §9。廃止しても行は消さない方針のため、一覧からも隠さず「廃止済み」として見せる)。
  */
 export async function listCouponsForAdmin(deps: CouponDeps, tenantId: string): Promise<CouponRecord[]> {
   const rows = await deps.coupons.listAll(tenantId);
@@ -33,7 +33,7 @@ export async function listCouponsForAdmin(deps: CouponDeps, tenantId: string): P
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 「この顧客が・この日に・このクーポンを使えるか」の判定(doc/14 §9)
+// 「この顧客が・この日に・このクーポンを使えるか」の判定(doc/db/guidelines.md §9)
 //
 // スタッフが日報を書くたびに「この世帯は今月が誕生月か」「このクーポンはもう使ったか」を
 // 自分で判断せずに済むよう、判定は全てここに寄せる。画面には使えるものだけを出し、
@@ -738,7 +738,7 @@ export async function resolveCouponRedemptionSnapshots(
 
 /**
  * 日報の適用記録(coupon_redemptions)を、画面表示用のDailyReportCouponView[]に組み立てる。
- * クーポン名・コードは、適用記録には複製していない(doc/14 §9。割引条件だけを
+ * クーポン名・コードは、適用記録には複製していない(doc/db/guidelines.md §9。割引条件だけを
  * スナップショットする設計のため)ので、現在のcouponsマスタから引き直す。クーポンが
  * 廃止されていても行は残るため、廃止後もここで解決できる。
  */

@@ -50,7 +50,7 @@ export function createReceiptRoutes(container: Container) {
     const staffId = resolveReportTargetStaffId(session, c.req.query('staffId'));
 
     const result = await listReceiptsForStaff(container, session.tenantId, staffId, yearMonth, {
-      // 管理者は期限後も取り消せる(経理の締め処理で戻すことがあるため。doc/14 §10)。
+      // 管理者は期限後も取り消せる(経理の締め処理で戻すことがあるため。doc/db/guidelines.md §10)。
       // 一覧側でも同じ判定にしないと、取り消せるのにボタンが出ない状態になる。
       ignoreDeadline: session.isAdmin,
     });
@@ -62,10 +62,10 @@ export function createReceiptRoutes(container: Container) {
   });
 
   /**
-   * 領収書を取り消す(論理削除。doc/14 §10)。
+   * 領収書を取り消す(論理削除。doc/db/guidelines.md §10)。
    *
    * 会計の記録なので編集は用意していない。訂正は「取り消して登録し直す」の一択で、
-   * 取り消した行も一覧に残る。期限(テナントごとの締め日設定から決まる。doc/14 §10)はここでも見る
+   * 取り消した行も一覧に残る。期限(テナントごとの締め日設定から決まる。doc/db/guidelines.md §10)はここでも見る
    * (画面はボタンを出さないが、APIを直接叩けば通ってしまうため)。管理者だけは期限後も
    * 取り消せる(経理が締め処理で戻すことがあるため)。
    */
@@ -113,7 +113,7 @@ export function createReceiptRoutes(container: Container) {
       return c.json({ success: false, message }, 400);
     }
     // 管理者が期限後に取り消したときは、既にスプレッドシートへ送られていることがある。
-    // あちら側の行はこちらからは消せないので、黙って成功にせず画面へ伝える(doc/14 §10)。
+    // あちら側の行はこちらからは消せないので、黙って成功にせず画面へ伝える(doc/db/guidelines.md §10)。
     return c.json({ success: true, mirrorAlreadySent: result.mirrorAlreadySent });
   });
 

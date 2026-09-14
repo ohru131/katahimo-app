@@ -41,7 +41,7 @@ export function formatJstDateOnly(date: Date): string {
 /**
  * 'YYYY-MM-DD'(JST)。parseJstDateTimeが受け付ける区切り("-")に合わせた日付キー。
  * Web側のformatDateKey(toLocaleDateString('sv-SE'))と同じ基準日をバックエンドでも
- * 作れるようにする(doc/14 §6。reportDate省略時のフォールバック等に使う)。
+ * 作れるようにする(doc/db/guidelines.md §6。reportDate省略時のフォールバック等に使う)。
  */
 export function formatJstDateKey(date: Date): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -54,7 +54,7 @@ export function formatJstDateKey(date: Date): string {
 
 /**
  * 'HH:mm'(JST)。daily_reports.started_at/ended_at(timestamptz)を、GAS側スプレッドシートの
- * "HH:mm"表記へ戻すためのミラー送信専用フォーマッタ(doc/14 §6。保存時は"HH:mm"へ整形し直さない)。
+ * "HH:mm"表記へ戻すためのミラー送信専用フォーマッタ(doc/db/guidelines.md §6。保存時は"HH:mm"へ整形し直さない)。
  * 未入力(null)の場合は呼び出し側で空文字にフォールバックすること。
  */
 export function formatJstTimeOnly(date: Date): string {
@@ -69,7 +69,7 @@ export function formatJstTimeOnly(date: Date): string {
 }
 
 /**
- * 'YYYY-MM-DD'(JST)に日数を足す。実費報告(領収書)の取り消し期限に使う(doc/14 §10)。
+ * 'YYYY-MM-DD'(JST)に日数を足す。実費報告(領収書)の取り消し期限に使う(doc/db/guidelines.md §10)。
  *
  * 【営業日ではなく暦日で数える理由】
  * 訪問保育は土日祝日も訪問がある(平日だけの業務ではない)。「2営業日」を土日を除いて
@@ -85,7 +85,7 @@ export function addDaysToJstDateKey(dateStr: string, days: number): string {
 }
 
 /**
- * 'YYYY-MM-DD'(JST)の月末日を返す。実費報告(領収書)の締めに使う(doc/14 §10)。
+ * 'YYYY-MM-DD'(JST)の月末日を返す。実費報告(領収書)の締めに使う(doc/db/guidelines.md §10)。
  */
 export function jstEndOfMonthDateKey(dateStr: string): string {
   const [year, month] = dateStr.split('-').map(Number);
@@ -96,7 +96,7 @@ export function jstEndOfMonthDateKey(dateStr: string): string {
 
 /**
  * 'YYYY-MM-DD'(JST)と同じ月(monthOffsetを足した月)の、指定した日を返す。
- * 実費報告(領収書)の締め日の算出に使う(doc/14 §10)。
+ * 実費報告(領収書)の締め日の算出に使う(doc/db/guidelines.md §10)。
  *
  * 呼び出し側は day を1〜28に制限すること(29〜31は2月に存在せず、Date.UTCが翌月へ
  * 繰り上げてしまう)。この制限はDBのCHECK制約 app_settings_receipt_closing_day_check

@@ -1,5 +1,11 @@
 import type { Container } from '@katahimo/api';
-import { assignCouponToCustomer, createCoupon, createCustomer, registerStaff } from '@katahimo/core';
+import {
+  assignCouponToCustomer,
+  createCoupon,
+  createCustomer,
+  registerStaff,
+  updateFamilyMemberAllergy,
+} from '@katahimo/core';
 import { DEMO_FIGURES, DEMO_OFFICE, DEMO_STAFF, DEMO_TENANT } from './figures';
 import {
   birthDateFromAgeMonths,
@@ -121,7 +127,7 @@ export async function seedDemoData(
   if (!adminStaffId) throw new Error('デモ用スタッフの作成に失敗しました');
   const adminStaffName = DEMO_STAFF[0].name;
 
-  // 割引クーポン(doc/14 §9)。デモを開いた人が「クーポン管理」画面と、日報タブの
+  // 割引クーポン(doc/db/guidelines.md §9)。デモを開いた人が「クーポン管理」画面と、日報タブの
   // クーポン選択の両方をすぐ触れるよう、金額引き/率引き・無期限/有効期間ありを1つずつ混ぜる。
   onProgress({ message: 'クーポンを登録しています…', ratio: 0.1 });
   const welcomeCoupon = await createCoupon(container, tenant.id, {
@@ -146,7 +152,7 @@ export async function seedDemoData(
   });
   if (!springCoupon.ok) throw new Error(`デモ用クーポンの登録に失敗しました(${springCoupon.reason})`);
 
-  // 誕生月クーポン(doc/14 §9)。日報タブのクーポン選択に「🎂 ○○さんの誕生月」として
+  // 誕生月クーポン(doc/db/guidelines.md §9)。日報タブのクーポン選択に「🎂 ○○さんの誕生月」として
   // 出るのは、世帯代表またはお子さまの誕生月に当たる世帯だけになる。下で1世帯目の代表者に
   // 「今月」の生年月日を入れてあるので、デモをいつ開いてもこの動きを1件は見られる。
   const birthdayCoupon = await createCoupon(container, tenant.id, {
@@ -216,6 +222,16 @@ export async function seedDemoData(
       })),
     });
     customerIdByName.set(name, created.id);
+
+    // アレルギーは createCustomer では入らない(取込で消さないよう、常に未確認から始める)。
+    // デモでは「あり」「なし」「未確認」が並んで見えるよう、作成後に聞き取り済みの子だけ埋める。
+    const savedChildren = await container.familyMembers.listByCustomerId(tenant.id, created.id);
+    for (const child of figure.children) {
+      if (!child.allergy) continue;
+      const saved = savedChildren.find((m) => m.name === `${figure.familyName} ${child.givenName}`);
+      if (!saved) continue;
+      await updateFamilyMemberAllergy(container, tenant.id, created.id, saved.id, child.allergy);
+    }
     addressLatLng.set(address, { lat: figure.lat, lng: figure.lng });
 
     // 配布型クーポンは1世帯目にだけ配る(顧客カルテの「クーポン」で配布状況を見られる)。
@@ -245,7 +261,7 @@ export async function seedDemoData(
     });
     await seedVisitsForDate(container, dayContext, businessDate, {
       today,
-      // 最初の1日の1件目にだけ適用しておく(doc/14 §9の適用記録表示が、デモでは常に空という
+      // 最初の1日の1件目にだけ適用しておく(doc/db/guidelines.md §9の適用記録表示が、デモでは常に空という
       // 状態にならないように)。2件とも渡すことで「1回の訪問に複数のクーポンを適用できる」
       // ことも合わせて示す。
       couponIds: dateIndex === 0 ? [welcomeCoupon.couponId, springCoupon.couponId] : undefined,
@@ -271,7 +287,7 @@ export async function seedDemoData(
     }
   }
 
-  // 領収書(doc/14 §10)。勤怠タブの「🧾 領収書」を開いたときに一覧が空にならないよう、
+  // 領収書(doc/db/guidelines.md §10)。勤怠タブの「🧾 領収書」を開いたときに一覧が空にならないよう、
   // 今月ぶんを何枚か入れておく。
   onProgress({ message: '領収書を登録しています…', ratio: 0.95 });
   await seedReceiptsForDate(container, dayContext, toJstDateIso(today));

@@ -62,7 +62,7 @@ function resolveScope(db: Database, tenantId: string, scope: TransactionScope): 
  * テナントスコープでクエリを実行する。
  *
  * 全テーブルに Row Level Security を張り、ポリシーは current_setting('app.tenant_id') と
- * 突き合わせる形にしてある(doc/07 第4章)。アプリ側のWHERE句の書き忘れでは
+ * 突き合わせる形にしてある(doc/proposal/tech-stack.md 第4章)。アプリ側のWHERE句の書き忘れでは
  * 他テナントのデータが漏れない、という保証をDBに持たせるのが狙い。
  *
  * SET LOCAL はトランザクション内でのみ有効なため、必ずトランザクションで包む。

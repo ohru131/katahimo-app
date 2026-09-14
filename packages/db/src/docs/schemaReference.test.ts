@@ -7,7 +7,7 @@ import { REFERENCE_PATH } from './referencePath';
 import { renderDiagram, renderReference, renderTable } from './renderReference';
 
 /**
- * 自動生成するリファレンス(doc/16)が、スキーマの現状と一致していることの検査。
+ * 自動生成するリファレンス(doc/db/reference.md)が、スキーマの現状と一致していることの検査。
  *
  * 生成物をリポジトリに置く以上、「スキーマを変えたが `pnpm db:docs` を忘れた」状態が
  * 必ず起きる。そのとき図と表だけが古いまま残り、読んだ人は気付けない。CIで作り直して
@@ -91,7 +91,7 @@ describe('データベース構造リファレンス', () => {
     });
 
     it('索引の降順を落とさない', () => {
-      // ORDER BY と向きを揃えるために降順で張っている索引がある(doc/14 §3)。
+      // ORDER BY と向きを揃えるために降順で張っている索引がある(doc/db/guidelines.md §3)。
       const index = tables
         .get('daily_reports')
         ?.indexes.find((candidate) => candidate.name === 'daily_reports_tenant_customer_occurred_idx');

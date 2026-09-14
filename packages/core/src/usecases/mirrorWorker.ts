@@ -70,7 +70,7 @@ export async function processOutboxJob(
       await deps.sender.sendDailyReport({
         reportId: record.id,
         timestampJst: formatJstDateTime(record.occurredAt),
-        // doc/14 §6。started_at/ended_atは"HH:mm"では保存していないため、ミラー送信時に
+        // doc/db/guidelines.md §6。started_at/ended_atは"HH:mm"では保存していないため、ミラー送信時に
         // その場で整形する(未入力=nullは空文字にフォールバックし、GAS側の見え方を崩さない)。
         startTime: record.startedAt ? formatJstTimeOnly(record.startedAt) : '',
         endTime: record.endedAt ? formatJstTimeOnly(record.endedAt) : '',
@@ -119,7 +119,7 @@ export async function processOutboxJob(
     }
 
     case 'receipt': {
-      // 取り消された領収書は外部へ出さない(doc/14 §10の「データ出力時は取消済みを除外する」)。
+      // 取り消された領収書は外部へ出さない(doc/db/guidelines.md §10の「データ出力時は取消済みを除外する」)。
       //
       // findById で cancelledAt を「見る」のではなく claimForMirror で「宣言する」のは、
       // 読んでから送るまでの隙間に取り消しが確定するのを止めるため。宣言は
@@ -140,7 +140,7 @@ export async function processOutboxJob(
         customerId: record.customerId ?? '',
         customerName: customerRecord?.name ?? '',
         receiptTimestampJst: formatJstDateTime(record.receiptTimestamp),
-        // doc/14 §1。amountYenが取れればそれを文字列化し、取れなければOCRの生値(amountRaw)、
+        // doc/db/guidelines.md §1。amountYenが取れればそれを文字列化し、取れなければOCRの生値(amountRaw)、
         // それも無ければ空文字にフォールバックする(GAS版の「金額」列の見え方を崩さないため)。
         amount: record.amountYen !== null ? String(record.amountYen) : (record.amountRaw ?? ''),
         storeName: record.storeName ?? '',

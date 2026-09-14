@@ -93,7 +93,7 @@ describe('sendVisitCompleteNotification', () => {
   });
 });
 
-describe('saveDailyReport とクーポン(doc/14 §9)', () => {
+describe('saveDailyReport とクーポン(doc/db/guidelines.md §9)', () => {
   const tenantId = 'tenant-1';
   let deps: ReportDeps;
   let coupons: FakeCouponRepository;

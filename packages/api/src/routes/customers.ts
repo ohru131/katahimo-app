@@ -3,8 +3,13 @@ import {
   listCustomers,
   searchCustomersByFamilyName,
   updateCustomerBirthday,
+  updateFamilyMemberAllergy,
 } from '@katahimo/core';
-import { customerUpdateRequestSchema, idSchema } from '@katahimo/shared';
+import {
+  customerUpdateRequestSchema,
+  familyMemberAllergyUpdateRequestSchema,
+  idSchema,
+} from '@katahimo/shared';
 import { Hono } from 'hono';
 import type { Container } from '../container';
 import { getAuthenticatedSession } from '../session';
@@ -50,7 +55,7 @@ export function createCustomerRoutes(container: Container) {
   });
 
   /**
-   * 顧客の生年月日を登録・更新する(誕生月クーポンの判定に使う。doc/14 §9)。
+   * 顧客の生年月日を登録・更新する(誕生月クーポンの判定に使う。doc/db/guidelines.md §9)。
    *
    * 受け付けるのは生年月日だけ。他の項目はRESERVA CSVの取込が正で、画面から直しても
    * 次の取込で消えるため編集させない(@katahimo/shared の customerUpdateRequestSchema 参照)。
@@ -82,6 +87,41 @@ export function createCustomerRoutes(container: Container) {
     );
     if (!updated) return c.json({ code: 'not_found', message: '顧客が見つかりません' }, 404);
     return c.json({ success: true });
+  });
+
+  /**
+   * 世帯構成員のアレルギーを登録・更新する(doc/db/guidelines.md §11)。
+   *
+   * 生年月日の更新(上のPATCH)と違って管理者に限らないのは、アレルギーが訪問の現場で
+   * 保護者から聞き取る情報だから。管理者しか入れられないと、聞いたその場で残せず、
+   * 「あとで管理者に伝える」までの間だけ記録が欠ける。請求額にも影響しない。
+   */
+  app.patch('/:id/family/:memberId/allergy', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    // uuid列との比較にUUID以外の文字列を渡すとPostgreSQLが例外を投げて500になる(上と同じ理由)。
+    const customerId = idSchema.safeParse(c.req.param('id'));
+    const memberId = idSchema.safeParse(c.req.param('memberId'));
+    if (!customerId.success || !memberId.success) {
+      return c.json({ code: 'validation_failed', message: 'IDの形式が不正です' }, 400);
+    }
+
+    const body = await c.req.json().catch(() => null);
+    const parsed = familyMemberAllergyUpdateRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ success: false, message: '入力内容を確認してください' }, 400);
+    }
+
+    const updated = await updateFamilyMemberAllergy(
+      container,
+      session.tenantId,
+      customerId.data,
+      memberId.data,
+      parsed.data,
+    );
+    if (!updated) return c.json({ code: 'not_found', message: '世帯構成員が見つかりません' }, 404);
+    return c.json({ success: true, familyMember: updated });
   });
 
   return app;

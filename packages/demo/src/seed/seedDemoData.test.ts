@@ -100,7 +100,7 @@ describe('seedDemoData(公開デモの初期データ投入)', () => {
     expect(accidents.rows[0]?.n ?? 0).toBeGreaterThan(0);
 
     // 勤怠タブの「🧾 領収書」が空にならないよう、今月ぶんの領収書が入っていること。
-    // 金額を読み取れなかった1枚は合計に入らず、枚数として出る(doc/14 §10)。
+    // 金額を読み取れなかった1枚は合計に入らず、枚数として出る(doc/db/guidelines.md §10)。
     const receipts = await listReceiptsForStaff(container, tenantId, adminStaffId, today.slice(0, 7));
     expect(receipts?.receipts).toHaveLength(4);
     expect(receipts?.customerBillableTotalYen).toBe(3730);

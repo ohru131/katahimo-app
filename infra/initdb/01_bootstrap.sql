@@ -3,7 +3,7 @@
 --   psql -U postgres -h localhost -d katahimo_dev -f infra/initdb/01_bootstrap.sql
 -- Docker利用時は docker-entrypoint-initdb.d から自動実行される。
 
--- 予約の二重登録防止に使う EXCLUDE USING gist 制約(doc/07 第5章)に必須
+-- 予約の二重登録防止に使う EXCLUDE USING gist 制約(doc/proposal/tech-stack.md 第5章)に必須
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 -- アプリ接続用ロール。テーブル所有者(katahimo)とは分ける。
