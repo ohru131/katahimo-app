@@ -35,6 +35,16 @@ function renderSql(value: SQL | SQL.Aliased): string {
 }
 
 /**
+ * SQLの文字列リテラルとして囲む。単引用符は2つ重ねて逃がす。
+ *
+ * 今のスキーマの既定値に単引用符を含むものは無いが、逃がさないとDDLとして
+ * 成り立たない文字列がそのまま出る(JSONの中に含まれる場合もある)。
+ */
+function quoteSqlLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+/**
  * 列の既定値。SQL式(now() 等)とリテラル(文字列・数値・真偽値・JSON)を受ける。
  *
  * jsonb の既定値のようなオブジェクトは、そのまま文字列化すると `[object Object]` になる。
@@ -50,9 +60,9 @@ function renderDefault(column: {
   // $defaultFn() は実行時にアプリ側で値を作るもので、DDL上の既定値は持たない。
   if (column.default === undefined) return column.defaultFn ? '(アプリ側で採番)' : undefined;
   if (is(column.default, SQL)) return renderSql(column.default);
-  if (typeof column.default === 'string') return `'${column.default}'`;
+  if (typeof column.default === 'string') return quoteSqlLiteral(column.default);
   if (typeof column.default === 'object' && column.default !== null) {
-    return `'${JSON.stringify(column.default)}'::${column.getSQLType()}`;
+    return `${quoteSqlLiteral(JSON.stringify(column.default))}::${column.getSQLType()}`;
   }
   return String(column.default);
 }
@@ -74,7 +84,14 @@ export interface ForeignKeyInfo {
 
 export interface IndexInfo {
   readonly name: string;
+  /** 表示用。並び順(DESC・NULLS)を含む。 */
   readonly columns: readonly string[];
+  /**
+   * 列名だけ。多重度の判定のように「どの列に張ってあるか」を見る処理はこちらを使う。
+   * 表示用と分けているのは、DESC付きの文字列と列名を突き合わせて黙って一致しなくなるのを防ぐため。
+   * 式インデックスの構成要素はここには入らない。
+   */
+  readonly columnNames: readonly string[];
   readonly unique: boolean;
   readonly where?: string;
 }
@@ -191,6 +208,10 @@ export function collectTables(): Map<string, TableInfo> {
       indexes: config.indexes.map((index) => ({
         name: index.config.name ?? '',
         columns: index.config.columns.map((column) => renderIndexColumn(column, columnNames)),
+        columnNames: index.config.columns
+          .map((column) => (is(column, SQL) ? undefined : (column as { name?: string }).name))
+          .map((name) => (name === undefined ? undefined : (columnNames.get(name) ?? name)))
+          .filter((name): name is string => name !== undefined),
         unique: index.config.unique === true,
         where: index.config.where ? renderSql(index.config.where) : undefined,
       })),

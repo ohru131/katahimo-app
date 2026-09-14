@@ -16,6 +16,15 @@ import { renderReference } from './renderReference';
 
 const tables = collectTables();
 
+/** 生成したMarkdownから、mermaidの関係線だけを取り出す。 */
+function diagramRelations(): string[] {
+  return renderReference(tables)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^\w+ \|[|o]--o[|{] \w+ :/.test(line))
+    .map((line) => line.replace(/ : ".*$/, ''));
+}
+
 describe('データベース構造リファレンス', () => {
   it('全テーブルがいずれかのドメインに属している', () => {
     // ドメイン定義が追い付いていないテーブルは、図にもテーブル定義にも出ない。
@@ -42,6 +51,41 @@ describe('データベース構造リファレンス', () => {
     });
 
     expect(duplicated).toEqual([]);
+  });
+
+  // 以下は「生成器そのものが壊れていないか」の検査。
+  //
+  // 下の「生成物が最新である」検査は、生成し直した結果とコミット済みファイルを突き合わせるだけなので、
+  // 生成器が壊れたまま再生成されると、両方が同じように壊れて素通りする。実際にレビューで
+  // 見つかった壊れ方(オブジェクトの既定値・索引の並び順・部分ユニーク索引の扱い)を
+  // 名指しで押さえておく。
+  describe('生成器の出力', () => {
+    it('jsonbの既定値をJSONとして出す(JavaScriptの文字列化に落ちない)', () => {
+      const rowData = tables.get('attendance_days')?.columns.find((column) => column.name === 'row_data');
+
+      expect(rowData?.default).toBe("'{}'::jsonb");
+    });
+
+    it('索引の降順を落とさない', () => {
+      // ORDER BY と向きを揃えるために降順で張っている索引がある(doc/14 §3)。
+      const index = tables
+        .get('daily_reports')
+        ?.indexes.find((candidate) => candidate.name === 'daily_reports_tenant_customer_occurred_idx');
+
+      expect(index?.columns).toEqual(['tenant_id', 'customer_id', 'occurred_at DESC NULLS LAST']);
+    });
+
+    it('NULLを除くだけの部分ユニーク索引は1対1として描く', () => {
+      // daily_reports_tenant_reservation_uidx は reservation_id IS NOT NULL の部分索引。
+      // 親を指している行は全部この索引が縛るので、1予約に日報は1件まで。
+      expect(diagramRelations()).toContain('reservations |o--o| daily_reports');
+    });
+
+    it('業務条件で絞る部分ユニーク索引は1対1にしない', () => {
+      // reservation_assignments_primary_uidx は role='primary' の行だけを縛る。
+      // 同行スタッフは何人でも割り当てられるので1対多のまま。
+      expect(diagramRelations()).toContain('reservations ||--o{ reservation_assignments');
+    });
   });
 
   it('コミットされている生成物が最新である', () => {

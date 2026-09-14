@@ -1,4 +1,4 @@
-import type { TableInfo } from './collectSchema';
+import type { IndexInfo, TableInfo } from './collectSchema';
 import { SCHEMA_DOMAINS } from './domains';
 
 /**
@@ -12,6 +12,30 @@ import { SCHEMA_DOMAINS } from './domains';
 /** mermaidの属性行は空白を含む型名を受け付けないので、1語に均す。 */
 function mermaidType(sqlType: string): string {
   return sqlType.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, '_');
+}
+
+/**
+ * 部分ユニーク索引が「その外部キーを持つ行すべて」を縛っているかを見る。
+ *
+ * 部分索引には2種類ある。
+ *
+ * - 索引列のNULLを除くだけのもの(例: `daily_reports_tenant_reservation_uidx` の
+ *   `reservation_id IS NOT NULL`)。NULLの行はそもそも親を指していないので、
+ *   親を指している行は全部この索引が縛っている = 実質1対1。
+ * - 業務上の条件で絞るもの(例: `reservation_assignments_primary_uidx` の
+ *   `role = 'primary'`、`invoice_lines_tenant_receipt_uidx` の `superseded_at IS NULL`)。
+ *   条件から外れた行は何行でも作れるので、1対1ではない。
+ *
+ * 後者を1対1として描くと、実際には複数ぶら下がる関係を「1本だけ」と誤って示すことになる。
+ * 述語のANDの各項が「索引に含まれる列の IS NOT NULL」だけで構成されているかで見分ける。
+ */
+function constrainsEveryRow(index: IndexInfo): boolean {
+  if (!index.where) return true;
+  const indexed = new Set(index.columnNames);
+  return index.where.split(' AND ').every((term) => {
+    const column = /^"[^"]+"\."([^"]+)" IS NOT NULL$/.exec(term.trim())?.[1];
+    return column !== undefined && indexed.has(column);
+  });
 }
 
 /**
@@ -31,7 +55,9 @@ function cardinality(child: TableInfo, columns: readonly string[]): string {
   const unique = [
     primaryKey,
     ...child.uniqueConstraints.map((constraint) => constraint.expression.split(', ')),
-    ...child.indexes.filter((index) => index.unique && !index.where).map((index) => index.columns),
+    ...child.indexes
+      .filter((index) => index.unique && constrainsEveryRow(index))
+      .map((index) => index.columnNames),
   ].some((candidate) => [...candidate].sort().join(',') === key);
 
   const optionalParent = columns.some(
