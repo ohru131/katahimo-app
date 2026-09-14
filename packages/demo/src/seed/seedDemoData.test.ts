@@ -65,6 +65,9 @@ describe('seedDemoData(公開デモの初期データ投入)', () => {
 
     const seeded = await seedDemoData(container, () => {});
     expect(seeded.customerIdByName.size).toBeGreaterThan(0);
+    // 呼び出し側が記録に書く「作り終えた業務日」。シード中に日付をまたいでもズレないよう、
+    // 日付を取り直すのではなくシードが実際に使った日を返す。
+    expect(seeded.generatedThrough).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
     // 1世帯目の代表者には「今月」の生年月日を入れてあるので、誕生月クーポンが選択肢に出る。
     const [firstCustomerId] = [...seeded.customerIdByName.values()];
@@ -90,6 +93,11 @@ describe('seedDemoData(公開デモの初期データ投入)', () => {
 
     // 配布型クーポン(THANKS1000)は配った1世帯目にだけ出る。
     expect(selectable.some((c) => c.code === 'THANKS1000')).toBe(true);
+
+    // 事故報告(ヒヤリハット)も履歴に混ぜている。ここが0件だと事故報告の一覧・帳票が
+    // 空のままのデモになるので、日数で判定するようにしたうえで件数を見張る。
+    const accidents = await client.query<{ n: number }>('SELECT count(*)::int AS n FROM accident_reports;');
+    expect(accidents.rows[0]?.n ?? 0).toBeGreaterThan(0);
 
     // 勤怠タブの「🧾 領収書」が空にならないよう、今月ぶんの領収書が入っていること。
     // 金額を読み取れなかった1枚は合計に入らず、枚数として出る(doc/14 §10)。

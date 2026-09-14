@@ -9,11 +9,15 @@ import type { DemoMail } from './ports/demoMailerPort';
 import type { DemoNotification } from './ports/demoNotifierPort';
 import { DEMO_FIGURES, DEMO_OFFICE, DEMO_TENANT } from './seed/figures';
 import { type SeedProgress, seedDemoData } from './seed/seedDemoData';
+import { topUpDemoData } from './seed/topUpDemoData';
+import { toJstDateIso } from './seed/visitPlan';
+import { type DemoSeedState, ensureSeedStateTable, readSeedState, writeSeedState } from './seedState';
 
 export type { DemoMail } from './ports/demoMailerPort';
 export type { DemoNotification } from './ports/demoNotifierPort';
 export { DEMO_STAFF, DEMO_TENANT } from './seed/figures';
 export type { SeedProgress } from './seed/seedDemoData';
+export type { DemoSeedState } from './seedState';
 
 export interface DemoHandle {
   /** Google Chat通知の代わりに画面へ出すための購読。 */
@@ -57,6 +61,9 @@ export class DemoResetError extends Error {
     this.runtimeUsable = options.runtimeUsable;
   }
 }
+
+/** 追い足しに失敗したあと、次にやり直すまでの最短間隔。 */
+const TOP_UP_RETRY_INTERVAL_MS = 60_000;
 
 function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -103,27 +110,91 @@ export async function startDemo(onProgress: (progress: SeedProgress) => void): P
   const customerIdByName = new Map<string, string>();
   const container = createDemoContainer({ db, customerIdByName, addressLatLng: buildAddressLatLng() });
 
+  // 「どこまでデモデータを作ったか」の記録。日付が変わったときの追い足しに使う。
+  await ensureSeedStateTable(client);
+  const seedStateStore = {
+    read: () => readSeedState(client),
+    write: (state: DemoSeedState) => writeSeedState(client, state),
+  };
+
+  // 追い足しが済んでいる業務日。日付を取り直すのではなく、シード/追い足しが実際に
+  // 作り終えた日を受け取る(処理中にJSTの日付をまたいでも、作っていない日を
+  // 「作り終えた」ことにしないため)。空文字は「まだ今日ぶんを確認できていない」を表す。
+  let toppedUpFor = '';
+
   if (isFresh) {
     const seeded = await seedDemoData(container, onProgress);
     for (const [name, id] of seeded.customerIdByName) customerIdByName.set(name, id);
+    await seedStateStore.write({
+      reportsThrough: seeded.generatedThrough,
+      receiptsMonth: seeded.generatedThrough.slice(0, 7),
+      birthdayMonth: seeded.generatedThrough.slice(0, 7),
+    });
+    toppedUpFor = seeded.generatedThrough;
     // シードはrelaxedDurabilityのまま流しているので、ここで確実に書き出す。
     // 書き出す前にタブを閉じられると、次回起動時に中途半端なデータで立ち上がる。
     await flushDemoDatabase(client);
   } else {
     onProgress({ message: '保存済みのデモデータを読み込んでいます…', ratio: 0.8 });
     await loadCustomerIds(container, customerIdByName);
+    // 前回の起動から日付が進んでいれば、足りない日を初回シードと同じ関数で埋める。
+    // これをしないと「今日の日報も出勤簿も無い」状態でデモが始まる。
+    //
+    // ここで失敗してもデモ自体は起動させる。保存済みのデータで動かせる以上、
+    // 追い足せなかったことを理由に「デモが開けない」にするほうが損が大きい
+    // (toppedUpForを空のままにしておけば、最初のリクエストで試し直される)。
+    try {
+      const result = await topUpDemoData(container, seedStateStore, customerIdByName, onProgress);
+      toppedUpFor = result.reportsThrough;
+      await flushDemoDatabase(client);
+    } catch (error) {
+      console.error('[demo] デモデータの追い足しに失敗しました', error);
+    }
   }
 
   const jar = new CookieJar();
   const warningListeners = new Set<(message: string) => void>();
-  const shim = installFetchShim(
-    createDemoApiHandler(container, jar, {
-      flush: () => flushDemoDatabase(client),
-      onFailure: () => {
-        for (const listener of warningListeners) listener(PERSIST_FAILURE_MESSAGE);
-      },
-    }),
-  );
+  const apiHandler = createDemoApiHandler(container, jar, {
+    flush: () => flushDemoDatabase(client),
+    onFailure: () => {
+      for (const listener of warningListeners) listener(PERSIST_FAILURE_MESSAGE);
+    },
+  });
+
+  // タブを開いたまま日付をまたいだ場合(夜間に放置、翌朝そのままログイン)も、
+  // 起動時と同じように足りない日を埋める。日付が変わっていなければ文字列を1回比べるだけ。
+  let topUpInFlight: Promise<void> | null = null;
+  let topUpRetryAfter = 0;
+  const ensureTodayData = (): Promise<void> => {
+    if (toJstDateIso(new Date()) === toppedUpFor) return Promise.resolve();
+    if (topUpInFlight) return topUpInFlight;
+    // 失敗した直後は少し待つ。印を進めない方針なので、間隔を空けないと失敗し続ける限り
+    // リクエストのたびに走ってデモが重くなる。
+    if (Date.now() < topUpRetryAfter) return Promise.resolve();
+
+    topUpInFlight = topUpDemoData(container, seedStateStore, customerIdByName)
+      .then(async (result) => {
+        // 何も足していなくても書き出す。前回の試行が「書き込みは済んだが書き出しで失敗」
+        // だった場合、ここで書き出し直さないとリロードで消えてしまう。
+        await flushDemoDatabase(client);
+        // 印を進めるのは書き出しまで終わってから。途中で失敗したまま進めると、
+        // その日のデモデータが欠けたままリロードするまで直らない。
+        toppedUpFor = result.reportsThrough;
+      })
+      .catch((error) => {
+        console.error('[demo] 日付またぎのデモデータ追加に失敗しました', error);
+        topUpRetryAfter = Date.now() + TOP_UP_RETRY_INTERVAL_MS;
+      })
+      .finally(() => {
+        topUpInFlight = null;
+      });
+    return topUpInFlight;
+  };
+
+  const shim = installFetchShim(async (request) => {
+    await ensureTodayData();
+    return apiHandler(request);
+  });
 
   onProgress({ message: '準備ができました', ratio: 1 });
 
