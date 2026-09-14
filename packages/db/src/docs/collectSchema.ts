@@ -34,17 +34,27 @@ function renderSql(value: SQL | SQL.Aliased): string {
     .trim();
 }
 
-/** 列の既定値。SQL式(now() 等)とリテラル(文字列・数値)の両方を受ける。 */
+/**
+ * 列の既定値。SQL式(now() 等)とリテラル(文字列・数値・真偽値・JSON)を受ける。
+ *
+ * jsonb の既定値のようなオブジェクトは、そのまま文字列化すると `[object Object]` になる。
+ * DDL側は `DEFAULT '{}'::jsonb` と書かれるので、JSONに直してから列の型へキャストする形で出す。
+ */
 function renderDefault(column: {
   hasDefault: boolean;
   default: unknown;
   defaultFn?: unknown;
+  getSQLType: () => string;
 }): string | undefined {
   if (!column.hasDefault) return undefined;
   // $defaultFn() は実行時にアプリ側で値を作るもので、DDL上の既定値は持たない。
   if (column.default === undefined) return column.defaultFn ? '(アプリ側で採番)' : undefined;
   if (is(column.default, SQL)) return renderSql(column.default);
-  return typeof column.default === 'string' ? `'${column.default}'` : String(column.default);
+  if (typeof column.default === 'string') return `'${column.default}'`;
+  if (typeof column.default === 'object' && column.default !== null) {
+    return `'${JSON.stringify(column.default)}'::${column.getSQLType()}`;
+  }
+  return String(column.default);
 }
 
 export interface ColumnInfo {
@@ -99,12 +109,33 @@ export interface TableInfo {
  * インデックスが持つのは列そのものではなく IndexedColumn という包みで、
  * casing の解決に要る table を持たない。そのため CasingCache には渡せず、
  * 同じ名前のテーブル列を引いて解決済みの名前に読み替える。
+ *
+ * 並び順(DESC・NULLS)も一緒に出す。`ORDER BY ... DESC` と向きを揃えるために
+ * 降順で張っている索引がいくつかあり(doc/14 §3)、向きを落とすと
+ * 「なぜこの索引がこの並びなのか」が読めなくなる。
+ * PostgreSQLの既定と同じ指定(昇順ならNULLS LAST、降順ならNULLS FIRST)は書かない。
+ * drizzle-kit が生成するDDLもそう書くので、そちらと見た目を揃える。
  */
 function renderIndexColumn(column: unknown, columnNames: ReadonlyMap<string, string>): string {
   if (is(column, SQL)) return renderSql(column);
-  const name = (column as { name?: string }).name;
-  if (name === undefined) return String(column);
-  return columnNames.get(name) ?? name;
+  const indexed = column as {
+    name?: string;
+    indexConfig?: { order?: 'asc' | 'desc'; nulls?: 'first' | 'last' };
+  };
+  if (indexed.name === undefined) return String(column);
+
+  const name = columnNames.get(indexed.name) ?? indexed.name;
+  const order = indexed.indexConfig?.order ?? 'asc';
+  const nulls = indexed.indexConfig?.nulls;
+  const defaultNulls = order === 'desc' ? 'first' : 'last';
+
+  return [
+    name,
+    order === 'desc' ? 'DESC' : '',
+    nulls && nulls !== defaultNulls ? `NULLS ${nulls.toUpperCase()}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
 
 /**

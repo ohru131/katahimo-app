@@ -14,14 +14,31 @@ function mermaidType(sqlType: string): string {
   return sqlType.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, '_');
 }
 
-/** 外部キーが指す先が一意なら1対1、そうでなければ1対多として描く。 */
+/**
+ * 関係線の多重度。子側は外部キーが一意かどうか、親側は外部キーがNULL可かどうかで決める。
+ *
+ * 一意性の判定には主キーも含める。`app_settings.tenant_id` のように外部キーがそのまま
+ * 主キーになっているテーブルがあり、主キーを見ないと1対1が1対多に見える。
+ *
+ * mermaidの記法は左右で向きが違う(左は `||`/`|o`、右は `||`/`o|`/`o{`)。
+ * 子側は「親に子が1行も無い」状態があり得るので常に0を含める(`o|` か `o{`)。
+ * 親側は外部キーがNULL可なら「親を持たない子」があり得るので `|o`、そうでなければ `||`。
+ */
 function cardinality(child: TableInfo, columns: readonly string[]): string {
   const key = [...columns].sort().join(',');
+  const primaryKey =
+    child.primaryKey ?? child.columns.filter((column) => column.primaryKey).map((column) => column.name);
   const unique = [
+    primaryKey,
     ...child.uniqueConstraints.map((constraint) => constraint.expression.split(', ')),
     ...child.indexes.filter((index) => index.unique && !index.where).map((index) => index.columns),
   ].some((candidate) => [...candidate].sort().join(',') === key);
-  return unique ? '||--||' : '||--o{';
+
+  const optionalParent = columns.some(
+    (name) => child.columns.find((column) => column.name === name)?.notNull === false,
+  );
+
+  return `${optionalParent ? '|o' : '||'}--${unique ? 'o|' : 'o{'}`;
 }
 
 /**
