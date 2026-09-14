@@ -553,7 +553,7 @@ for r_i, row in enumerate(rows):
         box(s, ML + c_i * 4.13, 5.04 + r_i * 0.5, 3.95, 0.42, cell, fill=WHITE, border=LINE,
             size=10.5, align=PP_ALIGN.LEFT)
 note(s, ML, 6.05, CW, 0.85, "補足",
-     "クーポンの3枚(customer_coupons / coupon_redemptions)も同じ形で customers・coupons・daily_reports を指しています。"
+     "クーポンの2枚(customer_coupons / coupon_redemptions)も同じ形で customers・coupons・daily_reports を指しています。"
      "先行整備の18枚も同じ規約に載せてあり、複合外部キーは全部で50本です。参照先には UNIQUE(tenant_id, id) を張ってあります。"
      "ON DELETE は全て no action(親を消せない)にしており、廃棄はテナント単位の物理削除で行う方針です。",
      accent=ACCENT, fill=ACCENT_L, size=10.5)

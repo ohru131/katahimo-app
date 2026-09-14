@@ -5,7 +5,7 @@ import { CustomerDetail } from './CustomerDetail';
 import { getRecentCustomerIds } from './recentCustomers';
 import { HistoryModal } from './reports/HistoryModal';
 import { ReportModal } from './reports/ReportModal';
-import { clearReportDraft, loadReportDraft } from './reports/reportDraft';
+import { clearReportDraft, loadReportDraft, type ReportDraftOwner } from './reports/reportDraft';
 
 /**
  * 「訪問先一覧」タブ。GAS版のtabVisitors(index.html)と同じく、有効な顧客を一度に全件取得して
@@ -27,9 +27,12 @@ import { clearReportDraft, loadReportDraft } from './reports/reportDraft';
 export function CustomerSearch({
   initialSearchText,
   onInitialSearchConsumed,
+  draftOwner,
 }: {
   initialSearchText?: string;
   onInitialSearchConsumed?: () => void;
+  /** 書きかけの控えの持ち主(共有端末で他の利用者の入力が出ないようにするため)。 */
+  draftOwner: ReportDraftOwner;
 }) {
   const [searchText, setSearchText] = useState('');
   const [cityFilter, setCityFilter] = useState('');
@@ -45,7 +48,7 @@ export function CustomerSearch({
   /** ReportModalを開くとき、端末に残っていた書きかけを流し込むかどうか。 */
   const [restoreDraft, setRestoreDraft] = useState(false);
   /** 未保存の書きかけ。タブを開いた時点で1度だけ読む(以後は案内を閉じるまで保持)。 */
-  const [pendingDraft, setPendingDraft] = useState(() => loadReportDraft());
+  const [pendingDraft, setPendingDraft] = useState(() => loadReportDraft(draftOwner));
   /** 顧客に紐付かない経費の領収書を登録するダイアログを開いているか。 */
   const [expenseReceiptOpen, setExpenseReceiptOpen] = useState(false);
   const [detailCustomerId, setDetailCustomerId] = useState<string | null>(null);
@@ -166,7 +169,7 @@ export function CustomerSearch({
             <button
               type="button"
               onClick={() => {
-                clearReportDraft();
+                clearReportDraft(draftOwner);
                 setPendingDraft(null);
               }}
               className="px-3 py-1.5 text-sm text-amber-800"
@@ -253,6 +256,7 @@ export function CustomerSearch({
       {(reportCustomerId || expenseReceiptOpen) && (
         <ReportModal
           customerId={reportCustomerId}
+          draftOwner={draftOwner}
           restoreDraft={restoreDraft}
           onClose={() => {
             setReportCustomerId(null);
@@ -260,7 +264,7 @@ export function CustomerSearch({
             setRestoreDraft(false);
             setRecentTick((t) => t + 1);
             // 閉じたあとも書きかけは残る(保存が済んでいれば ReportModal 側で消えている)。
-            setPendingDraft(loadReportDraft());
+            setPendingDraft(loadReportDraft(draftOwner));
           }}
         />
       )}

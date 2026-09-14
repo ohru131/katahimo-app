@@ -100,6 +100,7 @@ function AppShell({ staff, onLogout }: { staff: StaffView; onLogout: () => void 
             <CustomerSearch
               initialSearchText={jumpSearchText ?? undefined}
               onInitialSearchConsumed={() => setJumpSearchText(null)}
+              draftOwner={{ tenantId: staff.tenantId, staffId: staff.staffId ?? staff.id ?? '' }}
             />
           )}
           {activeTab === 'attendance' && <AttendanceTab />}

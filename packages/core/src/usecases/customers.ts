@@ -154,6 +154,10 @@ function buildCustomerRecordFields(tenantId: string, input: CreateCustomerInput)
  * アレルギーをどちらに付けるかを決められない。取り違えたまま「卵アレルギーなし」と
  * 出すより、未確認に戻して現場に入れ直してもらうほうが安全なので、
  * 重複する氏名は対応表から除く。
+ *
+ * これは既存側だけでなく取込側にも要る。既存に「佐藤 太郎」が1人だけいる状態で、
+ * 次のCSVに同名が2人現れると、両方が同じ引き継ぎ元を拾って1人分のアレルギーが
+ * 2人に付いてしまう(buildFamilyMemberInputsで取込側の重複も数える)。
  */
 function buildAllergyCarryOver(existing: FamilyMemberRecord[]): Map<string, FamilyMemberRecord> {
   const byName = new Map<string, FamilyMemberRecord | null>();
@@ -175,11 +179,16 @@ function buildFamilyMemberInputs(
   existing: FamilyMemberRecord[] = [],
 ): NewFamilyMemberInput[] {
   const carryOver = buildAllergyCarryOver(existing);
+  // 取込側に同名が複数あるときも引き継がない(buildAllergyCarryOverのコメント参照)。
+  const incomingNameCounts = new Map<string, number>();
+  for (const member of members) {
+    incomingNameCounts.set(member.name, (incomingNameCounts.get(member.name) ?? 0) + 1);
+  }
   return members.map((m) => {
     // doc/db/guidelines.md §6: dob(自由記述由来の"YYYY/M/D"等)はdobRawへそのまま残しつつ、
     // parseDateOnlyで解析できた場合だけdobDateに'YYYY-MM-DD'を入れる。
     const dobRaw = nullIfEmpty(m.dob);
-    const previous = carryOver.get(m.name);
+    const previous = incomingNameCounts.get(m.name) === 1 ? carryOver.get(m.name) : undefined;
     return {
       tenantId,
       customerId,

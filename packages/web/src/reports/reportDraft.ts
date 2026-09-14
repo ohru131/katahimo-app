@@ -14,7 +14,22 @@
  * 保存が成功した時点で消す。
  */
 
-const DRAFT_KEY = 'katahimo_report_draft_v1';
+/**
+ * 控えの置き場。**テナントとスタッフごとに分ける。**
+ *
+ * 現場ではタブレットを複数人で使い回すことがある。1つのキーを共有すると、次にログインした
+ * 別のスタッフ(別テナントのこともある)の画面に前の利用者の顧客名や事故報告の内容が出てしまう。
+ * キーを分けたうえで、保存した中身にも持ち主を記録し、読み出すときに今のログインと
+ * 一致しないものは捨てる(キーだけの分離だと、キーを手で書き換えれば読めてしまう)。
+ */
+function draftKey(owner: ReportDraftOwner): string {
+  return `katahimo_report_draft_v1:${owner.tenantId}:${owner.staffId}`;
+}
+
+export interface ReportDraftOwner {
+  tenantId: string;
+  staffId: string;
+}
 
 /** 控えの有効期限。これより古いものは、別の訪問の書きかけとして復元せず捨てる。 */
 const DRAFT_TTL_MS = 3 * 24 * 60 * 60 * 1000;
@@ -34,6 +49,8 @@ export interface ReportDraftAccident {
 }
 
 export interface ReportDraft {
+  /** 控えた人。読み出すときに今のログインと突き合わせる。 */
+  owner: ReportDraftOwner;
   customerId: string;
   customerName: string;
   mode: 'daily' | 'accident';
@@ -80,38 +97,43 @@ function isEmpty(draft: ReportDraft): boolean {
 export function saveReportDraft(draft: ReportDraft): void {
   try {
     if (isEmpty(draft)) {
-      clearReportDraft();
+      clearReportDraft(draft.owner);
       return;
     }
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    localStorage.setItem(draftKey(draft.owner), JSON.stringify(draft));
   } catch {
     // 容量超過やプライベートモードでは控えを諦める(保存・送信そのものには影響しない)。
   }
 }
 
-export function loadReportDraft(): ReportDraft | null {
+export function loadReportDraft(owner: ReportDraftOwner): ReportDraft | null {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
+    const raw = localStorage.getItem(draftKey(owner));
     if (!raw) return null;
     const draft = JSON.parse(raw) as ReportDraft;
     if (!draft?.customerId || typeof draft.savedAt !== 'number') {
-      clearReportDraft();
+      clearReportDraft(owner);
+      return null;
+    }
+    // キーを手で書き換えられた場合に備えて、中身の持ち主も確かめる。
+    if (draft.owner?.tenantId !== owner.tenantId || draft.owner?.staffId !== owner.staffId) {
+      clearReportDraft(owner);
       return null;
     }
     if (Date.now() - draft.savedAt > DRAFT_TTL_MS) {
-      clearReportDraft();
+      clearReportDraft(owner);
       return null;
     }
     return draft;
   } catch {
-    clearReportDraft();
+    clearReportDraft(owner);
     return null;
   }
 }
 
-export function clearReportDraft(): void {
+export function clearReportDraft(owner: ReportDraftOwner): void {
   try {
-    localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(draftKey(owner));
   } catch {
     // 消せなくても次回の復元時に期限切れか内容不正として捨てられる。
   }

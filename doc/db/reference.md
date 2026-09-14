@@ -563,7 +563,7 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 **CHECK制約**
 
 - `family_members_allergy_status_check` — `"family_members"."allergy_status" IN ('unknown', 'none', 'present')`
-- `family_members_allergy_note_required` — `"family_members"."allergy_status" <> 'present' OR ("family_members"."allergy_note" IS NOT NULL AND "family_members"."allergy_note" <> '')`
+- `family_members_allergy_note_required` — `"family_members"."allergy_status" <> 'present' OR NULLIF(btrim("family_members"."allergy_note"), '') IS NOT NULL`
 
 **インデックス**
 

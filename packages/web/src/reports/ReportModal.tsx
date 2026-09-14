@@ -20,7 +20,7 @@ import {
   DAILY_MEMO_PLACEHOLDER,
   HIYARI_WRITING_HINT,
 } from './promptDefaults';
-import { clearReportDraft, loadReportDraft, saveReportDraft } from './reportDraft';
+import { clearReportDraft, loadReportDraft, type ReportDraftOwner, saveReportDraft } from './reportDraft';
 import { useVoiceInput } from './useVoiceInput';
 
 type Mode = 'daily' | 'accident';
@@ -39,6 +39,24 @@ function formatDateDisplay(d: Date): string {
 /** 'YYYY-MM-DD'(タイムゾーンのずれを避けるためtoLocaleDateString('sv-SE')を使う。AttendanceTabと同じ手法)。 */
 function formatDateKey(d: Date): string {
   return d.toLocaleDateString('sv-SE');
+}
+
+/** 前回の発生時刻(GAS版のlast_acc_time)。読めなければ空で始める。 */
+function readLastOccurrenceTime(): string {
+  try {
+    return localStorage.getItem('last_acc_time') || '';
+  } catch {
+    return '';
+  }
+}
+
+/** 次回の既定値として発生時刻を控える。控えられなくても保存は成功している。 */
+function writeLastOccurrenceTime(value: string): void {
+  try {
+    localStorage.setItem('last_acc_time', value);
+  } catch {
+    // 次回に前回値が出ないだけで、事故報告そのものは保存できている。
+  }
 }
 
 /** formatDateKeyの逆。書きかけの控えから訪問日を戻すときに使う(ローカル時刻の0時にする)。 */
@@ -306,6 +324,7 @@ function formatNowForReceipt(): string {
 export function ReportModal({
   customerId,
   onClose,
+  draftOwner,
   restoreDraft = false,
 }: {
   /**
@@ -316,6 +335,8 @@ export function ReportModal({
    */
   customerId: string | null;
   onClose: () => void;
+  /** 書きかけの控えの持ち主(共有端末で他の利用者の入力が出ないようにするため)。 */
+  draftOwner: ReportDraftOwner;
   /** 端末に残っていた書きかけを流し込むか。開く側が利用者に確認したうえでtrueにする。 */
   restoreDraft?: boolean;
 }) {
@@ -463,7 +484,7 @@ export function ReportModal({
   const [accTargetName, setAccTargetName] = useState('');
   const [accTargetDob, setAccTargetDob] = useState('');
   // GAS版のlast_acc_timeと同じ。同じ訪問で続けて書くことが多く、毎回入れ直さずに済ませる。
-  const [occurrenceTime, setOccurrenceTime] = useState(() => localStorage.getItem('last_acc_time') || '');
+  const [occurrenceTime, setOccurrenceTime] = useState(readLastOccurrenceTime);
   const [location, setLocation] = useState('');
   const [accidentContent, setAccidentContent] = useState('');
   const [situation, setSituation] = useState('');
@@ -574,7 +595,7 @@ export function ReportModal({
       setSelectedCouponIds(report.coupons.map((c) => c.couponId));
       setDailyMessage('日報を保存しました');
       // 確定したので書きかけの控えは不要(残すと次回「書きかけがあります」と出てしまう)。
-      clearReportDraft();
+      clearReportDraft(draftOwner);
       if (customerId) markCustomerRecentlyUsed(customerId);
     } catch (e) {
       setDailyError(e instanceof Error ? e.message : String(e));
@@ -646,8 +667,8 @@ export function ReportModal({
       setAccidentSavedId(report.id);
       setAccidentSavedSnapshot(snapshot);
       setAccidentMessage(`${reportType}を保存しました`);
-      clearReportDraft();
-      localStorage.setItem('last_acc_time', occurrenceTime);
+      clearReportDraft(draftOwner);
+      writeLastOccurrenceTime(occurrenceTime);
       if (customerId) markCustomerRecentlyUsed(customerId);
     } catch (e) {
       setAccidentError(e instanceof Error ? e.message : String(e));
@@ -656,13 +677,20 @@ export function ReportModal({
     }
   };
 
+  /** 控えの復元を一度試したか。自動保存はこれが立つまで動かさない。 */
+  const [restoreAttempted, setRestoreAttempted] = useState(false);
+
   /**
    * 入力が変わるたびに端末へ控えを書く(GAS版saveReportDraftSnapshotと同じ役割)。
    * 保存に成功した時点でclearReportDraft()が消すので、残っているのは常に「未保存の書きかけ」だけ。
    */
   useEffect(() => {
+    // 復元の試行が済むまでは書かない。先に走らせると、空の初期値で isEmpty と判定されて
+    // clearReportDraft() が控えを消し、そのあとの復元が空振りする。
+    if (!restoreAttempted) return;
     if (!customerId || !customerQuery.data) return;
     saveReportDraft({
+      owner: draftOwner,
       customerId,
       customerName: customerQuery.data.name,
       mode,
@@ -693,6 +721,8 @@ export function ReportModal({
       savedAt: Date.now(),
     });
   }, [
+    restoreAttempted,
+    draftOwner,
     customerQuery.data,
     customerId,
     mode,
@@ -725,12 +755,15 @@ export function ReportModal({
    * 復元するかどうかは開く側(CustomerSearch)が確認済みで、ここへは「復元する」と決まった
    * ものだけが来る。
    */
-  const restoredRef = useRef(false);
   useEffect(() => {
-    if (restoredRef.current) return;
-    const draft = loadReportDraft();
-    if (!draft || draft.customerId !== customerId || !restoreDraft) return;
-    restoredRef.current = true;
+    if (restoreAttempted) return;
+    const draft = loadReportDraft(draftOwner);
+    if (!draft || draft.customerId !== customerId || !restoreDraft) {
+      // 復元するものが無い場合も「試した」ことにして、自動保存を動かし始める。
+      setRestoreAttempted(true);
+      return;
+    }
+    setRestoreAttempted(true);
     setMode(draft.mode);
     setVisitDate(parseDateKey(draft.visitDate));
     setStartHour(draft.startHour);
@@ -754,7 +787,7 @@ export function ReportModal({
     setParentCorrespondence(draft.accident.parentCorrespondence);
     setDiagnosisTreatment(draft.accident.diagnosisTreatment);
     setPrevention(draft.accident.prevention);
-  }, [customerId, restoreDraft]);
+  }, [customerId, restoreDraft, restoreAttempted, draftOwner]);
 
   const MAX_RECEIPT_IMAGES = 6;
 
@@ -920,7 +953,7 @@ export function ReportModal({
         )}
 
         <div className="flex-grow overflow-y-auto p-4 space-y-4">
-          {customerQuery.isPending && (
+          {customerId !== null && customerQuery.isPending && (
             <div className="flex justify-center py-8">
               <div className="w-8 h-8 rounded-full border-4 border-gray-200 loading-spinner" />
             </div>

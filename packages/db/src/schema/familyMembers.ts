@@ -96,7 +96,9 @@ export const familyMembers = pgTable(
     // 「あり」という情報だけでは訪問前の確認に使えないため。
     check(
       'family_members_allergy_note_required',
-      sql`${t.allergyStatus} <> 'present' OR (${t.allergyNote} IS NOT NULL AND ${t.allergyNote} <> '')`,
+      // 空白だけの内容も「無い」とみなす(btrim)。入口のzodはtrim済みの値しか通さないが、
+      // 取込や移行スクリプトのように入口を通らない書き込みもあるため、DB側でも縛る。
+      sql`${t.allergyStatus} <> 'present' OR NULLIF(btrim(${t.allergyNote}), '') IS NOT NULL`,
     ),
     // listByCustomer(WHERE tenant_id=? AND customer_id=?)を索引だけで返すため(doc/db/guidelines.md §3)。
     index('family_members_tenant_customer_idx').on(t.tenantId, t.customerId),

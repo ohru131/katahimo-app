@@ -1,5 +1,5 @@
 {
-  "id": "0f161674-aebb-466f-b64d-1cbd33fee83d",
+  "id": "115f1465-9186-4b34-ac0e-e340ab370c9a",
   "prevId": "c8b2c884-ca2a-4fc1-9210-7677fcc7513b",
   "version": "7",
   "dialect": "postgresql",
@@ -3497,7 +3497,7 @@
         },
         "family_members_allergy_note_required": {
           "name": "family_members_allergy_note_required",
-          "value": "\"family_members\".\"allergy_status\" <> 'present' OR (\"family_members\".\"allergy_note\" IS NOT NULL AND \"family_members\".\"allergy_note\" <> '')"
+          "value": "\"family_members\".\"allergy_status\" <> 'present' OR NULLIF(btrim(\"family_members\".\"allergy_note\"), '') IS NOT NULL"
         }
       },
       "isRLSEnabled": true

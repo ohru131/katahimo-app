@@ -255,6 +255,35 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     expect(after?.familyMembers.map((m) => m.allergyStatus)).toEqual(['unknown', 'unknown']);
   });
 
+  it('取込側に同姓同名が2人現れたら、1人分のアレルギーを両方に付けない', async () => {
+    // 既存は1人なので引き継ぎ元は一意に決まるが、取込側が2人なら「どちらの子か」は決まらない。
+    // ここで引き継ぐと、片方にしか無いアレルギーがもう1人にも付いてしまう。
+    const created = await createCustomer(deps, {
+      tenantId,
+      name: '佐藤 花子',
+      familyMembers: [{ name: '佐藤 太郎', dob: '2019/1/19' }],
+    });
+    const before = await getCustomerDetail(deps, tenantId, created.id);
+    const member = before?.familyMembers[0];
+    if (!member) throw new Error('世帯構成員が作られていない');
+    await updateFamilyMemberAllergy(deps, tenantId, created.id, member.id, {
+      status: 'present',
+      note: '卵',
+    });
+
+    await updateCustomer(deps, tenantId, created.id, {
+      tenantId,
+      name: '佐藤 花子',
+      familyMembers: [
+        { name: '佐藤 太郎', dob: '2019/1/19' },
+        { name: '佐藤 太郎', dob: '2021/6/20' },
+      ],
+    });
+
+    const after = await getCustomerDetail(deps, tenantId, created.id);
+    expect(after?.familyMembers.map((m) => m.allergyStatus)).toEqual(['unknown', 'unknown']);
+  });
+
   it('updateCustomerBirthdayで生年月日だけを更新でき、空文字を渡すと消える', async () => {
     const created = await createCustomer(deps, {
       tenantId,
