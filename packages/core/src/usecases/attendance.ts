@@ -19,7 +19,7 @@ import type {
   ReceiptRepositoryPort,
   StaffRepositoryPort,
 } from '../ports/repositories';
-import type { UnitOfWorkPort } from '../ports/unitOfWork';
+import type { TransactionScope, UnitOfWorkPort } from '../ports/unitOfWork';
 
 export interface AttendanceDeps {
   attendanceDays: AttendanceDayRepositoryPort;
@@ -72,6 +72,52 @@ export async function getAttendanceDay(
 }
 
 /**
+ * 検証済みのrowDataを、既に開いているトランザクション(scope)の中で書き、ミラー要求を積む。
+ *
+ * saveAttendanceDay と、カレンダー反映(usecases/calendarSync.ts)の両方から使う。
+ * カレンダー反映は「同じトランザクションの中で読み直してからマージして書く」必要があり
+ * (AttendanceDayRepositoryPort.findByStaffAndDateForUpdate 参照)、自前でトランザクションを
+ * 開く saveAttendanceDay をそのままは使えない。ミラー要求の積み方をコピーして持たせると
+ * 片方だけ直す事故が起きるので、書き込みの中身はここ1か所に置く。
+ *
+ * 呼び出し側の責任: rowDataは attendanceRowDataSchema で検証済みであること。
+ */
+export async function writeAttendanceDayInScope(
+  deps: AttendanceDeps,
+  tenantId: string,
+  staffId: string,
+  businessDate: string,
+  validatedRowData: AttendanceRowData,
+  scope: TransactionScope,
+): Promise<void> {
+  const record = await deps.attendanceDays.upsert(tenantId, staffId, businessDate, validatedRowData, scope);
+  await deps.mirror.enqueue(
+    {
+      tenantId,
+      kind: 'attendance_day',
+      targetId: record.id,
+      idempotencyKey: buildMirrorIdempotencyKey('attendance_day', record.id, record.updatedAt),
+    },
+    scope,
+  );
+  // 勤怠集計シートの再計算は別のジョブとして積む(冪等キーもkind込みで別になるため、
+  // 出勤簿のミラーと取り違えて片方が捨てられることはない)。出勤簿への書き込みが先に
+  // 済んでいる必要はない: GAS側の勤怠集計の書き込みは個別出勤簿に触らないため、
+  // どちらが先に処理されても結果は変わらない。
+  if (deps.mirrorAttendanceAggregate) {
+    await deps.mirror.enqueue(
+      {
+        tenantId,
+        kind: 'attendance_aggregate',
+        targetId: record.id,
+        idempotencyKey: buildMirrorIdempotencyKey('attendance_aggregate', record.id, record.updatedAt),
+      },
+      scope,
+    );
+  }
+}
+
+/**
  * 指定スタッフ・指定日の入力列(rowData)を丸ごと保存する。数式に相当する派生値は
  * AttendanceRowDataに存在しないため、呼び出し側が派生値を書き込むことは型上できない。
  *
@@ -94,33 +140,9 @@ export async function saveAttendanceDay(
   // (トランザクションの中身は正しいのに、外側だけ失敗した状態になる)。トランザクションの
   // 外・書き込みより前に呼ぶことで、失敗するなら何も書き込まれない状態で失敗させる。
   const columnRow = toColumnRow(validatedRowData);
-  await deps.unitOfWork.run(tenantId, async (scope) => {
-    const record = await deps.attendanceDays.upsert(tenantId, staffId, businessDate, validatedRowData, scope);
-    await deps.mirror.enqueue(
-      {
-        tenantId,
-        kind: 'attendance_day',
-        targetId: record.id,
-        idempotencyKey: buildMirrorIdempotencyKey('attendance_day', record.id, record.updatedAt),
-      },
-      scope,
-    );
-    // 勤怠集計シートの再計算は別のジョブとして積む(冪等キーもkind込みで別になるため、
-    // 出勤簿のミラーと取り違えて片方が捨てられることはない)。出勤簿への書き込みが先に
-    // 済んでいる必要はない: GAS側の勤怠集計の書き込みは個別出勤簿に触らないため、
-    // どちらが先に処理されても結果は変わらない。
-    if (deps.mirrorAttendanceAggregate) {
-      await deps.mirror.enqueue(
-        {
-          tenantId,
-          kind: 'attendance_aggregate',
-          targetId: record.id,
-          idempotencyKey: buildMirrorIdempotencyKey('attendance_aggregate', record.id, record.updatedAt),
-        },
-        scope,
-      );
-    }
-  });
+  await deps.unitOfWork.run(tenantId, (scope) =>
+    writeAttendanceDayInScope(deps, tenantId, staffId, businessDate, validatedRowData, scope),
+  );
   return {
     businessDate,
     rowData: validatedRowData,

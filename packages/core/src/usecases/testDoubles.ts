@@ -502,6 +502,18 @@ export class FakeAttendanceDayRepository implements AttendanceDayRepositoryPort,
     );
   }
 
+  /**
+   * 本物は `SELECT ... FOR UPDATE` で行ロックを取るが、このフェイクは単一スレッドの
+   * JavaScriptで動くので同時実行そのものが起きない。読み取り内容は通常の検索と同じ。
+   */
+  async findByStaffAndDateForUpdate(
+    tenantId: string,
+    staffId: string,
+    businessDate: string,
+  ): Promise<AttendanceDayRecord | null> {
+    return this.findByStaffAndDate(tenantId, staffId, businessDate);
+  }
+
   async findById(tenantId: string, id: string): Promise<AttendanceDayRecord | null> {
     return this.rows.find((r) => r.tenantId === tenantId && r.id === id) ?? null;
   }

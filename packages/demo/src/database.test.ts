@@ -6,6 +6,7 @@ import { DrizzleAttendanceDayRepository } from '@katahimo/db/repositories';
 import * as schema from '@katahimo/db/schema';
 import { serializeTransactions } from '@katahimo/db/serialize-transactions';
 import type { Database } from '@katahimo/db/tenant-scope';
+import { DrizzleUnitOfWork } from '@katahimo/db/unit-of-work';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DemoMigration } from './database';
@@ -231,6 +232,53 @@ describe('attendance_days.row_data(jsonb)の往復', () => {
 
     const month = await repo.listByStaffAndMonth(tenantId, staffId, '2026-09');
     expect(month.map((r) => r.rowData)).toEqual([rowData]);
+
+    await client.close();
+  });
+});
+
+/**
+ * カレンダー反映(usecases/calendarSync.ts)は「読んで→突き合わせて→書き戻す」ので、
+ * 読みと書きの間に他のリクエストが同じ日を保存すると編集を踏み潰す。そのため
+ * findByStaffAndDateForUpdate は `SELECT ... FOR UPDATE` で行ロックを取る。
+ *
+ * `.for('update')` が本物のPostgreSQL(公開デモのPGliteを含む)で実際に通ることを固定する。
+ * ここが落ちるとカレンダー反映が実行時に初めて壊れ、CIのビルドだけでは気付けない。
+ */
+describe('attendance_days の行ロック付き読み取り(FOR UPDATE)', () => {
+  it('トランザクションの中でロックを取って読める(行が無い日はnull)', async () => {
+    const client = new PGlite();
+    await client.waitReady;
+    await applyPendingMigrations(client, loadMigrations());
+    const db = serializeTransactions(
+      drizzle(client, { schema, casing: 'snake_case' }) as unknown as Database,
+    );
+
+    const { rows: tenants } = await client.query<{ id: string }>(
+      "INSERT INTO tenants (name, slug) VALUES ('テスト法人', 'demo') RETURNING id;",
+    );
+    const tenantId = tenants[0]?.id;
+    if (!tenantId) throw new Error('テナントの準備に失敗しました');
+    const { rows: staff } = await client.query<{ id: string }>(
+      "INSERT INTO staff (tenant_id, name, email) VALUES ($1, 'スタッフ', 's@example.test') RETURNING id;",
+      [tenantId],
+    );
+    const staffId = staff[0]?.id;
+    if (!staffId) throw new Error('スタッフの準備に失敗しました');
+
+    const repo = new DrizzleAttendanceDayRepository(db);
+    const unitOfWork = new DrizzleUnitOfWork(db);
+    const rowData = { visits: [{ place: '田中', start: '10:00', end: '11:00' }] };
+    await repo.upsert(tenantId, staffId, '2026-09-01', rowData);
+
+    const { locked, missing } = await unitOfWork.run(tenantId, async (scope) => ({
+      locked: await repo.findByStaffAndDateForUpdate(tenantId, staffId, '2026-09-01', scope),
+      // まだ行が無い日はロックする対象が無いのでnull(後続のupsertが一意インデックスで直列化される)。
+      missing: await repo.findByStaffAndDateForUpdate(tenantId, staffId, '2026-09-02', scope),
+    }));
+
+    expect(locked?.rowData).toEqual(rowData);
+    expect(missing).toBeNull();
 
     await client.close();
   });

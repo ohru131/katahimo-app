@@ -54,6 +54,31 @@ export class DrizzleAttendanceDayRepository implements AttendanceDayRepositoryPo
     });
   }
 
+  async findByStaffAndDateForUpdate(
+    tenantId: string,
+    staffId: string,
+    businessDate: string,
+    scope: TransactionScope,
+  ): Promise<AttendanceDayRecord | null> {
+    return withTenant(
+      this.db,
+      tenantId,
+      async (tx) => {
+        const rows = await tx
+          .select()
+          .from(attendanceDays)
+          .where(and(eq(attendanceDays.staffId, staffId), eq(attendanceDays.businessDate, businessDate)))
+          .limit(1)
+          // 読んでから書き戻すまでの間に他のリクエストが同じ日を保存するのを止める
+          // (AttendanceDayRepositoryPortのコメント参照)。
+          .for('update');
+        const row = rows[0];
+        return row ? toRecord(row) : null;
+      },
+      scope,
+    );
+  }
+
   async findById(tenantId: string, id: string): Promise<AttendanceDayRecord | null> {
     return withTenant(this.db, tenantId, async (tx) => {
       const rows = await tx.select().from(attendanceDays).where(eq(attendanceDays.id, id)).limit(1);

@@ -129,6 +129,32 @@ describe('buildColumnRowFromAppointments', () => {
   it('予定が無い日はすべて空文字になる', () => {
     expect(buildColumnRowFromAppointments([])).toMatchObject({ C: '', D: '', E: '', AI: '', AJ: '' });
   });
+
+  it('訪問が4件以上ある日は、黙って捨てずに例外にする', () => {
+    const visits = ['A', 'B', 'C', 'D'].map((name, i) =>
+      appointment({ customerName: name, startTime: `0${i + 8}:00`, endTime: `0${i + 8}:30` }),
+    );
+    expect(() => buildColumnRowFromAppointments(visits)).toThrow('出勤簿の枠に収まりません');
+    expect(() => buildColumnRowFromAppointments(visits)).toThrow('訪問4件/上限3件');
+  });
+
+  it('事務作業が3件以上ある日も例外にする', () => {
+    const officeWorks = ['A', 'B', 'C'].map((name) =>
+      appointment({ eventType: 'OFFICE WORK', customerName: name, startTime: '18:00', endTime: '18:30' }),
+    );
+    expect(() => buildColumnRowFromAppointments(officeWorks)).toThrow('事務作業3件/上限2件');
+  });
+
+  it('上限ちょうど(訪問3件・事務作業2件)は通る', () => {
+    const appointments = [
+      appointment({ customerName: 'v1', startTime: '09:00', endTime: '10:00' }),
+      appointment({ customerName: 'v2', startTime: '11:00', endTime: '12:00' }),
+      appointment({ customerName: 'v3', startTime: '13:00', endTime: '14:00' }),
+      appointment({ eventType: 'OFFICE WORK', customerName: 'o1', startTime: '15:00', endTime: '15:30' }),
+      appointment({ eventType: 'OFFICE WORK', customerName: 'o2', startTime: '16:00', endTime: '16:30' }),
+    ];
+    expect(() => buildColumnRowFromAppointments(appointments)).not.toThrow();
+  });
 });
 
 describe('buildCalendarSyncPlan', () => {
@@ -233,6 +259,50 @@ describe('buildCalendarSyncPlan', () => {
     expect(plan.merged.AN).toBe('2');
     expect(plan.merged.AO).toBe('メモ');
     expect(plan.changes.map((c) => c.column)).not.toContain('I');
+  });
+
+  it('日跨ぎの時間帯どうしの重なりを見落とさない', () => {
+    // 出勤簿の訪問#2(23:55-00:10)はカレンダー由来の訪問#1(23:50-00:20)と重なる。
+    // 終業<始業の正規化をしないと「重ならない」と誤判定され、古いスロットが残る。
+    const current: AttendanceColumnRow = {
+      C: '夜勤',
+      D: '23:50',
+      E: '00:20',
+      L: '古い夜勤',
+      M: '23:55',
+      N: '00:10',
+    };
+    const incoming = buildColumnRowFromAppointments([
+      appointment({ customerName: '夜勤', startTime: '23:50', endTime: '00:20' }),
+    ]);
+
+    const plan = buildCalendarSyncPlan(current, incoming);
+
+    expect(plan.merged.L).toBe('');
+    expect(plan.merged.M).toBe('');
+    expect(plan.merged.N).toBe('');
+  });
+
+  it('日跨ぎの予定の「翌日側」と、同じ営業日の早朝の予定は重なりとみなさない', () => {
+    // カレンダーの 23:50-00:20 が指すのは翌日の00:20まで。出勤簿側の 00:05-00:15 は
+    // その営業日の早朝で、別の時間帯。ここを重なり扱いにすると朝の予定が消えてしまう。
+    const current: AttendanceColumnRow = {
+      C: '夜勤',
+      D: '23:50',
+      E: '00:20',
+      L: '早朝の手入力',
+      M: '00:05',
+      N: '00:15',
+    };
+    const incoming = buildColumnRowFromAppointments([
+      appointment({ customerName: '夜勤', startTime: '23:50', endTime: '00:20' }),
+    ]);
+
+    const plan = buildCalendarSyncPlan(current, incoming);
+
+    expect(plan.merged.L).toBe('早朝の手入力');
+    expect(plan.merged.M).toBe('00:05');
+    expect(plan.merged.N).toBe('00:15');
   });
 
   it('内容が一致していれば差分は0件になる(空振りの書き込みを起こさない)', () => {

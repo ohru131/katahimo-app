@@ -68,16 +68,36 @@ function AttendanceDayTable({
         <tbody>
           {month.days.map((day) => {
             const names = visitNames(day);
+            const dayLabel = day.businessDate.slice(5); // GAS版と同じく MM-DD(対象月は見出しに出ている)
             return (
               <tr
                 key={day.businessDate}
+                // 行全体をタップで開けるのはGAS版と同じ(スマホでの主な操作)。ただし行は
+                // キーボードで辿れないので、日付セルに本物のボタンを置いて同じ操作を
+                // キーボードからもできるようにしている(行のonClickはポインタ操作用)。
                 onClick={onDayClick ? () => onDayClick(day.businessDate) : undefined}
                 className={`border-b border-gray-100 ${
                   onDayClick ? 'cursor-pointer hover:bg-blue-50' : ''
                 } ${names ? '' : 'text-gray-400'}`}
               >
-                {/* GAS版と同じく月を落として MM-DD だけ出す(対象月は見出しに出ている)。 */}
-                <td className="py-1 pr-2 whitespace-nowrap">{day.businessDate.slice(5)}</td>
+                <td className="py-1 pr-2 whitespace-nowrap">
+                  {onDayClick ? (
+                    <button
+                      type="button"
+                      // 行のonClickと二重に発火させない。
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDayClick(day.businessDate);
+                      }}
+                      aria-label={`${day.businessDate} の勤怠を開く`}
+                      className="underline decoration-dotted underline-offset-2 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+                    >
+                      {dayLabel}
+                    </button>
+                  ) : (
+                    dayLabel
+                  )}
+                </td>
                 <td className="py-1 pr-2 truncate max-w-[110px]" title={names}>
                   {names}
                 </td>

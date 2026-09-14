@@ -427,6 +427,25 @@ export interface AttendanceDayRepositoryPort {
     staffId: string,
     businessDate: string,
   ): Promise<AttendanceDayRecord | null>;
+  /**
+   * 同じ日の行を書き込みロック付きで読む(`SELECT ... FOR UPDATE`)。
+   *
+   * rowDataは「丸ごと置き換え」なので、読んだ内容に手を加えて書き戻す処理
+   * (カレンダー反映の非破壊マージ、usecases/calendarSync.ts)は、読みと書きの間に
+   * 他のリクエストが同じ日を保存すると、その編集を古い内容で踏み潰してしまう。
+   * 読みと書きを同じトランザクションに入れるだけでは足りない(READ COMMITTEDでは、
+   * 読んだ後にコミットされた変更が見えないまま上書きできてしまう)ため、行ロックを取る。
+   *
+   * 行がまだ無い場合はロックする対象が無くnullを返すが、その後のupsertが
+   * 一意インデックス(tenant_id, staff_id, business_date)で直列化されるので、
+   * 二重に作られることはない。
+   */
+  findByStaffAndDateForUpdate(
+    tenantId: string,
+    staffId: string,
+    businessDate: string,
+    scope: TransactionScope,
+  ): Promise<AttendanceDayRecord | null>;
   /** 指定日のrowDataを丸ごと置き換える(無ければ作成)。入力列だけを持つ設計のため部分更新の概念が無い。 */
   upsert(
     tenantId: string,

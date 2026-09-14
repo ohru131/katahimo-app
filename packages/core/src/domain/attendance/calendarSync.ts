@@ -1,3 +1,4 @@
+import { MAX_OFFICE_WORK, MAX_VISITS } from '@katahimo/shared';
 import type { ScheduleAppointmentWithRoute } from '../../ports/schedule';
 import { parseTimeToMinutes } from './attendanceCalc';
 import type { AttendanceColumnRow } from './types';
@@ -104,6 +105,13 @@ function emptyOrValue(value: number | string | undefined | null): string {
 /**
  * ルート計算つきの予定(SchedulePort.getScheduleWithRoute の戻り)から、出勤簿1日分の
  * 列記号形式を組み立てる。移植元: GAS版 buildTimesheetRowDataFromAppointments_。
+ *
+ * 出勤簿が持てるのは訪問3件・事務作業2件まで(MAX_VISITS/MAX_OFFICE_WORK)。カレンダー側は
+ * それより多くの予定を返しうるが、GAS版のように4件目以降を黙って捨てることはしない
+ * ――捨てられるのは訪問先・時刻・移動距離、つまり給与に直結する値で、消えたことに
+ * 誰も気付けないため(columnRow.ts の toColumnRow が同じ理由で例外を投げるのと同じ判断)。
+ * 反映できない日は例外にして、一括反映の「失敗した組み合わせ」として日付・スタッフ名つきで
+ * 表に出し、手入力で直してもらう。
  */
 export function buildColumnRowFromAppointments(
   appointments: ScheduleAppointmentWithRoute[],
@@ -134,6 +142,14 @@ export function buildColumnRowFromAppointments(
 
   const officeWorks = appointments.filter(isOfficeWorkAppointment);
   const visits = appointments.filter((a) => !isOfficeWorkAppointment(a));
+
+  if (visits.length > MAX_VISITS || officeWorks.length > MAX_OFFICE_WORK) {
+    throw new Error(
+      `カレンダーの予定が出勤簿の枠に収まりません(訪問${visits.length}件/上限${MAX_VISITS}件、` +
+        `事務作業${officeWorks.length}件/上限${MAX_OFFICE_WORK}件)。` +
+        '一部だけを反映すると残りが黙って消えるため、この日は反映していません。手入力で調整してください。',
+    );
+  }
 
   if (visits[0]) {
     rowData.C = visits[0].customerName || '';
@@ -182,6 +198,22 @@ function isSameValue(oldValue: string | undefined, newValue: string | undefined)
   return String(oldValue ?? '') === String(newValue ?? '');
 }
 
+const MINUTES_PER_DAY = 24 * 60;
+
+/**
+ * 2つの時間帯が重なるか。
+ *
+ * 出勤簿の時刻は「その営業日の壁時計時刻」なので、終業が始業より前なら日跨ぎ勤務を表す
+ * (shared/contracts/attendance.ts の attendanceTimeSchema 参照)。そのまま数値比較すると
+ * 23:50-00:20 と 23:55-00:10 のように明らかに重なる組が「重ならない」と判定され、
+ * 上書きされるべき古いスロットが出勤簿に残って予定が二重に見えてしまう。終業側に24時間を
+ * 足して区間を正規化してから比較する(GAS版 timeRangesOverlap_ にはこの正規化が無く、
+ * 夜勤の日に重複が残る不具合があった。ここは意図的にGAS版より正しくしている)。
+ *
+ * 前後の日へずらした比較はしない。どちらの区間も同じ営業日の始業時刻を起点にしているので、
+ * 23:50-00:20(翌日の00:20まで)と 00:05-00:15(その日の朝)は別の時間帯であり、
+ * ずらして突き合わせると重ならないものを重なると誤判定する。
+ */
 function timeRangesOverlap(
   startA: string | undefined,
   endA: string | undefined,
@@ -189,10 +221,12 @@ function timeRangesOverlap(
   endB: string | undefined,
 ): boolean {
   const sA = parseTimeToMinutes(startA);
-  const eA = parseTimeToMinutes(endA);
   const sB = parseTimeToMinutes(startB);
-  const eB = parseTimeToMinutes(endB);
-  if (sA === null || eA === null || sB === null || eB === null) return false;
+  const rawEndA = parseTimeToMinutes(endA);
+  const rawEndB = parseTimeToMinutes(endB);
+  if (sA === null || rawEndA === null || sB === null || rawEndB === null) return false;
+  const eA = rawEndA < sA ? rawEndA + MINUTES_PER_DAY : rawEndA;
+  const eB = rawEndB < sB ? rawEndB + MINUTES_PER_DAY : rawEndB;
   return sA < eB && sB < eA;
 }
 
