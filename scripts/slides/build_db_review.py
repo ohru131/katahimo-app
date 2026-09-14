@@ -3,6 +3,7 @@
 
 有識者レビュー用。DB設計の用語をかみ砕きながら、現状の構成・問題点・相談事項を図で示す。
 内容の一次情報は packages/db/src/schema/*.ts と doc/09_データベース構造解説.md。
+列・制約の一覧は doc/16_データベース構造リファレンス.md(スキーマから自動生成)。
 """
 import sys
 from pathlib import Path
@@ -85,7 +86,8 @@ for no, ttl, body, col, fl, pg in chs:
     cx += w + 0.17
 
 note(s, ML, 6.28, CW, 0.66, "レビューを効率化するために",
-     "「この用語の使い方が違う」という指摘も歓迎です。詳細な定義・全列一覧は doc/09_データベース構造解説.md に記載しています。",
+     "「この用語の使い方が違う」という指摘も歓迎です。設計の詳細は doc/09_データベース構造解説.md、"
+     "ER図と全列一覧は doc/16_データベース構造リファレンス.md(スキーマから自動生成)にあります。",
      accent=ACCENT, fill=ACCENT_L, size=11)
 
 # ══════════════════════════════════════════════════════════════
@@ -101,7 +103,7 @@ s = sl_("用語① テーブル・行・列・キー", "データベースは「
         source="実物は packages/db/src/schema/customers.ts, dailyReports.ts")
 bullets(s, ML, 1.25, 5.9, 4.6, [
     {"t": [("テーブル(表)", {"bold": True, "color": ACCENT, "size": 13}),
-           ("  … Excelの1シートに相当。このシステムには33枚ある", {"size": 12})]},
+           ("  … Excelの1シートに相当。このシステムには34枚ある", {"size": 12})]},
     {"t": [("行(レコード)", {"bold": True, "color": ACCENT, "size": 13}),
            ("  … 1件のデータ。「顧客1人」「日報1本」", {"size": 12})]},
     {"t": [("列(カラム)", {"bold": True, "color": ACCENT, "size": 13}),
@@ -250,12 +252,12 @@ note(s, ML, 5.72, CW, 1.1, "設計の出発点",
 # 8. 全体像 34テーブル
 # ══════════════════════════════════════════════════════════════
 s = sl_("全体像 — 34テーブル", "業務ドメインごとに10のまとまり。tenants以外の33枚はすべて同じ形を守る",
-        source="packages/db/src/schema/*.ts / 詳細なER図は doc/09 第2章")
+        source="packages/db/src/schema/*.ts / ドメイン別のER図は doc/16 第1章(自動生成)")
 
 chip_row(s, ML, 1.12, [("全テーブルが tenant_id を持つ", ACCENT, ACCENT_L),
                        ("紫 = 稼働中", VIOLET, VIOLET_L),
                        ("橙 = スキーマのみ", ORANGE, ORANGE_L),
-                       ("関係の矢印は doc/09 のER図", MUTED, CARD)], size=9.5)
+                       ("関係の矢印は doc/16 のER図", MUTED, CARD)], size=9.5)
 
 GW, GG = 2.34, 0.16
 
@@ -313,7 +315,7 @@ s = sl_("テーブル一覧① — 稼働中の16枚", "アプリが実際に読
 rows = [
     ["tenants", "法人(テナント)マスタ", "slug で一意。ログイン前に法人を特定する", "対象外"],
     ["tenant_keys", "テナントごとの暗号鍵(ラップ済み)", "PK=(tenant_id, dek_version) 世代が並存", "○"],
-    ["app_settings", "テナント単位の管理者設定", "1テナント1行。資格情報3列だけ暗号化", "○"],
+    ["app_settings", "テナント単位の管理者設定", "1テナント1行。資格情報3列だけ暗号化 + 領収書の締め日", "○"],
     ["outbox_jobs", "スプレッドシート書き戻しの待ち行列", "UNIQUE(tenant_id, idempotency_key)", "○"],
     ["staff", "スタッフ。認証情報も兼ねる", "UNIQUE(tenant_id, email) / (tenant_id, id)", "○"],
     ["sessions", "ログインセッション", "生トークンは保存せずSHA-256のみ", "○"],
@@ -322,7 +324,7 @@ rows = [
     ["family_members", "世帯構成員(子ども等)", "customers への複合FK。生年月日は date + 元表記", "○"],
     ["daily_reports", "保育日報。本文は項目ごとの5列", "staff と customers 双方への複合FK", "○"],
     ["accident_reports", "事故報告 / ヒヤリハット。本文11列", "同上。report_type は CHECK で2値に限定", "○"],
-    ["receipts", "領収書。画像はオブジェクトストレージ", "金額は整数の円。billing_type で顧客請求/会社経費", "○"],
+    ["receipts", "領収書。取消は行を消さず cancelled_at", "金額は整数の円。cancellable_until を登録時に固定", "○"],
     ["attendance_days", "勤怠(出勤簿)1日分", "UNIQUE(tenant_id, staff_id, business_date)", "○"],
     ["coupons", "割引クーポンの種別マスタ", "UNIQUE(tenant_id, code)。廃止は active=false", "○"],
     ["customer_coupons", "顧客へのクーポン配布", "UNIQUE(tenant_id, customer_id, coupon_id)", "○"],
@@ -349,7 +351,7 @@ s = sl_("テーブル一覧② — スキーマだけ先に用意した18枚", "
         source="doc/15_追加ドメインの設計とレビュー論点.md", accent=ORANGE)
 rows2 = [
     ["customer_notes", "カルテ", "カルテ・申し送り・鍵の位置・ガレージ・引継ぎ・注意点を区分で持つ1枚"],
-    ["customer_note_photos", "カルテ", "上の子。写真は実体を持たず保存キーのみ。10MB・10枚をCHECKで制限"],
+    ["customer_note_photos", "カルテ", "上の子。写真は実体を持たず保存キーのみ。1枚10MBまでをCHECKで制限"],
     ["service_menus", "予約", "提供メニュー。RESERVA由来は external_source + external_id で突合"],
     ["reservations", "予約", "予約(約束)。日報(実施記録)とは別。end_at > start_at をCHECK"],
     ["reservation_assignments", "予約", "予約へのスタッフ割当。主担当は1予約1人までを部分一意索引で保証"],
@@ -538,8 +540,11 @@ text(s, ML + 6.58, 3.62, 5.55, 1.2,
      "アプリにバグがあっても、法人を跨いだ紐付けは物理的に作れない。",
      size=11, color=INK, line=1.32)
 
-text(s, ML, 4.72, CW, 0.3, "この形を適用した参照(全7本)", size=12, color=INK, bold=True)
-rows = [["daily_reports → staff / customers", "accident_reports → staff / customers",
+text(s, ML, 4.72, CW, 0.3,
+     [("この形を適用した参照(全50本)", {"size": 12, "bold": True, "color": INK}),
+      ("   下は稼働中の16枚にあるもの", {"size": 10.5, "color": MUTED})])
+rows = [["daily_reports → staff / customers / reservations",
+         "accident_reports → staff / customers",
          "receipts → staff / customers(顧客は空可)"],
         ["attendance_days → staff(給与に直結するため特に重要)", "family_members → customers",
          "sessions / password_reset_codes → staff"]]
@@ -548,9 +553,10 @@ for r_i, row in enumerate(rows):
         box(s, ML + c_i * 4.13, 5.04 + r_i * 0.5, 3.95, 0.42, cell, fill=WHITE, border=LINE,
             size=10.5, align=PP_ALIGN.LEFT)
 note(s, ML, 6.05, CW, 0.85, "補足",
-     "この落とし穴は過去のレビューでご指摘いただいて塞いだものです。参照先には UNIQUE(tenant_id, id) を張ってあります。"
+     "クーポンの3枚(customer_coupons / coupon_redemptions)も同じ形で customers・coupons・daily_reports を指しています。"
+     "先行整備の18枚も同じ規約に載せてあり、複合外部キーは全部で50本です。参照先には UNIQUE(tenant_id, id) を張ってあります。"
      "ON DELETE は全て no action(親を消せない)にしており、廃棄はテナント単位の物理削除で行う方針です。",
-     accent=ACCENT, fill=ACCENT_L, size=11)
+     accent=ACCENT, fill=ACCENT_L, size=10.5)
 
 # ══════════════════════════════════════════════════════════════
 # 13. データ保護の線引き
@@ -1200,14 +1206,16 @@ card(s, ML, 1.28, 6.0, 2.6, "コード(こちらが正)", accent=ACCENT, items=[
 ], body_size=10.5)
 card(s, ML + 6.33, 1.28, 6.0, 2.6, "ドキュメント", accent=GREEN, items=[
     {"t": [("doc/09_データベース構造解説.md", {"bold": True}),
-           ("  本資料の詳細版。ER図・全列一覧・レビュー観点", {})]},
+           ("  本資料の詳細版。設計方針・暗号化の構成・レビュー観点", {})]},
+    {"t": [("doc/16_データベース構造リファレンス.md", {"bold": True}),
+           ("  ER図と全34テーブルの全列一覧。スキーマから自動生成(pnpm db:docs)", {})]},
     {"t": [("doc/15_追加ドメインの設計とレビュー論点.md", {"bold": True}),
            ("  第4章の18テーブルの設計理由と、未決の論点", {})]},
     {"t": [("doc/14_データベース設計の指針と落とし穴.md", {"bold": True}),
            ("  DBを触るときの決めごとと、実際に踏んだ落とし穴", {})]},
     {"t": [("doc/13_アーキテクチャ説明資料.pptx", {"bold": True}),
            ("  本資料の対になるアプリ構成の説明資料", {})]},
-], body_size=10.5)
+], body_size=10)
 text(s, ML, 4.05, CW, 0.28, "この資料で使った言い換えの対応表", size=12, color=INK, bold=True)
 table(s, ML, 4.35, CW, ["この資料での言い方", "正式な用語", "実装上の名前"],
       [["法人 / 会社", "テナント(tenant)", "tenants テーブル / tenant_id 列"],
