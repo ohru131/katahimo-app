@@ -23,7 +23,7 @@ import { tenants } from './tenants';
  *
  * 氏名・メール・電話は平文で保持する(2026-08のデータベース構造レビューを踏まえ、要配慮性の
  * 低い通常の個人情報はフィールド暗号化の対象から外し、DB/バックアップの透過的暗号化(TDE)+
- * Row Level Security+アクセス制御に委ねる方針へ変更。doc/09参照)。emailはログイン時の検索キー
+ * Row Level Security+アクセス制御に委ねる方針へ変更。doc/db/overview.md参照)。emailはログイン時の検索キー
  * になるため、書き込み時に`normalizeEmailForIndex`で正規化した値を保存する(表記ゆれで
  * ログインできなくなることを防ぐため)。
  */
@@ -96,7 +96,7 @@ export const staff = pgTable(
     // attendance_days/daily_reports等からの複合外部キー(tenant_id, staff_id)の参照先。
     // customers.ts の customers_tenant_id_uk と同じ理由(RLSはFK制約をバイパスするため)。
     unique('staff_tenant_id_uk').on(t.tenantId, t.id),
-    // 負の失敗回数はloginThrottleのロジックが想定していない(doc/14 §4)。
+    // 負の失敗回数はloginThrottleのロジックが想定していない(doc/db/guidelines.md §4)。
     check('staff_failed_login_attempts_check', sql`${t.failedLoginAttempts} >= 0`),
     // customers_lat_range/customers_lng_range と同じ理由(実在しない座標を弾く)。
     check('staff_home_lat_range', sql`${t.homeLat} IS NULL OR ${t.homeLat} BETWEEN -90 AND 90`),

@@ -29,7 +29,7 @@ export interface ReservaImportPlan {
  * RESERVA CSVの取込差分を計算する(DBへの書き込みは一切行わない、読み取り専用の計画)。
  *
  * 氏名の文字列一致ではなく、外部ID(RESERVAの顧客ID)による突き合わせで
- * 作成/更新/消失(ソフトデリート対象)を判定する(doc/07 第5章・第8章の方針)。
+ * 作成/更新/消失(ソフトデリート対象)を判定する(doc/proposal/tech-stack.md 第5章・第8章の方針)。
  * 「取込データで既存データを丸ごと置き換える」旧GAS版の危険な挙動(CsvImport.jsの
  * updateDatabaseFromLinesV2)は踏襲せず、差分適用+安全装置付きにする。
  */

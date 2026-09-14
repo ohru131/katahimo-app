@@ -128,7 +128,7 @@ export interface TableInfo {
  * 同じ名前のテーブル列を引いて解決済みの名前に読み替える。
  *
  * 並び順(DESC・NULLS)も一緒に出す。`ORDER BY ... DESC` と向きを揃えるために
- * 降順で張っている索引がいくつかあり(doc/14 §3)、向きを落とすと
+ * 降順で張っている索引がいくつかあり(doc/db/guidelines.md §3)、向きを落とすと
  * 「なぜこの索引がこの並びなのか」が読めなくなる。
  * PostgreSQLの既定と同じ指定(昇順ならNULLS LAST、降順ならNULLS FIRST)は書かない。
  * drizzle-kit が生成するDDLもそう書くので、そちらと見た目を揃える。

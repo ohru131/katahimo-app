@@ -50,7 +50,7 @@ export function createCustomerRoutes(container: Container) {
   });
 
   /**
-   * 顧客の生年月日を登録・更新する(誕生月クーポンの判定に使う。doc/14 §9)。
+   * 顧客の生年月日を登録・更新する(誕生月クーポンの判定に使う。doc/db/guidelines.md §9)。
    *
    * 受け付けるのは生年月日だけ。他の項目はRESERVA CSVの取込が正で、画面から直しても
    * 次の取込で消えるため編集させない(@katahimo/shared の customerUpdateRequestSchema 参照)。

@@ -87,7 +87,7 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     ]);
   });
 
-  it('解析できない生年月日はdobDateがnullのままdobRawだけ保存される(doc/14 §6)', async () => {
+  it('解析できない生年月日はdobDateがnullのままdobRawだけ保存される(doc/db/guidelines.md §6)', async () => {
     const created = await createCustomer(deps, {
       tenantId,
       name: '佐藤 花子',
@@ -100,7 +100,7 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     ]);
   });
 
-  it('世帯代表の生年月日も日付型と元表記の2列に分けて保存される(doc/14 §6)', async () => {
+  it('世帯代表の生年月日も日付型と元表記の2列に分けて保存される(doc/db/guidelines.md §6)', async () => {
     const created = await createCustomer(deps, { tenantId, name: '佐藤 花子', dob: '1990/6/15' });
 
     const detail = await getCustomerDetail(deps, tenantId, created.id);
@@ -145,7 +145,7 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     expect(detail?.dobRaw).toBeNull();
   });
 
-  it('緯度経度は分解されてlat/lng/latLngRawに保存される(doc/14 §7)', async () => {
+  it('緯度経度は分解されてlat/lng/latLngRawに保存される(doc/db/guidelines.md §7)', async () => {
     const created = await createCustomer(deps, {
       tenantId,
       name: '佐藤 花子',
@@ -157,7 +157,7 @@ describe('createCustomer / searchCustomersByFamilyName', () => {
     expect(created.latLngRaw).toBe('38.26, 140.87');
   });
 
-  it('解析できない緯度経度はlat/lngがnullのままlatLngRawだけ保存される(doc/14 §7)', async () => {
+  it('解析できない緯度経度はlat/lngがnullのままlatLngRawだけ保存される(doc/db/guidelines.md §7)', async () => {
     const created = await createCustomer(deps, {
       tenantId,
       name: '佐藤 花子',

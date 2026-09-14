@@ -216,7 +216,7 @@ interface ReceiptImageState {
   /** OCR失敗時のエラーメッセージ(表示用)。成功時・未実行時はnull。 */
   ocrError: string | null;
   /**
-   * 請求区分(doc/14 §10)。領収書1枚ごとに選べる。既定は'company_expense'
+   * 請求区分(doc/db/guidelines.md §10)。領収書1枚ごとに選べる。既定は'company_expense'
    * (取りこぼしが「うっかり顧客に請求してしまう」向きに転ばないようにするため。
    * DB側のデフォルトと同じ理由)。
    */
@@ -388,7 +388,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
   const [dailySavedId, setDailySavedId] = useState<string | null>(null);
   const [dailySavedSnapshot, setDailySavedSnapshot] = useState<string | null>(null);
 
-  // ── 適用クーポン(doc/14 §9。日報タブのみ) ──
+  // ── 適用クーポン(doc/db/guidelines.md §9。日報タブのみ) ──
   // 「使えるかどうか」の判定は全てサーバー側(listCouponsForSelection)で済ませ、ここには
   // 使える条件を満たすものだけが返ってくる。スタッフが「今月はこの子の誕生月か」「この世帯に
   // 配ってあるクーポンか」を自分で確かめる必要は無い。
@@ -466,7 +466,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
     setSelectedFamilyId(id);
     const fam = customerQuery.data?.familyMembers.find((f) => f.id === id);
     setAccTargetName(fam?.name ?? '');
-    // doc/14 §6でdobはdobDate/dobRawに分かれた。ここは自由記述テキストとして事故報告の
+    // doc/db/guidelines.md §6でdobはdobDate/dobRawに分かれた。ここは自由記述テキストとして事故報告の
     // 対象者生年月日欄に流し込む用途のため、元表記(dobRaw)を優先する。
     setAccTargetDob(fam?.dobRaw ?? fam?.dobDate ?? '');
   };
@@ -975,7 +975,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
                       placeholder="店舗名"
                       className="w-full p-1 text-sm border border-gray-300 rounded text-center"
                     />
-                    {/* 請求区分(doc/14 §10)。日時・金額・店舗名と違い、選択肢の欄には
+                    {/* 請求区分(doc/db/guidelines.md §10)。日時・金額・店舗名と違い、選択肢の欄には
                         プレースホルダで「何の欄か」を書けない。ラベルを付けないと既定値の
                         「会社立替」だけが見えている状態になり、何を選ぶ欄なのか分からないまま
                         素通りされる(=顧客に請求すべき領収書が会社立替のまま登録される)。
@@ -1104,7 +1104,7 @@ export function ReportModal({ customerId, onClose }: { customerId: string; onClo
             </div>
           )}
 
-          {/* 適用クーポン(doc/14 §9。日報タブのみ)。1回の訪問に複数適用しうるので
+          {/* 適用クーポン(doc/db/guidelines.md §9。日報タブのみ)。1回の訪問に複数適用しうるので
               チェックボックスの複数選択にしている。クーポンを1件も登録していないテナントでは、
               一覧が確実に空だと分かった時点でセクションごと隠す。空の一覧をそのまま見せると
               「クーポン機能が壊れている」ように見えてしまい、登録の予定が無いテナントには

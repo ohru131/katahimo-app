@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
-"""doc/17_データベース設計_業務確認用資料.pptx を生成する。
+"""doc/slides/db-for-business.pptx を生成する。
 
 読み手は、ベビーシッター法人のパートナー企業で実務を担当されている方・責任者の方。
 Excelには慣れているがデータベースは初めて、という前提に立ち、
 「この設計で業務上の抜けが無いか」を確認していただくための資料にする。
 
-doc/12 が技術的な妥当性を有識者に見ていただく資料なのに対し、
+doc/slides/db-review.pptx が技術的な妥当性を有識者に見ていただく資料なのに対し、
 こちらは業務の言葉だけで書き、確認していただきたいことを質問の形で並べる。
 
-内容の一次情報は packages/db/src/schema/*.ts と doc/09・doc/14・doc/15・doc/16。
-業務の言葉への言い換えは scripts/slides/primer_content.py に分けてある。
+内容の一次情報は packages/db/src/schema/*.ts と doc/db/overview.md・doc/db/guidelines.md・doc/db/new-domains.md・doc/db/reference.md。
+業務の言葉への言い換えは scripts/slides/db_for_business_content.py に分けてある。
 
-生成: pip install python-pptx && python3 scripts/slides/build_db_primer.py
+生成: pip install python-pptx && python3 scripts/slides/build_db_for_business.py
 """
 import math
 import sys
@@ -22,14 +22,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 
-from primer_content import DOMAINS
+from db_for_business_content import DOMAINS
 from pptx_kit import (ACCENT, ACCENT_L, AMBER, AMBER_L, CARD, CARD2, CW, GREEN, GREEN_L, INK, LINE,
                       ML, MONO, MUTED, NAVY, ORANGE, ORANGE_L, PINK, PINK_L, RED, RED_L, SLIDE_W,
                       TEAL, TEAL_L, VIOLET, VIOLET_L, WHITE, _text_w, arrow, badge, box, bullets,
                       card, chip_row, fill_text, hline, new_deck, note, rect, section_slide, slide,
                       table, text, title_slide, vline)
 
-OUT = Path(__file__).resolve().parents[2] / "doc" / "17_データベース設計_業務確認用資料.pptx"
+OUT = Path(__file__).resolve().parents[2] / "doc" / "slides" / "db-for-business.pptx"
 
 BODY_TOP = 1.22
 BODY_BOTTOM = 6.88
@@ -561,7 +561,7 @@ sec_("第16章", "まだ決まっていないこと・作りかけのこと",
      "ご意見をいただきたい箇所を、章をまたいで一覧にしました")
 
 s = sl_("業務の決めごととして、ご判断いただきたいこと", "第16章 まだ決まっていないこと",
-        source="技術的な検討課題は別資料(doc/12)にまとめてあり、ここには含めていません")
+        source="技術的な検討課題は別資料(doc/slides/db-review.pptx)にまとめてあり、ここには含めていません")
 table(s, ML, BODY_TOP, CW,
       ["章", "決まっていないこと", "決まらないと困ること"],
       [

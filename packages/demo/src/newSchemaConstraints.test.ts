@@ -1695,7 +1695,7 @@ describe('新規テーブルのCHECK制約が不正値のINSERTを拒否する(P
       );
     });
   });
-  // ── 誕生月クーポン・顧客ごとの配布・使用上限(doc/14 §9) ──
+  // ── 誕生月クーポン・顧客ごとの配布・使用上限(doc/db/guidelines.md §9) ──
 
   describe('coupons_birthday_subject_check', () => {
     it('誕生月クーポンは対象者(birthday_subject)が入っていれば通る', async () => {
@@ -1747,7 +1747,7 @@ describe('新規テーブルのCHECK制約が不正値のINSERTを拒否する(P
       if (!otherCustomer) throw new Error('顧客の準備に失敗しました');
 
       // 適用記録に顧客IDを持たせても二重管理の不整合にならないのは、この複合FKが
-      // 「日報の顧客であること」までDB側で強制しているため(doc/14 §9)。
+      // 「日報の顧客であること」までDB側で強制しているため(doc/db/guidelines.md §9)。
       await expectRejectedByConstraint(
         fixture.client.query(
           `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id,
@@ -1787,7 +1787,7 @@ describe('新規テーブルのCHECK制約が不正値のINSERTを拒否する(P
       );
 
       // 日報が違っても、同じ顧客・同じ年なら2回目は使えない。usecase側の判定をすり抜けた
-      // 同時リクエストを、ここで最後に止める(doc/14 §8.4)。
+      // 同時リクエストを、ここで最後に止める(doc/db/guidelines.md §8.4)。
       await expectRejectedByConstraint(
         fixture.client.query(
           `INSERT INTO coupon_redemptions (tenant_id, daily_report_id, customer_id, coupon_id,

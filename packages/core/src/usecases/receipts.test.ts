@@ -215,7 +215,7 @@ describe('uploadReceipts', () => {
   });
 });
 
-describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
+describe('listReceiptsForStaff / cancelReceipt(doc/db/guidelines.md §10)', () => {
   const tenantId = 'tenant-1';
   // 2026-09-14は月曜。+2営業日は水曜(2026-09-16)まで。
   const RECEIPT_DAY = '2026/09/14';
@@ -489,7 +489,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
       reason: '経理の締め処理で戻す',
       today: AFTER_DEADLINE,
     });
-    // 取り消し自体は通る。ただしシート側の行は消せないので、黙って成功にしない(doc/14 §10)。
+    // 取り消し自体は通る。ただしシート側の行は消せないので、黙って成功にしない(doc/db/guidelines.md §10)。
     expect(result).toEqual({ ok: true, mirrorAlreadySent: true });
   });
 
@@ -609,7 +609,7 @@ describe('listReceiptsForStaff / cancelReceipt(doc/14 §10)', () => {
 
     const [job] = mirror.listAllForTest();
     if (!job) throw new Error('ミラージョブが積まれていません');
-    // 送信開始を遅らせる手段そのものを持たないので、積んだ時点で送信対象になる(doc/14 §10)。
+    // 送信開始を遅らせる手段そのものを持たないので、積んだ時点で送信対象になる(doc/db/guidelines.md §10)。
     // 実DBの next_attempt_at は NOT NULL DEFAULT now() なので「今」が入り、
     // フェイクは同じ意味を null で表す(claimPending はどちらも即座に拾う)。
     // 取り消し済みを送らない守りは claimForMirror が担うので、遅延は要らない。

@@ -2,9 +2,9 @@
 
 データベースを触るときに守る決めごとと、実際に踏んだ落とし穴をまとめる。
 
-- 現行スキーマそのものの解説 → `doc/09_データベース構造解説.md`
+- 現行スキーマそのものの解説 → `doc/db/overview.md`
 - 後から足したドメイン(カルテ・予約・決済・訪問最適化・移動手当)の設計判断とレビュー論点
-  → `doc/15_追加ドメインの設計とレビュー論点.md`
+  → `doc/db/new-domains.md`
 
 この文書には「なぜその形なのか」と「同じ間違いを繰り返さないための注意」だけを置く。
 値の正は常に `packages/db/src/schema/*.ts`(テーブル定義)と
@@ -79,7 +79,7 @@ attendance_segments(
 )
 ```
 
-移動実績と手当の記録は、この正規化を待たずに `travel_legs` が受け持っている(`doc/15` §5)。
+移動実績と手当の記録は、この正規化を待たずに `travel_legs` が受け持っている(`doc/db/new-domains.md` §5)。
 
 ---
 
@@ -253,7 +253,7 @@ Drizzle のスキーマでは表現できない。
 そのため**本番の PostgreSQL では使える機能でも、PGlite で動かないものは採用できない**。
 
 - `btree_gist` は利用できない(実機確認済み: `extension "btree_gist" is not available`)。
-  そのため予約の二重取りを `EXCLUDE USING gist (... WITH &&)` では防げない(`doc/15` §2 の論点)
+  そのため予約の二重取りを `EXCLUDE USING gist (... WITH &&)` では防げない(`doc/db/new-domains.md` §2 の論点)
 - 逆に `CREATE FUNCTION ... LANGUAGE plpgsql` + `BEFORE UPDATE` トリガーと、
   日本語リテラルを含む `CHECK (col IN ('事故報告', …))` は動作を確認済み
 
@@ -332,7 +332,7 @@ DB側の部分一意索引 `coupon_redemptions_usage_scope_uidx` を最後の砦
 方向に転ばないようにするため。顧客に紐付かない領収書は `customer_billable` にできない
 (`receipts_billable_requires_customer`)。
 
-請求書に載せる側は `invoice_lines.kind = 'receipt_billable'` が受け取る(`doc/15` §3)。
+請求書に載せる側は `invoice_lines.kind = 'receipt_billable'` が受け取る(`doc/db/new-domains.md` §3)。
 
 ## 訂正は「編集」ではなく「取り消して登録し直す」
 

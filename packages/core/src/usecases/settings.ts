@@ -26,7 +26,7 @@ export interface AdminSettingsView {
   geminiOcrModel: string;
   gchatReportWebhookUrl: string;
   gchatReceiptWebhookUrl: string;
-  /** 締め日まわり(doc/14 §10)。画面はこの2つをそのまま編集する。 */
+  /** 締め日まわり(doc/db/guidelines.md §10)。画面はこの2つをそのまま編集する。 */
   receiptClosingDay: number | null;
   receiptCancellableDays: number;
 }
@@ -81,7 +81,7 @@ export async function getAdminSettings(deps: SettingsDeps, tenantId: string): Pr
  *
  * 取り消し期限はここから導かれる。ミラー送信の時刻とは無関係(送信は登録と同時に始まる)。
  * 期限は登録時に receipts.cancellable_until へ確定させるので、あとで設定を変えても
- * 登録済みの領収書の期限は動かない(doc/14 §10)。
+ * 登録済みの領収書の期限は動かない(doc/db/guidelines.md §10)。
  */
 export async function resolveReceiptDeadlinePolicy(
   // 暗号化には触れないので SettingsDeps 全体は要求しない(領収書側のdepsからも呼べるようにする)。

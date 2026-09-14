@@ -14,7 +14,7 @@ import { getAuthenticatedSession } from '../session';
 
 /**
  * 整数かつ指定範囲内か。JSONで来た値をそのままDBへ渡すと、範囲外はCHECK制約違反(23514)
- * という分かりにくいエラーで初めて気付く形になるため、ここで弾いて400にする(doc/14 §1.6)。
+ * という分かりにくいエラーで初めて気付く形になるため、ここで弾いて400にする(doc/db/guidelines.md §1.6)。
  * 小数や文字列も落とす(`'3'` や `3.5` を締め日として受けない)。
  */
 function isIntegerInRange(value: unknown, min: number, max: number): value is number {
@@ -100,10 +100,10 @@ export function createSettingsRoutes(container: Container) {
   });
 
   /**
-   * 領収書の締め日設定(doc/14 §10)。領収書を取り消せる期限がここから導かれる。
+   * 領収書の締め日設定(doc/db/guidelines.md §10)。領収書を取り消せる期限がここから導かれる。
    *
    * 値域はDBのCHECK制約でも縛っているが、ここでも見る。23514で返すと利用者には
-   * 何が悪いのか分からないため(doc/14 §1.6の方針)。
+   * 何が悪いのか分からないため(doc/db/guidelines.md §1.6の方針)。
    */
   app.post('/admin/receipt-deadline', async (c) => {
     const session = await getAuthenticatedSession(c, container);

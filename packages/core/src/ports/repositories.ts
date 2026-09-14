@@ -16,7 +16,7 @@ import type { AccidentReportContent, DailyReportContent } from '../domain/report
 import type { TransactionScope } from './unitOfWork';
 
 // CouponDiscountKind(型)とCOUPON_DISCOUNT_KINDS(許可値の配列)は @katahimo/shared が正
-// (doc/14 §9。DB・core・APIルート・画面の全てが同じ配列を参照することで許可値のズレを
+// (doc/db/guidelines.md §9。DB・core・APIルート・画面の全てが同じ配列を参照することで許可値のズレを
 // 防ぐ、attendance.tsのMAX_VISITS/MAX_OFFICE_WORKと同じ方針)。ここでは型だけ再exportし、
 // このファイル内の他の型定義から従来通り `CouponDiscountKind` として参照できるようにする。
 export type {
@@ -43,7 +43,7 @@ export interface StaffRecord {
   /**
    * 氏名・メール・電話は平文で保持する(2026-08のデータベース構造レビューを踏まえ、要配慮性の
    * 低い通常の個人情報はフィールド暗号化の対象から外し、DB/バックアップの透過的暗号化(TDE)+
-   * Row Level Security+アクセス制御に委ねる方針へ変更。doc/09参照)。emailは大文字小文字・
+   * Row Level Security+アクセス制御に委ねる方針へ変更。doc/db/overview.md参照)。emailは大文字小文字・
    * 前後空白を無視できるよう、書き込み時に`normalizeEmailForIndex`で正規化した値を保存する
    * (ログイン時の検索キーとして使うため、表記ゆれで一致しないと困る)。
    */
@@ -276,7 +276,7 @@ export interface TenantRepositoryPort {
  *
  * 全項目を平文の文字列として保持する。個人情報はDB/バックアップの保存時暗号化(TDE相当)+
  * Row Level Security+アクセス制御で保護し、アプリ層のフィールド暗号化は掛けない
- * (2026-09の見直し。検索性と将来の分析・AI活用を優先。doc/09_データベース構造解説.md 1.3節参照)。
+ * (2026-09の見直し。検索性と将来の分析・AI活用を優先。doc/db/overview.md 1.3節参照)。
  */
 export interface CustomerProfileFields {
   externalSource: string | null;
@@ -298,7 +298,7 @@ export interface CustomerProfileFields {
   address2StartDate: string | null;
   address2EndDate: string | null;
   /**
-   * 緯度・経度(doc/14 §7)。DBの型はnumeric(9,6)(drizzle-orm上はstring)だが、
+   * 緯度・経度(doc/db/guidelines.md §7)。DBの型はnumeric(9,6)(drizzle-orm上はstring)だが、
    * ポート層ではnumberにしている。numeric(9,6)の値域(整数部最大3桁+小数第6位)は
    * 倍精度浮動小数点が誤差なく表現できる有効桁数(約15〜17桁)に余裕で収まるため、
    * 金額(整数)のような丸め誤差の心配が無く、呼び出し側(usecase・API・画面)での
@@ -316,7 +316,7 @@ export interface CustomerProfileFields {
   gender: string | null;
   ageBracket: string | null;
   /**
-   * 世帯代表者の生年月日('YYYY-MM-DD')。doc/14 §6。誕生月クーポンの判定に使う。
+   * 世帯代表者の生年月日('YYYY-MM-DD')。doc/db/guidelines.md §6。誕生月クーポンの判定に使う。
    * 解析できない表記はnullのままにする(dobRawにだけ残す)。
    */
   dobDate: string | null;
@@ -374,7 +374,7 @@ export interface FamilyMemberRecord {
   tenantId: string;
   customerId: string;
   name: string;
-  /** 生年月日(parseDateOnlyで解析できた場合のみ。'YYYY-MM-DD')。doc/14 §6。 */
+  /** 生年月日(parseDateOnlyで解析できた場合のみ。'YYYY-MM-DD')。doc/db/guidelines.md §6。 */
   dobDate: string | null;
   /** 生年月日の元表記('YYYY/M/D'。normalizeDateStrで正規化済み)。dobDateの解析成否によらず
    * 常に保持する(未取得ならnull)。 */
@@ -405,7 +405,7 @@ export interface FamilyMemberRepositoryPort {
 
 /**
  * 勤怠(出勤簿)1日分。rowDataは @katahimo/shared の attendanceRowDataSchema が定める
- * 永続形式(訪問・事務作業の配列 + 日次の距離/件数/備考。doc/14 §2)をそのままJSON(jsonb列)で
+ * 永続形式(訪問・事務作業の配列 + 日次の距離/件数/備考。doc/db/guidelines.md §2)をそのままJSON(jsonb列)で
  * 持つ。労働時間・残業・距離集計等の派生値は保存しない(常にrowDataから都度計算する。
  * packages/db/src/schema/attendanceDays.ts参照。計算自体は列記号形式(AttendanceColumnRow)で
  * 行うため、呼び出し側でtoColumnRow()を通す)。
@@ -490,7 +490,7 @@ export interface DailyReportRecord {
   riskRating: number | null;
   esRating: number | null;
   /**
-   * 開始/終了時刻(doc/14 §6)。未入力はnull。occurredAtとの関係は
+   * 開始/終了時刻(doc/db/guidelines.md §6)。未入力はnull。occurredAtとの関係は
    * packages/db/src/schema/dailyReports.tsのヘッダーコメント参照。
    */
   startedAt: Date | null;
@@ -535,7 +535,7 @@ export interface DailyReportRepositoryPort {
 }
 
 /**
- * 割引クーポンの種別マスタ1件(doc/14 §9)。回数券(枚数を発行して減らしていくもの)は
+ * 割引クーポンの種別マスタ1件(doc/db/guidelines.md §9)。回数券(枚数を発行して減らしていくもの)は
  * 運用に無いことを確認済みのため残枚数を持たない(packages/db/src/schema/coupons.ts参照)。
  */
 export interface CouponRecord {
@@ -599,7 +599,7 @@ export interface CouponRepositoryPort {
 }
 
 /**
- * 日報1件への割引クーポン適用記録1件(doc/14 §9)。discountKind/discountAmountYen/
+ * 日報1件への割引クーポン適用記録1件(doc/db/guidelines.md §9)。discountKind/discountAmountYen/
  * discountPercent/usageLimitKindは、適用した瞬間のcouponsマスタの値を複製したスナップショット
  * (あとでマスタの割引額を書き換えても、ここは動かない。packages/db/src/schema/coupons.ts
  * のヘッダーコメント参照)。
@@ -671,7 +671,7 @@ export interface CouponRedemptionRepositoryPort {
 }
 
 /**
- * 顧客へのクーポン割当1件(doc/14 §9)。coupons.audience='assigned' のクーポンは、
+ * 顧客へのクーポン割当1件(doc/db/guidelines.md §9)。coupons.audience='assigned' のクーポンは、
  * ここに行がある顧客だけが使える。
  */
 export interface CustomerCouponRecord {
@@ -750,7 +750,7 @@ export interface AccidentReportRepositoryPort {
 
 /**
  * 領収書の請求区分。'customer_billable'=顧客に請求する、'company_expense'=会社が立て替える
- * (doc/14 §10)。DB(receipts_billing_type_check)と画面の両方でこの配列を使い回すことで、
+ * (doc/db/guidelines.md §10)。DB(receipts_billing_type_check)と画面の両方でこの配列を使い回すことで、
  * 許可値がズレることを防ぐ。
  */
 export const RECEIPT_BILLING_TYPES = ['customer_billable', 'company_expense'] as const;
@@ -773,22 +773,22 @@ export interface ReceiptRecord {
   handoffText: string | null;
   fileKey: string;
   contentType: string;
-  /** 請求区分(doc/14 §10)。 */
+  /** 請求区分(doc/db/guidelines.md §10)。 */
   billingType: ReceiptBillingType;
-  /** 取り消した時刻。nullなら有効(doc/14 §10)。取り消しても行は消さない。 */
+  /** 取り消した時刻。nullなら有効(doc/db/guidelines.md §10)。取り消しても行は消さない。 */
   cancelledAt: Date | null;
   /** 取り消しの理由(任意入力)。 */
   cancellationReason: string | null;
   /** 取り消したスタッフのID。 */
   cancelledByStaffId: string | null;
   /**
-   * ミラーワーカーが送信に取りかかった時刻(doc/14 §10)。nullならまだ誰も送ろうとしていない。
+   * ミラーワーカーが送信に取りかかった時刻(doc/db/guidelines.md §10)。nullならまだ誰も送ろうとしていない。
    * claimForMirror が立て、取り消し側はこれを見て「送信済みかもしれない」を判定する。
    */
   mirrorClaimedAt: Date | null;
   /**
    * 取り消せる最終日('YYYY-MM-DD'・JST)。登録時の締め日設定で決まり、以後動かさない
-   * (doc/14 §10)。この列が無い古い行はnull。
+   * (doc/db/guidelines.md §10)。この列が無い古い行はnull。
    */
   cancellableUntil: string | null;
   /**
@@ -817,11 +817,11 @@ export interface NewReceiptInput {
   handoffText: string | null;
   fileKey: string;
   contentType: string;
-  /** 請求区分(doc/14 §10)。customer_billableの場合customerIdがnullだとDB制約で拒否される。 */
+  /** 請求区分(doc/db/guidelines.md §10)。customer_billableの場合customerIdがnullだとDB制約で拒否される。 */
   billingType: ReceiptBillingType;
   /**
    * 取り消せる最終日('YYYY-MM-DD'・JST)。登録時の締め日設定から計算した値を保存する
-   * (doc/14 §10)。設定を読み直して毎回計算し直すと、締め日を変えた瞬間に登録済みの
+   * (doc/db/guidelines.md §10)。設定を読み直して毎回計算し直すと、締め日を変えた瞬間に登録済みの
    * 領収書の期限まで動いてしまうため、登録時の値をここに固定する。
    */
   cancellableUntil: string;
@@ -846,7 +846,7 @@ export interface ReceiptRepositoryPort {
    */
   listByStaffInPeriod(tenantId: string, staffId: string, from: Date, to: Date): Promise<ReceiptRecord[]>;
   /**
-   * 領収書を取り消す(論理削除。doc/14 §10)。行は消さず cancelled_at を立てる。
+   * 領収書を取り消す(論理削除。doc/db/guidelines.md §10)。行は消さず cancelled_at を立てる。
    * 存在しない/他テナントのIDならnullを返す。
    *
    * 金額・店舗名・顧客の紐付けを書き換えるメソッドは意図的に用意していない。会計の記録なので
@@ -858,7 +858,7 @@ export interface ReceiptRepositoryPort {
     input: { cancelledByStaffId: string; reason: string | null },
   ): Promise<ReceiptRecord | null>;
   /**
-   * ミラー送信の開始を宣言する(doc/14 §10)。`cancelled_at IS NULL` の行にだけ
+   * ミラー送信の開始を宣言する(doc/db/guidelines.md §10)。`cancelled_at IS NULL` の行にだけ
    * `mirror_claimed_at` を立て、立てられた行を返す。取り消し済みならnull。
    *
    * 【これが単なる「送る直前のcancelledAt確認」と違う理由】
@@ -884,7 +884,7 @@ export interface AppSettingsRecord {
   geminiOcrModel: string | null;
   gchatReportWebhookUrl: EncryptedField | null;
   gchatReceiptWebhookUrl: EncryptedField | null;
-  /** 会計の締め日(1〜28)。nullは月末(doc/14 §10)。 */
+  /** 会計の締め日(1〜28)。nullは月末(doc/db/guidelines.md §10)。 */
   receiptClosingDay: number | null;
   /** 領収書を取り消せる日数(暦日)。 */
   receiptCancellableDays: number;

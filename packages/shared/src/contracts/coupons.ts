@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { businessDateSchema, idSchema } from './common';
 
 /**
- * 割引クーポンの割引種別。'amount'=金額引き、'percent'=率引き(doc/14 §9)。
+ * 割引クーポンの割引種別。'amount'=金額引き、'percent'=率引き(doc/db/guidelines.md §9)。
  *
  * DB(coupons_discount_kind_check/coupon_redemptions_discount_kind_check)・core(usecases/coupons.ts)・
  * web(クーポン管理画面)の全てがこの配列を参照することで、許可値がズレることを防ぐ
@@ -17,7 +17,7 @@ export type CouponDiscountKind = z.infer<typeof couponDiscountKindSchema>;
  * 割り当てた顧客だけが使える。
  *
  * 「この顧客にだけ配ったクーポン」を表すのに、クーポン行を顧客ごとに複製しなくて済むよう
- * 割当を別テーブルに分けている(doc/14 §9)。
+ * 割当を別テーブルに分けている(doc/db/guidelines.md §9)。
  */
 export const couponAudienceSchema = z.enum(['all', 'assigned']);
 export const COUPON_AUDIENCES = couponAudienceSchema.options;
@@ -28,7 +28,7 @@ export type CouponAudience = z.infer<typeof couponAudienceSchema>;
  * 'birthday_month'=対象者の誕生月に当たる訪問にだけ使える。
  *
  * 条件式をJSONで持つ汎用のルールエンジンにしないのは、DBが中身を検証できない列を
- * 増やすだけになるため(doc/14 §2と同じ理由)。条件が増えたらこの enum を増やす。
+ * 増やすだけになるため(doc/db/guidelines.md §2と同じ理由)。条件が増えたらこの enum を増やす。
  */
 export const couponEligibilityKindSchema = z.enum(['manual', 'birthday_month']);
 export const COUPON_ELIGIBILITY_KINDS = couponEligibilityKindSchema.options;
@@ -49,7 +49,7 @@ export type CouponBirthdaySubject = z.infer<typeof couponBirthdaySubjectSchema>;
  * (誕生月割引の既定)。
  *
  * 上限はusecaseだけでなくDB側の部分一意索引でも守る。請求金額に直結するため、
- * 二重送信や同時リクエストでもすり抜けないようにする(doc/14 §8.4)。
+ * 二重送信や同時リクエストでもすり抜けないようにする(doc/db/guidelines.md §8.4)。
  */
 export const couponUsageLimitKindSchema = z.enum([
   'unlimited',
@@ -209,7 +209,7 @@ export const couponUpdateRequestSchema = z.object({
 export type CouponUpdateRequest = z.infer<typeof couponUpdateRequestSchema>;
 
 /**
- * 日報に適用するクーポンIDの配列(doc/14 §9)。POST /api/reports/daily のリクエストに
+ * 日報に適用するクーポンIDの配列(doc/db/guidelines.md §9)。POST /api/reports/daily のリクエストに
  * 含める。空配列は「クーポン無し」。
  */
 export const couponIdsSchema = z.array(idSchema);

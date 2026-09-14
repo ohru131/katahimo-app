@@ -115,7 +115,7 @@ function AddressField({
   lng: number | null | undefined;
 }) {
   if (!value) return null;
-  // doc/14 §7でlat/lngが数値になった。数値として分かっていれば住所文字列より優先して
+  // doc/db/guidelines.md §7でlat/lngが数値になった。数値として分かっていれば住所文字列より優先して
   // クエリに使う(GAS版と同じ、住所文字列よりも正確なため)。
   const mapQuery = lat != null && lng != null ? `${lat},${lng}` : value;
   const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;

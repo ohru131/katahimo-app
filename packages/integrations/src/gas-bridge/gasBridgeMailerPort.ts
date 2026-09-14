@@ -5,7 +5,7 @@ import { GasBridgeClient } from './gasBridgeClient';
 /**
  * メール送信をGAS版Web App(Bridge.js)経由で行う実装。
  *
- * doc/10「新規GCP APIより既存GASブリッジを優先」の方針どおり、SendGrid等の新規契約や
+ * doc/proposal/gas-bridge.md「新規GCP APIより既存GASブリッジを優先」の方針どおり、SendGrid等の新規契約や
  * SMTPアカウントの用意をせず、GAS版が既に使っている `MailApp.sendEmail`
  * (Google Workspaceの無料枠)をそのまま使う。送信元アドレスもGAS版のときと変わらない。
  *

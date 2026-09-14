@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""doc/13_アーキテクチャ説明資料.pptx を生成する。
+"""doc/slides/architecture.pptx を生成する。
 
-doc/12(DB構造レビュー資料)の対になる、アプリ構成の説明資料。
-一次情報は packages/*/package.json、packages/core/src/ports/、doc/07・doc/10・doc/11。
+doc/slides/db-review.pptx(DB構造レビュー資料)の対になる、アプリ構成の説明資料。
+一次情報は packages/*/package.json、packages/core/src/ports/、doc/proposal/tech-stack.md・doc/proposal/gas-bridge.md・doc/slides/architecture.html。
 """
 import sys
 from pathlib import Path
@@ -18,7 +18,7 @@ from pptx_kit import (ACCENT, ACCENT_L, AMBER, AMBER_L, CARD, CARD2, CW, GREEN, 
                       chip_row, fill_text, hline, new_deck, note, rect, section_slide, slide,
                       table, text, title_slide, vline)
 
-OUT = Path(__file__).resolve().parents[2] / "doc" / "13_アーキテクチャ説明資料.pptx"
+OUT = Path(__file__).resolve().parents[2] / "doc" / "slides" / "architecture.pptx"
 prs = new_deck()
 PAGE = {"n": 0}
 
@@ -43,7 +43,7 @@ title_slide(
     "katahimo-app\nアーキテクチャ説明資料",
     "訪問保育(ベビーシッター法人)向け業務SaaS — TypeScript / 9パッケージ",
     "アプリ全体の構成 ・ 判断の理由 ・ いまできていないこと\n"
-    "データベース設計は doc/12_データベース構造レビュー資料.pptx を参照",
+    "データベース設計は doc/slides/db-review.pptx を参照",
 )
 
 # ══════════════════════════════════════════════════════════════
@@ -57,7 +57,7 @@ card(s, ML, 1.25, 6.0, 1.45, "この資料でお伝えしたいこと", accent=A
     {"t": [("実装済み / コードはあるが未検証 / 未着手", {"bold": True}), (" の区別", {})]},
 ], body_size=11.5)
 card(s, ML + 6.33, 1.25, 6.0, 1.45, "この資料で扱わないこと", accent=MUTED, items=[
-    {"t": "テーブル設計の詳細(doc/12 のデータベース構造レビュー資料が担当)"},
+    {"t": "テーブル設計の詳細(doc/slides/db-review.pptx のデータベース構造レビュー資料が担当)"},
     {"t": "画面のデザイン・操作手順(実物は公開デモで確認できます)"},
 ], body_size=11.5)
 
@@ -101,7 +101,7 @@ sec_("第 1 章", "全体像", "何を作っているのか、いま何が動い
 # 4. 何を、なぜ作り直しているか
 # ══════════════════════════════════════════════════════════════
 s = sl_("何を、なぜ作り直しているか", "背景と現在地",
-        source="doc/07_技術構成提案書.md / doc/10_GAS版連携の制約と方針.md / README「実装状況」")
+        source="doc/proposal/tech-stack.md / doc/proposal/gas-bridge.md / README「実装状況」")
 card(s, ML, 1.25, 4.0, 2.5, "現行:Google Apps Script 版", accent=MUTED, items=[
     {"t": "データはすべてスプレッドシート / Drive / カレンダー"},
     {"t": [("1法人・1Googleアカウント", {"bold": True}), ("に強く依存", {})]},
@@ -225,7 +225,7 @@ text(s, ML + 0.2, 6.44, CW - 0.4, 0.3,
 # 6. 技術スタック
 # ══════════════════════════════════════════════════════════════
 s = sl_("採用した技術と、その理由", "提案書から変更した点も併記",
-        source="packages/*/package.json / doc/07 第2〜3章")
+        source="packages/*/package.json / doc/proposal/tech-stack.md 第2〜3章")
 rows = [
     ["言語", "TypeScript 5.7 / Node.js 22", "画面もサーバーも同じ言語。型定義を共有できる", ""],
     ["データベース", "PostgreSQL", "行レベルセキュリティ・排他制約など、必要な制約をDB自身で強制できる", ""],
@@ -472,7 +472,7 @@ box(s, ML + 9.3, 1.3, 3.03, 0.8, "GAS Web App 1本\n→ スプレッドシート
 for x in (ML + 2.65, ML + 5.75, ML + 8.85):
     arrow(s, (x, 1.7), (x + 0.4, 1.7), color=MUTED, width=1.8)
 
-card(s, ML, 2.35, 6.0, 2.08, "この方針にした理由(doc/10)", accent=GREEN, items=[
+card(s, ML, 2.35, 6.0, 2.08, "この方針にした理由(doc/proposal/gas-bridge.md)", accent=GREEN, items=[
     {"t": "新規のGoogle API連携より、既存のGASブリッジを優先した。①新規の課金・認証情報の準備を避ける "
           "②GAS側で実証済みのロジック(イベント分類・タグ解析・スタッフ名の照合)を再実装しない"},
     {"t": "スプレッドシートを止めるときは、ミラーのアダプタを外すだけで済む(業務ロジックは無変更)"},
@@ -586,7 +586,7 @@ card(s, ML, 2.65, 6.0, 1.85, "設計上の判断", accent=GREEN, items=[
 card(s, ML + 6.33, 2.65, 6.0, 1.85, "APIキーと通知先の持ち方", accent=ACCENT, items=[
     {"t": "APIキーとGoogle ChatのWebhook URLは、法人ごとの管理者設定として保存する"},
     {"t": [("この3項目だけはアプリ側で暗号化している", {"bold": True}),
-           ("(業務データは平文。詳細は doc/12 P13)", {})]},
+           ("(業務データは平文。詳細は doc/slides/db-review.pptx P13)", {})]},
     {"t": "未設定の場合は環境変数の既定値にフォールバックする"},
 ], body_size=10.5)
 text(s, ML, 4.65, CW, 0.3, "通知(Google Chat)の位置づけ", size=12.5, color=INK, bold=True)
@@ -705,7 +705,7 @@ for i, nm in enumerate(ci):
 # 19. 主張と実装の対応
 # ══════════════════════════════════════════════════════════════
 s = sl_("ドキュメントの記述と、実装の実態", "誤解を招きやすい点を先にお伝えします",
-        source="README「実装状況」/ doc/07 / packages/db/src/schema")
+        source="README「実装状況」/ doc/proposal/tech-stack.md / packages/db/src/schema")
 rows = [
     ["PostgreSQL + RLS のマルチテナント", "実装済み", "34テーブル、複合外部キー、FORCE。静的検査と実DB検証をCIで実行"],
     ["Outbox によるスプレッドシートへの書き戻し", "実装済み",
@@ -739,7 +739,7 @@ note(s, ML, 6.0, CW, 0.9, "このページがいちばん大事かもしれま�
 # 20. 判断事項
 # ══════════════════════════════════════════════════════════════
 s = sl_("ご判断いただきたいこと", "優先度順。いずれも「直せない」ものではなく「今やるか、いつやるか」",
-        source="データベース設計の論点は doc/12_データベース構造レビュー資料.pptx 第3〜4章")
+        source="データベース設計の論点は doc/slides/db-review.pptx 第3〜4章")
 items = [
     ("①", "GASブリッジ1本への依存", RED,
      "メール・地図・予定・スプレッドシートの4系統を1つのGAS Web Appに集約。SLAは無く、"
@@ -797,15 +797,13 @@ card(s, ML + 6.33, 1.28, 6.0, 4.6, "判断をいただきたいもの", accent=V
     {"t": "テストの薄い層と、運用の受け皿をどこまで作るか(④⑤)"},
     {"t": [("データベース設計の論点は別資料", {"bold": True}),
            (":customers 39列の肥大化、業務データを平文にした前提、予約の二重取り防止、"
-            "廃棄手順、監査の時期(doc/12 第3〜4章)", {})]},
+            "廃棄手順、監査の時期(doc/slides/db-review.pptx 第3〜4章)", {})]},
     {"t": [("いちばん知りたいこと", {"bold": True}),
            (":自分では気づきようがない構造的な問題が、他にあるかどうか", {})]},
 ], body_size=11, line=1.32, gap=7)
 note(s, ML, 6.05, CW, 0.85, "参照",
-     "doc/07 技術構成提案書 / doc/09 データベース構造解説 / doc/10 GAS版連携の制約と方針 / "
-     "doc/11 アーキテクチャ説明スライド(HTML) / doc/12 データベース構造レビュー資料(PowerPoint) / "
-     "doc/14 設計の指針と落とし穴 / doc/15 追加ドメインの設計とレビュー論点 / "
-     "doc/16 データベース構造リファレンス(自動生成) / doc/17 データベース設計 業務確認用資料(PowerPoint)  —  "
+     "資料の一覧と読む順は doc/README.md。設計の背景は doc/proposal/、データベースの詳細は doc/db/、"
+     "説明用スライドは doc/slides/(本資料と、データベース構造レビュー・業務確認用の3本)。  —  "
      "公開デモ:https://ohru131.github.io/katahimo-app/",
      accent=ACCENT, fill=ACCENT_L)
 

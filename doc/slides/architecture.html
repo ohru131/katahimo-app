@@ -136,7 +136,7 @@
       </div>
     </div>
   </div>
-  <div class="foot"><span>doc/07 技術構成提案書 / doc/10 開発メモ</span><span>katahimo-app</span></div>
+  <div class="foot"><span>doc/proposal/tech-stack.md 技術構成提案書 / doc/proposal/gas-bridge.md 開発メモ</span><span>katahimo-app</span></div>
   <div class="notes">
     重要なのは右上のカード。「実装済み」と「コードはあるが未検証」と「未着手」を最初に分けておきます。特に提案書で語っている予約・請求・カルテは、スキーマだけ先に用意してあり、実装・API・画面はこれからです。今日見ていただくのは「その土台となる基盤部分」です。
   </div>
@@ -448,7 +448,7 @@
       <div><b class="muted">例外は3つだけ</b><br><code>tenants</code>=RLS対象外 / <code>receipts.customer_id</code>=nullable / <code>sessions.token_hash</code>=グローバル一意</div>
     </div>
   </div>
-  <div class="foot"><span>packages/db/src/schema/*.ts / drizzle/0000_baseline_schema.sql / doc/09 2章 ER図</span><span>katahimo-app</span></div>
+  <div class="foot"><span>packages/db/src/schema/*.ts / drizzle/0000_baseline_schema.sql / doc/db/overview.md 2章 ER図</span><span>katahimo-app</span></div>
   <div class="notes">
     テーブルは34本です。左から読みます。すべてが tenants にぶら下がり、その下に「認証まわり(staff系)」と「業務データ(customers系)」の2系統がある。矢印の色が参照元です。紫が staff を参照するもの、緑が customers を参照するもの。日報・事故報告・領収書は両方を参照します。例外は3つだけで、tenants だけが RLS の対象外、領収書の顧客だけが nullable(経費のみの領収書があるため)、セッションのトークンハッシュだけがテナントをまたいで一意です。暗号化列が残っているのは app_settings だけです(2026-09 の見直し。8枚目で話します)。提案書にある予約・請求・カルテは、まだこの図に存在しません。
   </div>
@@ -482,7 +482,7 @@
     </div>
     <div>
       <ul>
-        <li>テナント別スキーマ/DBは不採用: 「法人ごとにスキーマが分岐すると保守が破綻しやすい」(doc/07)</li>
+        <li>テナント別スキーマ/DBは不採用: 「法人ごとにスキーマが分岐すると保守が破綻しやすい」(doc/proposal/tech-stack.md)</li>
         <li><b>FKはRLSをバイパスする</b>(PG仕様)→ 参照は <code>(tenant_id, id)</code> の複合FKに統一。参照先に <code>UNIQUE(tenant_id, id)</code></li>
         <li>アプリ側(withTenant)と DB側(RLS)の<b>二重防御</b>。片方が抜けても他方が止める</li>
       </ul>
@@ -553,7 +553,7 @@
       </div>
     </div>
   </div>
-  <div class="foot"><span>packages/integrations/src/local-crypto, local-kms / doc/09 3章</span><span>katahimo-app</span></div>
+  <div class="foot"><span>packages/integrations/src/local-crypto, local-kms / doc/db/overview.md 3章</span><span>katahimo-app</span></div>
   <div class="notes">
     アプリ層で暗号化するのは管理者設定の資格情報 3 列だけで、顧客・日報などの業務データは平文列です。理由は 3 つ、SQL での検索性、日報データの AI 活用、そして秘密保持契約(案)第6条が求めるのが「アクセス制限・通信/保存時の暗号化・パスワード管理」であってフィールド暗号化ではないこと。保存時の暗号化は本番配備先(Cloud SQL)の既定機能に委ねる想定で、RLS と IAM を組み合わせます。ただし本番(Cloud Run + Cloud SQL)は未配備で、いま動いているのはローカル開発(Docker の PostgreSQL、TDE なし)と公開デモ(ブラウザ内 PGlite、鍵は公開固定値)だけなので、保存時暗号化・TLS・IAM は配備時に満たすべき前提条件として扱っています。第7条の返還・廃棄はテナント単位の DELETE とバックアップ保持期間で担保する想定で、revoke による暗号学的削除が効くのは資格情報だけです。封筒暗号化の形は本番相当ですが、KEKがまだ環境変数です。「インターフェースを変えずにCloud KMSへ差し替える」設計なので構造は問題ないと考えていますが、現時点では本番相当の鍵管理が存在しない、とはっきり言っておきます。DEKは世代を並存させるので、鍵を差し替えても既存の暗号文は記録された世代の鍵でそのまま読めます。ただし再暗号化バッチが無いため、古い世代の鍵はまだ捨てられません。
   </div>
@@ -652,7 +652,7 @@
       </div>
     </div>
   </div>
-  <div class="foot"><span>doc/09 1.3節 / 4.1節 ・ packages/db/src/schema/{customers,dailyReports,attendanceDays,receipts}.ts</span><span>katahimo-app</span></div>
+  <div class="foot"><span>doc/db/overview.md 1.3節 / 4.1節 ・ packages/db/src/schema/{customers,dailyReports,attendanceDays,receipts}.ts</span><span>katahimo-app</span></div>
   <div class="notes">
     アプリ層での暗号化は資格情報だけに絞っています。理由は3つ。SQLでの検索性、日報データのAI活用、そして秘密保持契約(案)第6条が求めるのが「アクセス制限・通信/保存時の暗号化・パスワード管理」であってフィールド暗号化ではないこと。左の表で色が付いている6項目が、前回まで暗号化列だったところです。右上が今日いちばん見ていただきたい判断で、日報と事故報告の本文をJSON1本の暗号文から項目ごとの平文列に開きました。勤怠だけはJSONのままです。引き受けたリスクは正直に書いてあります。DBに届く経路があれば業務データは読める、保存時暗号化はCloud SQL頼み、そしてその本番はまだ配備していません。
   </div>
@@ -660,7 +660,7 @@
 
 <!-- 11 db review points -->
 <section class="slide mid">
-  <h2>DB設計でご意見をいただきたい点 <small>doc/09 5章</small></h2>
+  <h2>DB設計でご意見をいただきたい点 <small>doc/db/overview.md 5章</small></h2>
   <div class="cols">
     <div>
       <div class="card q"><h3 class="warn">1. 複合PK/FK + RLS の二重防御</h3>
@@ -692,7 +692,7 @@
     </div>
   </div>
   <div class="card" style="flex:0 0 auto;margin-top:.7em"><p style="margin:0"><b class="ok">特に伺いたいのは 1・4・6</b>。1は自分では気づきようがない領域、4は契約が求める水準を満たせているかの確認、6は業務データを平文にした以上その前提条件が実際に満たせるかで設計の是非が決まるため。2・3・5は要件と時期次第で答えが変わるものとして挙げている。</p></div>
-  <div class="foot"><span>いずれも doc/09「レビュー観点」に対応。詳細はドキュメント側に記載</span><span>katahimo-app</span></div>
+  <div class="foot"><span>いずれも doc/db/overview.md「レビュー観点」に対応。詳細はドキュメント側に記載</span><span>katahimo-app</span></div>
   <div class="notes">
     DBに絞った論点が6つ。優先度が高いのは1・4・6です。1番は「二重防御に穴が無いか」で、知識のある方に見ていただかないと自分では気づけない部分。4番は、業務データを平文にした以上、契約が求める水準を運用側でどう満たすかという話。6番は本番配備時のチェックリストで、いまは前提条件として書いてあるだけなので、この一覧で足りているかを見ていただきたい。2・3・5は要件と時期次第で答えが変わるものとして挙げています。
   </div>
@@ -831,7 +831,7 @@
     </div>
     <div>
       <ul>
-        <li><b>方針(doc/10)</b>: 新規GCP API より既存GASブリッジを優先。理由は ①新規課金・認証情報の準備を避ける ②GAS側の実証済みロジック(イベント分類・タグ解析・スタッフ名マッチ)を再実装しない</li>
+        <li><b>方針(doc/proposal/gas-bridge.md)</b>: 新規GCP API より既存GASブリッジを優先。理由は ①新規課金・認証情報の準備を避ける ②GAS側の実証済みロジック(イベント分類・タグ解析・スタッフ名マッチ)を再実装しない</li>
         <li>Sheets を止めるときは「ミラーのアダプタを止めるだけ」でドメインは無変更</li>
         <li>多重ワーカー安全(<code>SKIP LOCKED</code>)。<code>processing</code> のまま5分放置された行は再びclaim対象になる(ワーカーが落ちた場合の回収)</li>
         <li>失敗は終端にしない。5秒から倍々・上限1時間で再試行し、8回で <code>failed</code>。ワーカーはその件数を error ログに出す</li>
@@ -899,7 +899,7 @@
         <ul style="margin:0">
           <li>PGlite は 1.0 未満。書き出し完了を待つために<b>内部FSを直接呼んでいる</b>ため、バージョンは <code>0.2.17</code> に完全固定してある(それでも公開APIの外に依存していることに変わりはない)</li>
           <li>単一接続のためトランザクションを直列化しているが、<b>tx外の単発クエリは対象外</b></li>
-          <li>多タブ排他は未実装(doc/07 は対策を挙げているが、画面上の案内も無い)</li>
+          <li>多タブ排他は未実装(doc/proposal/tech-stack.md は対策を挙げているが、画面上の案内も無い)</li>
         </ul>
       </div>
     </div>
@@ -964,7 +964,7 @@
       <tr><td>公開デモ</td><td class="ok">稼働中</td><td>本番と同一のスキーマ / usecases / ルートがブラウザ内で動く</td></tr>
     </tbody>
   </table>
-  <div class="foot"><span>README 「フェーズ状況」 / doc/07 / packages/db/src/schema</span><span>katahimo-app</span></div>
+  <div class="foot"><span>README 「フェーズ状況」 / doc/proposal/tech-stack.md / packages/db/src/schema</span><span>katahimo-app</span></div>
   <div class="notes">
     このスライドが一番大事かもしれません。提案書を読むと立派に見えますが、赤の行は着手すらしていません。今日判断していただきたいのは「この土台の上に、赤を積んでいってよいか」です。土台に構造的な問題があるなら、赤を積む前に直したい。
   </div>
@@ -1026,7 +1026,7 @@
       </ul>
     </div>
   </div>
-  <p class="muted center" style="margin-top:1.2em">デモ: <span class="mono">https://ohru131.github.io/katahimo-app/</span>(admin@demo.example.com / demo1234)<br>詳細: doc/07 技術構成提案書 ・ doc/09 データベース構造解説 ・ doc/10 開発メモ</p>
+  <p class="muted center" style="margin-top:1.2em">デモ: <span class="mono">https://ohru131.github.io/katahimo-app/</span>(admin@demo.example.com / demo1234)<br>詳細: doc/proposal/tech-stack.md 技術構成提案書 ・ doc/db/overview.md データベース構造解説 ・ doc/proposal/gas-bridge.md 開発メモ</p>
   <div class="notes">
     左は自信を持って言えること、右は判断してほしいこと。質疑では特に、GASブリッジの依存を許容するかと、予約・請求をいつ土台に入れるか、の2点についてご意見をいただければと思います。
   </div>

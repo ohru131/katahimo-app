@@ -85,7 +85,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
   const [receiptWebhook, setReceiptWebhook] = useState('');
   const [showReportWebhook, setShowReportWebhook] = useState(false);
   const [showReceiptWebhook, setShowReceiptWebhook] = useState(false);
-  // 締め日まわり(doc/14 §10)。締め日は空文字が「月末」を表す。
+  // 締め日まわり(doc/db/guidelines.md §10)。締め日は空文字が「月末」を表す。
   const [closingDay, setClosingDay] = useState('');
   const [cancellableDays, setCancellableDays] = useState('2');
 
@@ -386,7 +386,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
                     </p>
                   </div>
 
-                  {/* 締め日まわり(doc/14 §10)。取り消せる期限がこの2つから決まるので、
+                  {/* 締め日まわり(doc/db/guidelines.md §10)。取り消せる期限がこの2つから決まるので、
                       意味が分かるよう1箇所にまとめて出す。 */}
                   <div className="mt-4 pt-4 border-t border-gray-100">
                     <p className="text-xs font-bold text-gray-600 mb-2">領収書の締め日</p>

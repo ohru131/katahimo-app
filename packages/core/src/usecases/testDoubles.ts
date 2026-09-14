@@ -594,7 +594,7 @@ export class FakeAppSettingsRepository implements AppSettingsRepositoryPort {
       geminiOcrModel: null,
       gchatReportWebhookUrl: null,
       gchatReceiptWebhookUrl: null,
-      // DBのDEFAULTと同じ既定値(doc/14 §10)。
+      // DBのDEFAULTと同じ既定値(doc/db/guidelines.md §10)。
       receiptClosingDay: null,
       receiptCancellableDays: 2,
     };
@@ -738,7 +738,7 @@ export class FakeReceiptRepository implements ReceiptRepositoryPort, FakeTransac
    */
   async create(input: NewReceiptInput): Promise<ReceiptRecord> {
     if (input.dedupeKey !== null) {
-      // 取り消し済みの行は receipts_tenant_dedupe_key_uidx の対象外(doc/14 §10)。
+      // 取り消し済みの行は receipts_tenant_dedupe_key_uidx の対象外(doc/db/guidelines.md §10)。
       // 取り消して登録し直す訂正が、重複判定に引っかからないようにするため。
       const conflict = this.rows.some(
         (r) =>

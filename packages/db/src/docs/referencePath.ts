@@ -8,6 +8,4 @@ import { fileURLToPath } from 'node:url';
  * URL.pathname はWindowsで先頭に余分な "/" が付き崩れるため fileURLToPath を使う
  * (src/migrate.ts と同じ理由)。
  */
-export const REFERENCE_PATH = fileURLToPath(
-  new URL('../../../../doc/16_データベース構造リファレンス.md', import.meta.url),
-);
+export const REFERENCE_PATH = fileURLToPath(new URL('../../../../doc/db/reference.md', import.meta.url));

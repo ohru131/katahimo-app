@@ -58,7 +58,7 @@ export interface CreateCustomerInput {
   address2EndDate?: string;
   /**
    * 緯度・経度の元表記("38.26, 140.87"のような1本の文字列。RESERVA CSVの「緯度・経度」列と
-   * 同じ形)。数値2列への分解(doc/14 §7)はbuildCustomerRecordFieldsがparseLatLngで行う
+   * 同じ形)。数値2列への分解(doc/db/guidelines.md §7)はbuildCustomerRecordFieldsがparseLatLngで行う
    * ため、呼び出し側(ingestion/デモ投入等)は従来通りCSVの生文字列をそのまま渡せばよい。
    */
   latLng?: string;
@@ -69,7 +69,7 @@ export interface CreateCustomerInput {
   gender?: string;
   ageBracket?: string;
   /**
-   * 世帯代表者の生年月日(自由記述の"YYYY/M/D"等)。日付型への分解(doc/14 §6)は
+   * 世帯代表者の生年月日(自由記述の"YYYY/M/D"等)。日付型への分解(doc/db/guidelines.md §6)は
    * buildCustomerRecordFieldsがparseDateOnlyで行うため、呼び出し側は生の表記を渡せばよい。
    * RESERVA CSVには生年月日の列が無いため、取り込みでは渡されない。
    */
@@ -84,12 +84,12 @@ function buildCustomerRecordFields(tenantId: string, input: CreateCustomerInput)
   const familyName = input.familyName ?? splitJapaneseFullName(input.name).familyName;
   const givenName = input.givenName ?? splitJapaneseFullName(input.name).givenName;
 
-  // doc/14 §7: latLng(元表記の1本の文字列)はlatLngRawへそのまま残しつつ、
+  // doc/db/guidelines.md §7: latLng(元表記の1本の文字列)はlatLngRawへそのまま残しつつ、
   // parseLatLngで分解できた場合だけlat/lngに数値を入れる(解析できない表記はnull)。
   const latLngRaw = nullIfEmpty(input.latLng);
   const { lat, lng } = latLngRaw ? parseLatLng(latLngRaw) : { lat: null, lng: null };
 
-  // doc/14 §6: 世帯構成員(buildFamilyMemberInputs)と同じ扱い。元表記は必ず残し、
+  // doc/db/guidelines.md §6: 世帯構成員(buildFamilyMemberInputs)と同じ扱い。元表記は必ず残し、
   // parseDateOnlyで解析できた場合だけ日付型のdobDateに入れる。
   const dobRaw = nullIfEmpty(input.dob);
 
@@ -145,7 +145,7 @@ function buildFamilyMemberInputs(
   members: FamilyMemberInput[],
 ): NewFamilyMemberInput[] {
   return members.map((m) => {
-    // doc/14 §6: dob(自由記述由来の"YYYY/M/D"等)はdobRawへそのまま残しつつ、
+    // doc/db/guidelines.md §6: dob(自由記述由来の"YYYY/M/D"等)はdobRawへそのまま残しつつ、
     // parseDateOnlyで解析できた場合だけdobDateに'YYYY-MM-DD'を入れる。
     const dobRaw = nullIfEmpty(m.dob);
     return {
@@ -180,7 +180,7 @@ export async function createCustomer(
 }
 
 /**
- * 顧客の生年月日だけを更新する(誕生月クーポンの判定に使う。doc/14 §9)。
+ * 顧客の生年月日だけを更新する(誕生月クーポンの判定に使う。doc/db/guidelines.md §9)。
  *
  * updateCustomer を使わないのは、あちらが buildCustomerRecordFields で「全項目を持つ record」を
  * 作ってパッチにするため。氏名と生年月日だけを渡すと、他の項目(メール・電話・住所・メモ等)が
@@ -203,7 +203,7 @@ export async function updateCustomerBirthday(
   const existing = await deps.customers.findById(tenantId, customerId);
   if (!existing) return null;
 
-  // doc/14 §6: 元表記は必ず残し、parseDateOnlyで解析できた場合だけ日付型のdobDateに入れる。
+  // doc/db/guidelines.md §6: 元表記は必ず残し、parseDateOnlyで解析できた場合だけ日付型のdobDateに入れる。
   const dobRaw = nullIfEmpty(dob);
   return deps.customers.update(tenantId, customerId, {
     dobDate: dobRaw ? parseDateOnly(dobRaw) : null,

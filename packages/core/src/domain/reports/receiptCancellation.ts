@@ -1,7 +1,7 @@
 import { addDaysToJstDateKey, jstDateKeyWithDayOfMonth, jstEndOfMonthDateKey } from './jstTime';
 
 /**
- * 実費報告(領収書)の取り消し期限(doc/14 §10)。
+ * 実費報告(領収書)の取り消し期限(doc/db/guidelines.md §10)。
  *
  * 期限の意味は**会計上のもの**で、「締めたあとに記録を動かさない」ためにある。
  * スプレッドシートへのミラー送信のスケジュールとは切り離してある(送信は登録と同時に始まる)。

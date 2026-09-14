@@ -294,7 +294,7 @@ export interface RegisterStaffInput {
 
 /**
  * スタッフを新規登録する(現状はシード/管理者による追加を想定。セルフサインアップの
- * 導線はまだない)。氏名・メールは平文で保存する(doc/09参照。emailはログイン時の検索キーに
+ * 導線はまだない)。氏名・メールは平文で保存する(doc/db/overview.md参照。emailはログイン時の検索キーに
  * なるため、表記ゆれで一致しなくならないよう正規化して保存する)。
  */
 export async function registerStaff(deps: AuthDeps, input: RegisterStaffInput) {

@@ -38,7 +38,7 @@ export interface ReceiptDeps {
   mirror: MirrorPort;
   /** 領収書レコードの作成とミラー要求のenqueueを、1つのトランザクションにまとめるために使う。 */
   unitOfWork: UnitOfWorkPort;
-  /** 締め日設定(取り消し期限)の読み出しに使う(doc/14 §10)。 */
+  /** 締め日設定(取り消し期限)の読み出しに使う(doc/db/guidelines.md §10)。 */
   appSettings: AppSettingsRepositoryPort;
 }
 
@@ -50,7 +50,7 @@ export interface ReceiptImageInput {
   /** OCRで取得した領収書日時('yyyy/MM/dd HH:mm'等)。無ければfallbackTimestampを使う。 */
   receiptDate?: string | null;
   /**
-   * 請求区分(doc/14 §10)。領収書1枚ごとに選べる(同じ訪問でも顧客請求分/会社立替分が
+   * 請求区分(doc/db/guidelines.md §10)。領収書1枚ごとに選べる(同じ訪問でも顧客請求分/会社立替分が
    * 混在しうるため)。未指定ならcompany_expense(取りこぼしが「うっかり顧客に請求してしまう」
    * 向きに転ばないようにするための既定値。receipts.tsのコメントと同じ理由)。
    */
@@ -133,7 +133,7 @@ export async function uploadReceipts(
   }
 
   // 締め日設定は1回だけ読む。画像ごとに読み直すと、同じバッチの中で設定変更をまたいだ場合に
-  // 取り消し期限が枚によって変わる(doc/14 §10)。
+  // 取り消し期限が枚によって変わる(doc/db/guidelines.md §10)。
   const policy = await resolveReceiptDeadlinePolicy(deps, tenantId);
 
   // DB制約(receipts_billable_requires_customer)に落として23514で失敗させるより先に、
@@ -187,7 +187,7 @@ export async function uploadReceipts(
 
     // 金額・店舗名・申し送りは正規化済みの平文で保存する(未入力はnull)。
     // amountYen/amountRawの組み立てはdedupeKey(上でp.dedupeKeyとして計算済み)とは独立に行う
-    // (doc/14 §1。amountYenをdedupeKeyの材料に使い替えてはいけない)。
+    // (doc/db/guidelines.md §1。amountYenをdedupeKeyの材料に使い替えてはいけない)。
     const { amountYen, amountRaw } = computeReceiptAmount(p.img.amount);
     const storeName = p.img.storeName ? normalizeText(p.img.storeName) || null : null;
     const handoffText = input.handoffText?.trim() || null;
@@ -216,7 +216,7 @@ export async function uploadReceipts(
             fileKey,
             contentType: decoded.contentType,
             billingType,
-            // 登録時の締め日設定で確定させ、以後は設定を変えても動かさない(doc/14 §10)。
+            // 登録時の締め日設定で確定させ、以後は設定を変えても動かさない(doc/db/guidelines.md §10)。
             cancellableUntil,
           },
           scope,
@@ -227,7 +227,7 @@ export async function uploadReceipts(
             kind: 'receipt',
             targetId: receiptRecord.id,
             idempotencyKey: buildMirrorIdempotencyKey('receipt', receiptRecord.id, receiptRecord.createdAt),
-            // 送信は遅らせない(doc/14 §10)。スプレッドシートは移行期の写しでしかなく、
+            // 送信は遅らせない(doc/db/guidelines.md §10)。スプレッドシートは移行期の写しでしかなく、
             // 遅らせると「まだ移行が済んでいない人が見ている間だけシートが空」という、
             // ミラーの目的と正反対の状態になる。取り消し済みを送らないための守りは
             // claimForMirror(cancelled_at IS NULL の行にだけ送信を宣言するUPDATE)が担う。
@@ -286,7 +286,7 @@ export async function uploadReceipts(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 登録済み領収書の一覧と取り消し(doc/14 §10)
+// 登録済み領収書の一覧と取り消し(doc/db/guidelines.md §10)
 //
 // 領収書は登録するだけで見返す画面が無く、金額の読み違い・顧客の紐付け間違いに気付いても
 // 直す手段が無かった。
@@ -359,7 +359,7 @@ export interface ReceiptListView {
    *
    * 送信は登録と同時に始まるが、ワーカーが拾うまでの間と、送信に失敗して再試行待ち・打ち切りに
    * なっている分は「登録したのにまだ外部に出ていない」状態になる。締めのときに何件残っているかが
-   * 分からないと、送信が止まっていることに気付けない(doc/14 §10)。
+   * 分からないと、送信が止まっていることに気付けない(doc/db/guidelines.md §10)。
    */
   pendingMirrorCount: number;
   /** 送信に失敗して止まっている件数。0でなければ管理者の対応が要る。 */
@@ -367,7 +367,7 @@ export interface ReceiptListView {
 }
 
 /**
- * その領収書を`today`('YYYY-MM-DD'・JST)の時点で取り消せるか(doc/14 §10)。
+ * その領収書を`today`('YYYY-MM-DD'・JST)の時点で取り消せるか(doc/db/guidelines.md §10)。
  *
  * 期限は「領収書の日付 + cancellableDays」と「締め日」の早いほう(receiptCancellableUntil)。
  * 締めたあとの記録が動くと会計が合わなくなるため、時間が経ったものは取り消せない。
@@ -375,7 +375,7 @@ export interface ReceiptListView {
  * いない。OCRが読んだ領収書の日付、読めなければ登録時刻)。
  *
  * ミラー送信のスケジュールとは無関係(送信は登録と同時に始まる)。取り消し済みを送らない
- * 守りは claimForMirror が担う(doc/14 §10)。
+ * 守りは claimForMirror が担う(doc/db/guidelines.md §10)。
  */
 export function canCancelReceiptOn(
   record: ReceiptRecord,
@@ -389,7 +389,7 @@ export function canCancelReceiptOn(
  * その領収書の取り消し期限('YYYY-MM-DD'・JST)。
  *
  * 登録時に確定させた `cancellable_until` を使う。締め日設定は後から変えられるので、判定の
- * たびに現在の設定で計算し直すと、締めたはずの期の領収書まで取り消せるようになる(doc/14 §10)。
+ * たびに現在の設定で計算し直すと、締めたはずの期の領収書まで取り消せるようになる(doc/db/guidelines.md §10)。
  *
  * この列を持たない古い行だけ、現在の設定から計算してフォールバックする。
  */
@@ -410,7 +410,7 @@ export interface ReceiptListOptions {
   today?: Date;
   /**
    * 取り消し期限を無視して取消ボタンを出す。管理者向け。
-   * 経理が締め処理で戻すことがあるため、管理者だけは期限後も取り消せる(doc/14 §10)。
+   * 経理が締め処理で戻すことがあるため、管理者だけは期限後も取り消せる(doc/db/guidelines.md §10)。
    */
   ignoreDeadline?: boolean;
 }
@@ -531,7 +531,7 @@ export type CancelReceiptResult =
        * (`receipts.mirror_claimed_at` が立っていたか)。
        *
        * 送信は登録と同時に始まるので、期限内の取り消しでもtrueになりうる。あちら側の行は
-       * こちらからは消せない(Bridge.jsに取り消し用のactionが無い。doc/14 §10)。呼び出し側は
+       * こちらからは消せない(Bridge.jsに取り消し用のactionが無い。doc/db/guidelines.md §10)。呼び出し側は
        * 「シート側を手で直す必要がある」ことを操作した人に伝えるために使う。
        *
        * 「送信済み」ではなく「送信に取りかかっていた」なのは、HTTP送信の成否まではこの時点で
@@ -542,7 +542,7 @@ export type CancelReceiptResult =
   | { ok: false; reason: 'not_found' | 'forbidden' | 'already_cancelled' | 'deadline_passed' };
 
 /**
- * 領収書を取り消す(論理削除。doc/14 §10)。行は消さず cancelled_at を立てるだけ。
+ * 領収書を取り消す(論理削除。doc/db/guidelines.md §10)。行は消さず cancelled_at を立てるだけ。
  *
  * 【他人の領収書を取り消せないようにする場所】
  * RLSはテナントまでしか絞らないため、同じテナントの別スタッフの領収書IDを指定すれば
@@ -607,7 +607,7 @@ export async function cancelReceipt(
 
   // 取り消しのUPDATEが返した行そのものを見る。outboxの状態を別途引き直すと、引くまでの間に
   // 送信が始まった場合を取りこぼす。この列は claimForMirror が同じ行のUPDATEで立てるので、
-  // どちらが先かはPostgreSQLの行ロックが決めている(doc/14 §10)。
+  // どちらが先かはPostgreSQLの行ロックが決めている(doc/db/guidelines.md §10)。
   return { ok: true, mirrorAlreadySent: cancelled.mirrorClaimedAt !== null };
 }
 

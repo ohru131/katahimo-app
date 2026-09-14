@@ -38,7 +38,7 @@ import { tenants } from './tenants';
  * (packages/core/src/domain/pii/japaneseName.ts の splitJapaneseFullName で分割し、
  * normalizeStaffNameで正規化済みの値を保存する)。
  * externalSource/externalIdは、氏名の文字列一致ではなく外部システムのIDで顧客を一意に
- * 追跡するためのもの(doc/07 第5章の方針)。取込元に存在しなくなった顧客はdeactivatedAtを
+ * 追跡するためのもの(doc/proposal/tech-stack.md 第5章の方針)。取込元に存在しなくなった顧客はdeactivatedAtを
  * 立てるソフトデリートとし、物理削除はしない。
  */
 export const customers = pgTable(
@@ -93,9 +93,9 @@ export const customers = pgTable(
     address2StartDate: date(),
     address2EndDate: date(),
 
-    // doc/14 §7: "38.26, 140.87"のような1本の文字列のままでは計算(距離・ジオフェンス・
+    // doc/db/guidelines.md §7: "38.26, 140.87"のような1本の文字列のままでは計算(距離・ジオフェンス・
     // 座標化しての仙台市報告)に使えないため、数値2列に分ける。浮動小数(double precision)を
-    // 避けてnumeric(9,6)にするのは、金額(doc/14 §1)と同じく丸め誤差を持ち込まないため。
+    // 避けてnumeric(9,6)にするのは、金額(doc/db/guidelines.md §1)と同じく丸め誤差を持ち込まないため。
     // 小数第6位(約10cm)まで保持でき、日本国内の座標には十分。
     /** 緯度。RESERVA CSVの「緯度・経度」列から解析できた場合のみ。 */
     lat: numeric({ precision: 9, scale: 6 }),
@@ -118,8 +118,8 @@ export const customers = pgTable(
     /** 年代(例: "30代")。生年月日そのものではなく既に丸められた区分。 */
     ageBracket: text(),
 
-    // doc/14 §6: 生年月日は日付型(dobDate)と元表記(dobRaw)の2列で持つ。family_members と
-    // 同じ形にしておくことで、誕生月クーポン(doc/14 §9)が世帯代表と世帯構成員を
+    // doc/db/guidelines.md §6: 生年月日は日付型(dobDate)と元表記(dobRaw)の2列で持つ。family_members と
+    // 同じ形にしておくことで、誕生月クーポン(doc/db/guidelines.md §9)が世帯代表と世帯構成員を
     // 同じロジックで扱える。
     /**
      * 世帯代表者の生年月日。RESERVA CSVには生年月日の列が無い(あるのは丸め済みの
@@ -152,7 +152,7 @@ export const customers = pgTable(
     // 苗字だけの完全一致検索(searchCustomersByFamilyName)用。同姓の顧客が複数いる前提のため
     // UNIQUEにはしない。
     index('customers_tenant_family_name_idx').on(t.tenantId, t.familyName),
-    // 入口(API)・TypeScriptの型では値域を見ていなかった箇所(doc/14 §4と同じ考え方)。
+    // 入口(API)・TypeScriptの型では値域を見ていなかった箇所(doc/db/guidelines.md §4と同じ考え方)。
     // 解析に失敗した場合はlat/lngをnullにする方針(parseLatLng)のため、DB側はNULLのみ許容し、
     // 数値が入っているときだけ実在する座標の範囲かを見る。
     check('customers_lat_range', sql`${t.lat} IS NULL OR ${t.lat} BETWEEN -90 AND 90`),

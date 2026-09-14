@@ -257,7 +257,7 @@ const MOVE_AFTER_VISIT: ReadonlyArray<{ plannedMoveMin: number; distanceKm: numb
 ];
 
 /**
- * 出勤簿1日分。doc/14 §2の段階1で永続形式(row_data)が意味のあるキーの配列(visits/officeWork)
+ * 出勤簿1日分。doc/db/guidelines.md §2の段階1で永続形式(row_data)が意味のあるキーの配列(visits/officeWork)
  * になったのに合わせている(以前は列記号C/D/E…をキーにしたオブジェクトだった)。
  *
  * visitsは「計画された件数ぶんだけ」作る。visitPlan.tsのvisitCountForDateは土曜2件・日曜1件を

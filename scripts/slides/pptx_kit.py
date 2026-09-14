@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""doc/12・doc/13 のPowerPoint資料を生成するための共通部品。
+"""doc/slides/db-review.pptx・doc/slides/architecture.pptx のPowerPoint資料を生成するための共通部品。
 
 図形ベースで描くので、生成後もPowerPoint側で自由に編集できる
 (画像を貼り込むのではなく、すべてネイティブの図形・テキスト・表として出力する)。

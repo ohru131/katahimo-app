@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""doc/12_データベース構造レビュー資料.pptx を生成する。
+"""doc/slides/db-review.pptx を生成する。
 
 有識者レビュー用。DB設計の用語をかみ砕きながら、現状の構成・問題点・相談事項を図で示す。
-内容の一次情報は packages/db/src/schema/*.ts と doc/09_データベース構造解説.md。
-列・制約の一覧は doc/16_データベース構造リファレンス.md(スキーマから自動生成)。
+内容の一次情報は packages/db/src/schema/*.ts と doc/db/overview.md。
+列・制約の一覧は doc/db/reference.md(スキーマから自動生成)。
 """
 import sys
 from pathlib import Path
@@ -19,7 +19,7 @@ from pptx_kit import (ACCENT, ACCENT_L, AMBER, AMBER_L, CARD, CARD2, CW, GREEN, 
                       chip_row, fill_text, hline, new_deck, note, rect, section_slide, slide,
                       table, text, title_slide, vline)
 
-OUT = Path(__file__).resolve().parents[2] / "doc" / "12_データベース構造レビュー資料.pptx"
+OUT = Path(__file__).resolve().parents[2] / "doc" / "slides" / "db-review.pptx"
 prs = new_deck()
 PAGE = {"n": 0}
 
@@ -50,7 +50,7 @@ title_slide(
 # ══════════════════════════════════════════════════════════════
 # 2. この資料の目的と読み方
 # ══════════════════════════════════════════════════════════════
-s = sl_("この資料の目的と読み方", "はじめに", source="doc/09_データベース構造解説.md を図解・要約したもの")
+s = sl_("この資料の目的と読み方", "はじめに", source="doc/db/overview.md を図解・要約したもの")
 card(s, ML, 1.25, 3.95, 2.35, "お願いしたいこと", accent=ACCENT, items=[
     {"t": [("この設計のまま運用を始めてよいか", {"bold": True}), ("を判断いただきたい", {})]},
     {"t": "まだ運用前なので、破壊的な作り直しも可能な段階"},
@@ -63,7 +63,7 @@ card(s, ML + 4.15, 1.25, 3.95, 2.35, "作った人の前提", accent=AMBER, item
 ], body_size=11.5)
 card(s, ML + 8.3, 1.25, 4.03, 2.35, "この資料の作り", accent=GREEN, items=[
     {"t": "用語は出てくるたびに日常の言葉で言い換える(第1章に用語辞典)"},
-    {"t": "図を中心にし、正確な定義はコードとdoc/09に委ねる"},
+    {"t": "図を中心にし、正確な定義はコードとdoc/db/overview.mdに委ねる"},
     {"t": [("赤い枠", {"color": RED, "bold": True}), ("は自覚している弱点。隠さず並べる", {})]},
 ], body_size=11.5)
 
@@ -86,8 +86,8 @@ for no, ttl, body, col, fl, pg in chs:
     cx += w + 0.17
 
 note(s, ML, 6.28, CW, 0.66, "レビューを効率化するために",
-     "「この用語の使い方が違う」という指摘も歓迎です。設計の詳細は doc/09_データベース構造解説.md、"
-     "ER図と全列一覧は doc/16_データベース構造リファレンス.md(スキーマから自動生成)にあります。",
+     "「この用語の使い方が違う」という指摘も歓迎です。設計の詳細は doc/db/overview.md、"
+     "ER図と全列一覧は doc/db/reference.md(自動生成)にあります。",
      accent=ACCENT, fill=ACCENT_L, size=11)
 
 # ══════════════════════════════════════════════════════════════
@@ -252,12 +252,12 @@ note(s, ML, 5.72, CW, 1.1, "設計の出発点",
 # 8. 全体像 34テーブル
 # ══════════════════════════════════════════════════════════════
 s = sl_("全体像 — 34テーブル", "業務ドメインごとに10のまとまり。tenants以外の33枚はすべて同じ形を守る",
-        source="packages/db/src/schema/*.ts / ドメイン別のER図は doc/16 第1章(自動生成)")
+        source="packages/db/src/schema/*.ts / ドメイン別のER図は doc/db/reference.md 第1章(自動生成)")
 
 chip_row(s, ML, 1.12, [("全テーブルが tenant_id を持つ", ACCENT, ACCENT_L),
                        ("紫 = 稼働中", VIOLET, VIOLET_L),
                        ("橙 = スキーマのみ", ORANGE, ORANGE_L),
-                       ("関係の矢印は doc/16 のER図", MUTED, CARD)], size=9.5)
+                       ("関係の矢印は doc/db/reference.md のER図", MUTED, CARD)], size=9.5)
 
 GW, GG = 2.34, 0.16
 
@@ -348,7 +348,7 @@ note(s, ML + 6.33, 6.0, 6.0, 1.0, "この16枚が「土台」です",
 # 9b. テーブル一覧② 先行整備の18枚
 # ══════════════════════════════════════════════════════════════
 s = sl_("テーブル一覧② — スキーマだけ先に用意した18枚", "実装・API・画面はこれから",
-        source="doc/15_追加ドメインの設計とレビュー論点.md", accent=ORANGE)
+        source="doc/db/new-domains.md", accent=ORANGE)
 rows2 = [
     ["customer_notes", "カルテ", "カルテ・申し送り・鍵の位置・ガレージ・引継ぎ・注意点を区分で持つ1枚"],
     ["customer_note_photos", "カルテ", "上の子。写真は実体を持たず保存キーのみ。1枚10MBまでをCHECKで制限"],
@@ -384,7 +384,7 @@ text(s, ML, 6.52, CW, 0.4,
 # 10. マルチテナント方式の比較
 # ══════════════════════════════════════════════════════════════
 s = sl_("複数の法人をどう同居させるか", "3つの方式の比較と、採用した方式",
-        source="doc/07_技術構成提案書.md 第4章 / 実装は packages/db/src/schema/_rls.ts")
+        source="doc/proposal/tech-stack.md 第4章 / 実装は packages/db/src/schema/_rls.ts")
 opts = [
     ("方式A 共有スキーマ + tenant_id 列", ACCENT, ACCENT_L, True,
      ["1つのデータベース・1組の表に全社のデータを入れ、各行に tenant_id 列で「どの法人か」を持たせる",
@@ -442,7 +442,7 @@ note(s, ML + 6.33, 4.45, 6.0, 2.1, "方式Aの弱点をどう塞ぐか(次の2�
 # 11. RLS
 # ══════════════════════════════════════════════════════════════
 s = sl_("守り① データベース自身に絞り込ませる", "RLS(Row Level Security / 行レベルセキュリティ)",
-        source="packages/db/src/schema/_rls.ts, tenantScope.ts / doc/09 1.1節")
+        source="packages/db/src/schema/_rls.ts, tenantScope.ts / doc/db/overview.md 1.1節")
 text(s, ML, 1.22, 12.3, 0.3,
      "アプリが「WHERE tenant_id = …」を書き忘れても、他社の行が返らないようにする仕組み。条件はデータベース側に登録しておく。",
      size=12, color=INK)
@@ -496,7 +496,7 @@ note(s, ML, 5.65, CW, 1.2, "ご確認いただきたいこと",
 # 12. 複合外部キー
 # ══════════════════════════════════════════════════════════════
 s = sl_("守り② 紐付けを2列セットにする", "外部キーの制約チェックはRLSを常に素通りする(PostgreSQLの仕様)",
-        source="packages/db/src/schema/dailyReports.ts ほか / doc/09 1.2節")
+        source="packages/db/src/schema/dailyReports.ts ほか / doc/db/overview.md 1.2節")
 text(s, ML, 1.22, CW, 0.3,
      "RLSは SELECT / UPDATE / DELETE を絞り込むだけで、外部キーの参照チェックには効きません。"
      "つまり単一列の外部キーだと、他社の行を指す値を書けてしまいます。",
@@ -562,7 +562,7 @@ note(s, ML, 6.05, CW, 0.85, "補足",
 # 13. データ保護の線引き
 # ══════════════════════════════════════════════════════════════
 s = sl_("データ保護の線引き", "アプリ側で暗号化するのは資格情報だけ。業務データは平文列で持つ",
-        source="doc/09 1.3節 / packages/db/src/schema/appSettings.ts")
+        source="doc/db/overview.md 1.3節 / packages/db/src/schema/appSettings.ts")
 rect(s, ML, 1.25, 6.0, 2.5, fill=WHITE, border=RED, border_w=1.5)
 text(s, ML + 0.2, 1.33, 5.6, 0.28, "アプリで暗号化する(3列だけ)", size=12, color=RED, bold=True)
 bullets(s, ML + 0.2, 1.68, 5.6, 1.95, [
@@ -615,7 +615,7 @@ note(s, ML, 5.75, CW, 1.1,
 # 14. 封筒暗号化
 # ══════════════════════════════════════════════════════════════
 s = sl_("資格情報の暗号化のしくみ", "封筒暗号化(鍵を鍵で包む)/ 対象は app_settings の3列だけ",
-        source="packages/core/src/ports/kms.ts, packages/integrations/src/local-crypto / doc/09 第3章")
+        source="packages/core/src/ports/kms.ts, packages/integrations/src/local-crypto / doc/db/overview.md 第3章")
 text(s, ML, 1.22, CW, 0.3,
      "「鍵を1本だけ使う」と、その1本が漏れたら全社分が読めてしまう。そこで法人ごとに別の鍵を作り、"
      "その鍵自体をさらに上位の鍵で包んで保管する。",
@@ -670,7 +670,7 @@ note(s, ML, 5.75, CW, 1.1, "ご相談したいこと(論点⑥)",
 # 15. トランザクションとOutbox
 # ══════════════════════════════════════════════════════════════
 s = sl_("揃って成立させる仕組み", "日報1本を保存するとき、何と何を同時に確定させているか",
-        source="packages/core/src/usecases/reports.ts, ports/unitOfWork.ts / doc/09 1.4節")
+        source="packages/core/src/usecases/reports.ts, ports/unitOfWork.ts / doc/db/overview.md 1.4節")
 box(s, ML, 1.3, 1.9, 0.75, "画面\n(日報を保存)", fill=WHITE, border=LINE, size=10.5)
 rect(s, ML + 2.2, 1.22, 5.3, 1.5, fill=GREEN_L, border=GREEN, border_w=1.8, dash=True)
 text(s, ML + 2.35, 1.28, 4.0, 0.24, "1つのトランザクション(揃って確定)", size=10, color=GREEN,
@@ -726,7 +726,7 @@ note(s, ML, 5.9, CW, 1.0, "なぜ「Outbox」という形にするのか",
 # 16. スキーマ共通ルール
 # ══════════════════════════════════════════════════════════════
 s = sl_("34テーブルで守っている共通ルール", "表ごとに判断がぶれないよう、形を決めてある",
-        source="doc/09 / packages/db/src/schema/*.ts のコメントに理由を記載")
+        source="doc/db/overview.md / packages/db/src/schema/*.ts のコメントに理由を記載")
 left = [
     ("主キーは必ず uuid のランダム値", "連番にしない。件数が外から推測できず、採番の集中点も作らない"),
     ("日時は必ず timestamptz", "タイムゾーン付き。業務上の「日」だけ date(勤怠の business_date)"),
@@ -770,7 +770,7 @@ sec_("第 3 章", "設計上の問題点(自己申告)",
 # 18. 問題① customers 39列
 # ══════════════════════════════════════════════════════════════
 s = sl_("問題① customers が39列に肥大化している", "外部CSVの全項目を1枚の表で受けた結果",
-        source="packages/db/src/schema/customers.ts / doc/09 4.1節", accent=RED)
+        source="packages/db/src/schema/customers.ts / doc/db/overview.md 4.1節", accent=RED)
 text(s, ML, 1.2, CW, 0.3,
      "外部予約システム(RESERVA)の顧客CSVを「1項目も落とさず取り込む」方針にしたため、CSVの列がほぼそのまま列になっている。",
      size=12, color=INK)
@@ -826,7 +826,7 @@ note(s, ML, 6.13, CW, 0.8, "ご相談したいこと(相談①)",
 # 19. 問題② 平文化の代償
 # ══════════════════════════════════════════════════════════════
 s = sl_("問題② 業務データを平文にした代償", "検索性とAI活用を取り、その分の守りを外部環境に預けた",
-        source="doc/09 1.3節・3.4節", accent=RED)
+        source="doc/db/overview.md 1.3節・3.4節", accent=RED)
 card(s, ML, 1.25, 6.0, 1.85, "得たもの", accent=GREEN, items=[
     {"t": "SQLで直接検索・集計・匿名化できる(報告書作成や統計化が実装しやすい)"},
     {"t": "日報テキストをAIで扱える。復号の配線を分析側まで広げなくてよい"},
@@ -873,7 +873,7 @@ table(s, ML, 5.75, CW, ["環境", "データベース", "保存時の暗号化",
 # ══════════════════════════════════════════════════════════════
 s = sl_("問題③ 予約の二重取りをDBで止められていない",
         "同じスタッフに時間の重なる予約を2件入れられる",
-        source="packages/db/src/schema/reservations.ts / doc/15 §2", accent=RED)
+        source="packages/db/src/schema/reservations.ts / doc/db/new-domains.md §2", accent=RED)
 text(s, ML, 1.2, CW, 0.3,
      "「同じスタッフ・時間帯が重なる予約は1件まで」は、本来 PostgreSQL の除外制約(EXCLUDE)で"
      "データベース自身に守らせられる。それが使えていない。",
@@ -935,7 +935,7 @@ note(s, ML, 6.22, CW, 0.6, "ご相談したいこと(相談③)",
 # ══════════════════════════════════════════════════════════════
 s = sl_("問題④ 勤怠だけJSONを1列に入れている",
         "キーと型は直したが、明細テーブルへの分解はまだ",
-        source="packages/db/src/schema/attendanceDays.ts / doc/14 §2", accent=RED)
+        source="packages/db/src/schema/attendanceDays.ts / doc/db/guidelines.md §2", accent=RED)
 text(s, ML, 1.2, CW, 0.3,
      "日報・事故報告は項目ごとの列に分けたが、勤怠は1日分をJSONのまま1列(row_data)に入れている。",
      size=12, color=INK)
@@ -989,7 +989,7 @@ note(s, ML, 6.22, CW, 0.66, "ご相談したいこと(相談④)",
 # 22. 問題⑤ 小さな設計負債
 # ══════════════════════════════════════════════════════════════
 s = sl_("問題⑤ 小さな設計負債", "気づいているが、まだ手を付けていないもの",
-        source="doc/09 3.4節 / doc/15 §6 / README「実装状況」", accent=RED)
+        source="doc/db/overview.md 3.4節 / doc/db/new-domains.md §6 / README「実装状況」", accent=RED)
 rows = [
     ["ON DELETE がすべて no action", "親(顧客・スタッフ)を消せない。廃棄はテナント単位の物理削除で行う方針",
      "契約上の返還・廃棄義務(秘密保持契約 第7条)に対する具体的な手順とバックアップ保持期間が未整備", "高"],
@@ -1022,7 +1022,7 @@ note(s, ML, 6.0, CW, 0.9, "ご相談したいこと(相談⑤)",
 # 23. 問題⑥ 鍵管理と監査
 # ══════════════════════════════════════════════════════════════
 s = sl_("問題⑥ 鍵管理と監査が本番相当でない", "形はできているが、中身が開発用のまま",
-        source="doc/09 3.4節 / packages/core/src/ports/kms.ts, audit.ts", accent=RED)
+        source="doc/db/overview.md 3.4節 / packages/core/src/ports/kms.ts, audit.ts", accent=RED)
 text(s, ML, 1.22, 6.0, 0.28, "鍵の置き場所:現状と本番想定", size=12, color=INK, bold=True)
 box(s, ML, 1.55, 2.85, 1.15, "現状\n環境変数に KEK 1本\n(.env ファイル)", fill=RED_L, border=RED,
     color=RED, size=11, bold=True)
@@ -1050,7 +1050,7 @@ bullets(s, ML + 6.33, 3.6, 6.0, 1.2, [
 ], size=11, line=1.32, gap=6)
 
 note(s, ML, 4.5, CW, 1.0, "将来の展開を見据えた懸念",
-     "提案書では訪問看護事業者への展開を想定しています(doc/07 第7章)。医療系の記録を扱うなら、"
+     "提案書では訪問看護事業者への展開を想定しています(doc/proposal/tech-stack.md 第7章)。医療系の記録を扱うなら、"
      "「誰がどの記録を参照したか」の記録と保存年限の管理が要件になる可能性が高いと考えています。",
      accent=AMBER, fill=AMBER_L)
 note(s, ML, 5.65, CW, 1.2, "ご相談したいこと(相談⑥)",
@@ -1069,7 +1069,7 @@ sec_("第 4 章", "先行して用意したスキーマと、相談事項",
 # 25. 先行整備した5領域
 # ══════════════════════════════════════════════════════════════
 s = sl_("実装より先に、DBの形だけ固めた5領域", "18テーブル。リポジトリ実装・API・画面はまだ無い",
-        source="doc/15_追加ドメインの設計とレビュー論点.md", accent=ORANGE)
+        source="doc/db/new-domains.md", accent=ORANGE)
 text(s, ML, 1.16, CW, 0.3,
      "あとから足すと既存データの移行が伴うため、運用前のいまのうちに表と制約だけ作ってあります。",
      size=12, color=INK)
@@ -1123,7 +1123,7 @@ note(s, ML + 6.33, 5.78, 6.0, 1.12, "ご相談したいこと(相談⑦)",
 # 26. 追加した5領域で迷った判断
 # ══════════════════════════════════════════════════════════════
 s = sl_("追加した5領域で迷った判断", "どれも「こちらが正しい」と言い切れず、選んで実装しています",
-        source="doc/15_追加ドメインの設計とレビュー論点.md 各章「レビューで確認いただきたい点」")
+        source="doc/db/new-domains.md 各章「レビューで確認いただきたい点」")
 rows = [
     ["特性を項目マスタ+値テーブル(EAV)にした", "訪問最適化",
      "何を見て最適化するかが今後のヒアリングで決まるため、項目自体をデータにした",
@@ -1160,7 +1160,7 @@ note(s, ML, 6.06, CW, 0.8, "ご相談したいこと(相談⑧)",
 # 27. 相談事項まとめ
 # ══════════════════════════════════════════════════════════════
 s = sl_("ご相談したいこと(まとめ)", "優先度順。特に伺いたいのは ①②③⑨",
-        source="doc/09 第5章「レビュー観点」/ doc/15 §6 に対応")
+        source="doc/db/overview.md 第5章「レビュー観点」/ doc/db/new-domains.md §6 に対応")
 rows = [
     ["①", "customers 39列を分けるべきか", "19",
      "顧客マスタとして何列までが常識的か、分ける単位の基準。運用前の今が最も安く直せる"],
@@ -1205,15 +1205,15 @@ card(s, ML, 1.28, 6.0, 2.6, "コード(こちらが正)", accent=ACCENT, items=[
            ("  業務ロジックが外部に求める窓口の定義(29本)", {})]},
 ], body_size=10.5)
 card(s, ML + 6.33, 1.28, 6.0, 2.6, "ドキュメント", accent=GREEN, items=[
-    {"t": [("doc/09_データベース構造解説.md", {"bold": True}),
+    {"t": [("doc/db/overview.md", {"bold": True}),
            ("  本資料の詳細版。設計方針・暗号化の構成・レビュー観点", {})]},
-    {"t": [("doc/16_データベース構造リファレンス.md", {"bold": True}),
+    {"t": [("doc/db/reference.md", {"bold": True}),
            ("  ER図と全34テーブルの全列一覧。スキーマから自動生成(pnpm db:docs)", {})]},
-    {"t": [("doc/15_追加ドメインの設計とレビュー論点.md", {"bold": True}),
+    {"t": [("doc/db/new-domains.md", {"bold": True}),
            ("  第4章の18テーブルの設計理由と、未決の論点", {})]},
-    {"t": [("doc/14_データベース設計の指針と落とし穴.md", {"bold": True}),
+    {"t": [("doc/db/guidelines.md", {"bold": True}),
            ("  DBを触るときの決めごとと、実際に踏んだ落とし穴", {})]},
-    {"t": [("doc/13_アーキテクチャ説明資料.pptx", {"bold": True}),
+    {"t": [("doc/slides/architecture.pptx", {"bold": True}),
            ("  本資料の対になるアプリ構成の説明資料", {})]},
 ], body_size=10)
 text(s, ML, 4.05, CW, 0.28, "この資料で使った言い換えの対応表", size=12, color=INK, bold=True)

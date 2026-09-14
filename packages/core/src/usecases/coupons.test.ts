@@ -73,7 +73,7 @@ async function makeHarness(): Promise<Harness> {
     dob: '1990/6/15',
     familyMembers: [
       { name: '田中 太郎', dob: '2020/3/3' },
-      // 生年月日が「年だけ」の表記は日付として解析できずdobDateがnullになる(doc/14 §6)。
+      // 生年月日が「年だけ」の表記は日付として解析できずdobDateがnullになる(doc/db/guidelines.md §6)。
       // 誕生月の判定対象から静かに外れることを確かめるために入れている。
       { name: '田中 花子', dob: '2022' },
     ],
@@ -221,7 +221,7 @@ describe('listCouponsForAdmin / listCouponsForSelection', () => {
   });
 });
 
-describe('誕生月クーポン(doc/14 §9)', () => {
+describe('誕生月クーポン(doc/db/guidelines.md §9)', () => {
   let h: Harness;
 
   beforeEach(async () => {

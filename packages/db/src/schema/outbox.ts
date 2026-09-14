@@ -15,7 +15,7 @@ import { TENANT_RLS_USING } from './_rls';
 import { tenants } from './tenants';
 
 /**
- * outbox_jobs.kind のCHECK制約に使う許可値。doc/14 §4のDDLをそのまま書き写すと、
+ * outbox_jobs.kind のCHECK制約に使う許可値。doc/db/guidelines.md §4のDDLをそのまま書き写すと、
  * MirrorKind(packages/core/src/ports/mirror.ts)側の変更(例: calendar_eventの廃止)に
  * 追従できず、ズレに気付かないままDBが誤った値を許可/拒否し続ける。
  * `Record<MirrorKind, true>` の形で持つことで、MirrorKindに追加/削除があれば
@@ -77,7 +77,7 @@ export const outboxJobs = pgTable(
     // 並べ替えは next_attempt_at ASC, created_at ASC。枝が2つあるため、この索引だけで
     // 併合後の並びまで保証できるわけではない(created_at は先頭キーではない)。
     // それでも (tenant_id, status, created_at) を別に持たないのは、絞り込みの役割が
-    // この1本と重複するため(doc/14 §8.5)。
+    // この1本と重複するため(doc/db/guidelines.md §8.5)。
     index('outbox_jobs_tenant_status_next_attempt_idx').on(
       t.tenantId,
       t.status,
@@ -85,7 +85,7 @@ export const outboxJobs = pgTable(
       t.createdAt,
     ),
     // statusはTypeScript上は enum({...}) で型付けているが、Drizzleはそこから
-    // CHECK制約を生成しない(doc/14 §4)。psqlから直接でたらめな値を書けてしまい、
+    // CHECK制約を生成しない(doc/db/guidelines.md §4)。psqlから直接でたらめな値を書けてしまい、
     // 書けばワーカーが永久に拾わない行になるため、DB側でも縛る。
     check('outbox_jobs_status_check', sql`${t.status} IN ('pending', 'processing', 'done', 'failed')`),
     // kindの許可値はMirrorKindと実行時にも一致させる(上のMIRROR_KINDS参照)。
@@ -94,7 +94,7 @@ export const outboxJobs = pgTable(
       sql`${t.kind} IN (${sql.raw(MIRROR_KINDS.map((k) => `'${k}'`).join(', '))})`,
     ),
     // 「この領収書はもう外部へ送ったか」を画面で出すための経路(listStatusByTargets)。
-    // doc/14 §3。done/failedが積み上がってもフルスキャンにならないようにする。
+    // doc/db/guidelines.md §3。done/failedが積み上がってもフルスキャンにならないようにする。
     index('outbox_jobs_tenant_kind_target_idx').on(t.tenantId, t.kind, t.targetId),
     check('outbox_jobs_attempts_check', sql`${t.attempts} >= 0`),
   ],

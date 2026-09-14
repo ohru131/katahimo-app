@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""doc/17 の中身(業務の言葉に置き換えたテーブル説明とレビュー観点)。
+"""doc/slides/db-for-business.pptx の中身(業務の言葉に置き換えたテーブル説明とレビュー観点)。
 
-一次情報は packages/db/src/schema/*.ts と doc/09・doc/14・doc/15・doc/16。
+一次情報は packages/db/src/schema/*.ts と doc/db/overview.md・doc/db/guidelines.md・doc/db/new-domains.md・doc/db/reference.md。
 ここに置くのは「実務担当者に読める言葉への言い換え」だけで、
 列名・制約そのものを増減させない(スキーマを変えたらこちらも直す)。
 """

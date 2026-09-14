@@ -90,7 +90,7 @@ export class DrizzleReceiptRepository implements ReceiptRepositoryPort {
         .select({ dedupeKey: receipts.dedupeKey })
         .from(receipts)
         // 取り消し済みの行は receipts_tenant_dedupe_key_uidx の対象外なので、重複としても
-        // 数えない(取り消して登録し直す訂正を、重複扱いで弾かないため。doc/14 §10)。
+        // 数えない(取り消して登録し直す訂正を、重複扱いで弾かないため。doc/db/guidelines.md §10)。
         .where(
           and(
             isNotNull(receipts.dedupeKey),
@@ -122,7 +122,7 @@ export class DrizzleReceiptRepository implements ReceiptRepositoryPort {
             lt(receipts.receiptTimestamp, to),
           ),
         )
-        // 並びは receipts_tenant_staff_timestamp_idx と向きを揃える(doc/14 §3)。
+        // 並びは receipts_tenant_staff_timestamp_idx と向きを揃える(doc/db/guidelines.md §3)。
         .orderBy(desc(receipts.receiptTimestamp));
       return rows.map(toRecord);
     });
@@ -156,7 +156,7 @@ export class DrizzleReceiptRepository implements ReceiptRepositoryPort {
         .update(receipts)
         .set({ mirrorClaimedAt: new Date() })
         // 取り消し済みの行は宣言できない=送信しない。cancelのUPDATEと同じ行を争うので、
-        // どちらが先かはPostgreSQLの行ロックが決める(doc/14 §10)。
+        // どちらが先かはPostgreSQLの行ロックが決める(doc/db/guidelines.md §10)。
         .where(and(eq(receipts.tenantId, tenantId), eq(receipts.id, receiptId), isNull(receipts.cancelledAt)))
         .returning();
       const row = rows[0];

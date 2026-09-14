@@ -2,7 +2,7 @@
 
 `gas-childcare-visit-app`(Google Apps Script版)を、本格的なWebアプリ(マルチテナントSaaS)へ移行するための新規プロジェクト。
 
-- 移行計画の全体像は本ディレクトリで作業中の実装で表現する。設計判断の背景は `doc/07_技術構成提案書.md` / `doc/08_技術構成サマリー.md` を参照。
+- 移行計画の全体像は本ディレクトリで作業中の実装で表現する。設計判断の背景は `doc/proposal/tech-stack.md` を参照。資料の一覧は `doc/README.md`。
 - **正データは PostgreSQL**。Googleスプレッドシート/Drive/カレンダーへは互換維持のための**ミラー書き込み**として反映する(将来Sheetsをやめる際は、ミラーワーカーのアダプタを止めるだけでドメインコードは無変更)。
 - 既存の稼働中GAS版(`../gas-childcare-visit-app`)は**機能追加を凍結し、不具合修正のみ**。切替完了後に停止する。
 
@@ -100,7 +100,7 @@ pnpm --filter @katahimo/web dev     # http://localhost:5173
 
 マイグレーションは `packages/db/drizzle/0000_baseline_schema.sql`(統合済みのベースライン)と、
 以後の差分(`0001_*.sql`)からなる
-(運用方針は `doc/09_データベース構造解説.md` 第1.9節)。**このベースライン以前のスキーマを当てたことがある
+(運用方針は `doc/db/overview.md` 第1.9節)。**このベースライン以前のスキーマを当てたことがある
 ローカル開発用PostgreSQLは、`drizzle.__drizzle_migrations` に別のハッシュが記録されているため増分では当たらない。
 上記「2. ローカルDBの用意」からDBを作り直してから、あらためて
 `pnpm --filter @katahimo/db exec tsx src/migrate.ts` を実行する**(公開デモは
@@ -113,9 +113,9 @@ pnpm --filter @katahimo/web dev     # http://localhost:5173
 `invoices`/`invoice_lines`/`payments`/`stripe_webhook_events`)、訪問割当の最適化
 (`trait_definitions`/`customer_traits`/`staff_traits`/`staff_customer_compatibilities`/
 `staff_customer_travel_estimates`)、移動手段別の手当(`transport_allowance_rules`/`travel_legs`)。
-ER図と全列の一覧は `doc/16_データベース構造リファレンス.md`(スキーマ定義から自動生成。
+ER図と全列の一覧は `doc/db/reference.md`(スキーマ定義から自動生成。
 `pnpm db:docs` で再生成)、テーブルの役割と設計理由・未決の論点は
-`doc/15_追加ドメインの設計とレビュー論点.md` を参照。
+`doc/db/new-domains.md` を参照。
 
 `http://localhost:5173` を開き、法人ID `demo` / `admin@example.com` / `admin1234` でログインすると、GAS版
 (`gas-childcare-visit-app/index.html`)と同じ見た目・タブ構成のアプリが表示される(移行時の混乱を減らすため、
@@ -347,7 +347,7 @@ pnpm --filter @katahimo/api import:legacy-staff demo "氏名" メールアドレ
 
 ## データ保護の方針
 
-**方針(1行で)**: アプリ層でフィールド暗号化するのは `app_settings` の資格情報3項目(Gemini APIキー・Google Chat Webhook URL 2本)だけ。顧客・世帯構成員・日報・事故報告・勤怠・領収書の業務データは全て平文列で持ち、保存時の暗号化は本番配備先(Cloud SQL)の既定機能で満たす想定。**本番環境は未配備**のため、これは配備時に満たすべき前提条件であり、現時点でコードとして担保しているのは RLS・ロール分離・argon2id・資格情報のアプリ層暗号化まで(契約の定義は `packages/core/src/ports/crypto.ts`、設計判断の詳細と NDA 対応表の全文は `doc/09_データベース構造解説.md` §1.3・§3)。
+**方針(1行で)**: アプリ層でフィールド暗号化するのは `app_settings` の資格情報3項目(Gemini APIキー・Google Chat Webhook URL 2本)だけ。顧客・世帯構成員・日報・事故報告・勤怠・領収書の業務データは全て平文列で持ち、保存時の暗号化は本番配備先(Cloud SQL)の既定機能で満たす想定。**本番環境は未配備**のため、これは配備時に満たすべき前提条件であり、現時点でコードとして担保しているのは RLS・ロール分離・argon2id・資格情報のアプリ層暗号化まで(契約の定義は `packages/core/src/ports/crypto.ts`、設計判断の詳細と NDA 対応表の全文は `doc/db/overview.md` §1.3・§3)。
 
 業務データをアプリ層で暗号化しない理由は3つ。
 
@@ -386,7 +386,7 @@ GAS版(`reference/gas-childcare-visit-app`)からの移植。**本番環境は�
   (PostgreSQL の仕様)ため、テーブル間の参照はすべて `(tenant_id, xxx_id)` の複合FKにしている。
   網羅性は `packages/db/src/rlsPolicies.test.ts`(スキーマ定義から対象を動的に集めて静的検査)と
   `packages/demo/src/rlsEnforcement.test.ts`(PGlite 上の非特権ロールで実際に止まることを確認)で担保。
-  詳細は `doc/09_データベース構造解説.md`。
+  詳細は `doc/db/overview.md`。
 - **認証**: argon2id、httpOnly Cookie セッション(tenantId を埋め込んで RLS のチキン&エッグを回避)、
   `POST /api/auth/login`・`GET /api/auth/me`・`POST /api/auth/logout`。GAS版の SHA-256+salt ハッシュは
   `computeLegacyHash` でそのまま引き継げ、ログイン成功時に argon2id へサイレント再ハッシュされる。
@@ -395,7 +395,7 @@ GAS版(`reference/gas-childcare-visit-app`)からの移植。**本番環境は�
   **サーバー側が他のAPIを403で拒否する**(`staff.must_change_password` + `requirePasswordChangeGuard`)。
   画面だけで促してもAPIを直接叩けば通ってしまうため、強制はサーバー側で行う。
   メール送信は `MailerPort`、既定の実装は GAS版と同じ `MailApp.sendEmail` を使う `GasBridgeMailerPort`
-  (`doc/10`「新規GCP APIより既存GASブリッジを優先」)。GAS版から意図的に変えた点が4つある。
+  (`doc/proposal/gas-bridge.md`「新規GCP APIより既存GASブリッジを優先」)。GAS版から意図的に変えた点が4つある。
   (1) 宛先が登録済みかどうかで応答を出し分けない(メールアドレスの登録有無を確かめられないため)、
   (2) コードは平文ではなく、DBに置かないペッパー(`PASSWORD_RESET_PEPPER`)を鍵にした HMAC-SHA256 の
   検証子として保存する(6桁=100万通りしかないため、単純なハッシュでは DB ダンプからオフラインで復元できる)、
@@ -433,7 +433,7 @@ GAS版(`reference/gas-childcare-visit-app`)からの移植。**本番環境は�
   付け忘れと区別できないため)。誕生日は世帯代表(`customers.dob_date`)と世帯構成員
   (`family_members.dob_date`)の両方に対応し、適用時には根拠にした人の氏名と生年月日を
   記録に残す。判定は `evaluateCouponEligibility` 1箇所に寄せ、画面の選択肢づくりと保存時の
-  検証が同じ関数を通る。上限は DB の部分一意索引でも守る。設計理由は `doc/14` §9。
+  検証が同じ関数を通る。上限は DB の部分一意索引でも守る。設計理由は `doc/db/guidelines.md` §9。
 - **領収書(実費報告)の一覧と取り消し**: 勤怠タブの「🧾 領収書」から、自分が登録した領収書を
   月単位で見返せる(`GET /api/receipts`)。顧客に請求する分/会社立替の合計と、OCRが金額を
   読み取れなかった枚数(合計に入っていない分)を出す。**訂正は編集ではなく「取り消して登録し直す」**
@@ -459,7 +459,7 @@ GAS版(`reference/gas-childcare-visit-app`)からの移植。**本番環境は�
   ワーカーが拾うまでと送信に失敗して止まった分は、一覧に未送信・送信失敗の件数として出して、
   締めのときに取り残しへ気付けるようにしている。
   取り消した行は合計からも外れ、ミラー送信の直前にも弾く。取り消した行を重複判定
-  (`receipts_tenant_dedupe_key_uidx`)の対象外にしてあるので、同じ内容を登録し直せる。設計理由は `doc/14` §10。
+  (`receipts_tenant_dedupe_key_uidx`)の対象外にしてあるので、同じ内容を登録し直せる。設計理由は `doc/db/guidelines.md` §10。
 - **勤怠計算エンジンと週間予定UI**: `AttendanceCalc.js`(GAS版)を Node 上でそのまま実行した結果を正解として、
   TypeScript 移植版(`packages/core/src/domain/attendance/`)を合成データ19ケース+月次集計で突き合わせ、
   完全一致を確認済み。`attendance_days`(入力値のみを `row_data jsonb` で保存し、派生値は保存せず都度計算)・
@@ -476,7 +476,7 @@ GAS版(`reference/gas-childcare-visit-app`)からの移植。**本番環境は�
 ### 外部連携(Sheets/Drive/Calendar/Maps)— コードは実装済み、GAS側のデプロイ待ち
 
 Google Maps Platform の新規契約・課金設定を避けるため、**稼働中の gas-childcare-visit-app Web App
-(`Bridge.js`)を軽量な JSON API プロキシとして再利用する**方式を採っている(`doc/10`)。GAS の Maps サービスと、
+(`Bridge.js`)を軽量な JSON API プロキシとして再利用する**方式を採っている(`doc/proposal/gas-bridge.md`)。GAS の Maps サービスと、
 既に本番で動いているカレンダー解析・ルート計算ロジック(`RouteSearch.js`)をそのまま呼ぶだけなので、
 複雑な分類ロジック(RESERVA 予約タイトルの判定・スタッフ突合等)を TypeScript 側で再実装せずに済む。
 
@@ -513,16 +513,16 @@ Google Maps Platform の新規契約・課金設定を避けるため、**稼働
 
 **`Bridge.js` は読み取り側・書き込み側ともに本番デプロイされていない。** `clasp push` / 新デプロイ作成 /
 Script Properties への `BRIDGE_API_SECRET` 設定はユーザー承認待ちで、実際に API を叩いての動作検証も行っていない
-(理由と手順は `doc/10_GAS版連携の制約と方針.md`)。ローカルでは API + ワーカー + ダミーHTTPサーバーで
+(理由と手順は `doc/proposal/gas-bridge.md`)。ローカルでは API + ワーカー + ダミーHTTPサーバーで
 pending→done の遷移、ペイロードの JSON 構造が Bridge.js 側の期待するフィールド名と一致すること、
 ブリッジが到達不能な場合に `lastError` を記録して再試行待ちへ戻ることを確認済み。
 
 ### まだ無いもの
 
 - 予約 / 請求・決済 / 顧客カルテ / 訪問割当の最適化 / 移動手当 — **DBのスキーマと制約のみ**。
-  リポジトリ実装・API・画面は無い(`doc/15_追加ドメインの設計とレビュー論点.md`)。
+  リポジトリ実装・API・画面は無い(`doc/db/new-domains.md`)。
 - 本番アダプタ: GCS(`StoragePort`)と Cloud KMS(`CloudKmsPort`)は差し替え口だけ用意してある。
 - Google 認証(OAuth)。実 GCP クライアントIDが必要なため未着手。
 - 実際の出勤簿データを使った GAS版との数値照合(並行運用)。計算式の正しさは合成データで確認済みだが、
-  実データでの突き合わせは未実施。勤怠 `row_data` の正規化(`doc/14` §2 の段階2)はこの照合の後に行う。
+  実データでの突き合わせは未実施。勤怠 `row_data` の正規化(`doc/db/guidelines.md` §2 の段階2)はこの照合の後に行う。
 - 旧システムの停止・切替。

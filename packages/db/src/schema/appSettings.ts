@@ -6,7 +6,7 @@ import { tenants } from './tenants';
 
 /**
  * 締め日に指定できる日の上限。29〜31は2月に存在しないため許さない
- * (月末で締める運用はNULLで表す)。doc/14 §10。
+ * (月末で締める運用はNULLで表す)。doc/db/guidelines.md §10。
  */
 export const RECEIPT_CLOSING_DAY_MAX = 28;
 /** 領収書を取り消せる日数の上限。 */
@@ -39,7 +39,7 @@ export const appSettings = pgTable(
     gchatReceiptWebhookUrlKeyVersion: integer(),
 
     /**
-     * 会計の締め日(1〜28)。NULLは「月末」(doc/14 §10)。
+     * 会計の締め日(1〜28)。NULLは「月末」(doc/db/guidelines.md §10)。
      *
      * 領収書の取り消し期限がここから導かれる。テナントごとに締め日が違う(20日締めなど)
      * ため、定数ではなく設定にしている。
@@ -52,7 +52,7 @@ export const appSettings = pgTable(
   },
   (t) => [
     pgPolicy('tenant_isolation', { for: 'all', using: TENANT_RLS_USING, withCheck: TENANT_RLS_USING }),
-    // 値域はDBでも縛る(doc/14 §1.6)。29〜31を許すと2月に存在しない締め日ができ、
+    // 値域はDBでも縛る(doc/db/guidelines.md §1.6)。29〜31を許すと2月に存在しない締め日ができ、
     // jstDateKeyWithDayOfMonth が翌月へ繰り上げて黙って別の日を指す。
     check(
       'app_settings_receipt_closing_day_check',
