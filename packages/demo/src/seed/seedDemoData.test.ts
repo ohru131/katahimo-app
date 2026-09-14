@@ -65,6 +65,9 @@ describe('seedDemoData(公開デモの初期データ投入)', () => {
 
     const seeded = await seedDemoData(container, () => {});
     expect(seeded.customerIdByName.size).toBeGreaterThan(0);
+    // 呼び出し側が記録に書く「作り終えた業務日」。シード中に日付をまたいでもズレないよう、
+    // 日付を取り直すのではなくシードが実際に使った日を返す。
+    expect(seeded.generatedThrough).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
     // 1世帯目の代表者には「今月」の生年月日を入れてあるので、誕生月クーポンが選択肢に出る。
     const [firstCustomerId] = [...seeded.customerIdByName.values()];

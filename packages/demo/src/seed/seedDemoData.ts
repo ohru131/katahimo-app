@@ -49,6 +49,14 @@ export interface SeededDemo {
   customerIdByName: Map<string, string>;
   /** ジオコーディングのデモ実装が使う住所→緯度経度。 */
   addressLatLng: Map<string, { lat: number; lng: number }>;
+  /**
+   * 訪問履歴を作り終えた最後の業務日('YYYY-MM-DD')。
+   *
+   * 呼び出し側が `new Date()` を取り直して記録すると、シード中にJSTの日付をまたいだ場合に
+   * 「作っていない日を作り終えたことにする」ズレが生まれる(その日は追い足しからも漏れる)。
+   * 実際に使った日付をそのまま返す。
+   */
+  generatedThrough: string;
 }
 
 /** 市区町村と番地以下を、顧客一覧の表示と同じ並びで1本の住所文字列にする。 */
@@ -269,5 +277,5 @@ export async function seedDemoData(
   await seedReceiptsForDate(container, dayContext, toJstDateIso(today));
 
   onProgress({ message: '仕上げ中…', ratio: 1 });
-  return { tenantId: tenant.id, customerIdByName, addressLatLng };
+  return { tenantId: tenant.id, customerIdByName, addressLatLng, generatedThrough: toJstDateIso(today) };
 }

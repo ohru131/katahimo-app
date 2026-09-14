@@ -33,10 +33,16 @@ export interface DemoSeedStateStore {
 }
 
 export interface TopUpResult {
-  /** 何かしら書き足したか(呼び出し側がIndexedDBへの書き出しを判断するために使う)。 */
+  /** 何かしら書き足したか。 */
   changed: boolean;
   /** 追い足した業務日('YYYY-MM-DD'、古い順)。 */
   addedDates: string[];
+  /**
+   * 記録に書いた「作り終えた業務日」。呼び出し側は `new Date()` を取り直すのではなく
+   * これを使う(処理中にJSTの日付をまたいだ場合に、作っていない日を作り終えたことに
+   * しないため)。
+   */
+  reportsThrough: string;
 }
 
 /** `from`(排他)から`to`(含む)までの日付を古い順に並べる。 */
@@ -122,6 +128,11 @@ export async function topUpDemoData(
 
   // 何か月も空けてから開き直された場合に、間の全日を作り直すと初回シードより長く待たせる。
   // 履歴の見え方に必要なのは直近ぶんなので、初回シードと同じ日数で頭を切る。
+  //
+  // 切り落とした古い日はこの先も空いたままになる(記録は「今日まで作った」として進める)。
+  // 直近6週間は必ず揃い、それより前は初回シードで作った履歴が残っているので、
+  // 空くのは「最後に開いた日の少し後から、今日の42日前まで」だけ。デモの見え方として
+  // 許容できる穴と引き換えに、待ち時間が初回シードを超えないほうを取っている。
   const allMissing = datesBetween(state.reportsThrough, todayIso);
   const missingDates = allMissing.slice(-HISTORY_DAYS);
 
@@ -186,6 +197,7 @@ export async function topUpDemoData(
   return {
     changed: missingDates.length > 0 || receiptsAdded || birthdayUpdated || springExtended,
     addedDates: missingDates,
+    reportsThrough: todayIso,
   };
 }
 

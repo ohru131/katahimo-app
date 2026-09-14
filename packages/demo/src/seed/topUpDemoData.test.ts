@@ -101,6 +101,9 @@ describe('topUpDemoData(日付が変わったあとの追い足し)', () => {
     const firstRun = await topUpDemoData(container, store, customerIdByName);
     expect(firstRun.addedDates).toEqual(['2026-05-11', '2026-05-12', '2026-05-13']);
     expect(firstRun.changed).toBe(true);
+    // 呼び出し側はここを見て印を進める(日付を取り直すと、処理中に日をまたいだときに
+    // 作っていない日を「作り終えた」ことにしてしまう)。
+    expect(firstRun.reportsThrough).toBe('2026-05-13');
 
     const after = await countReportsByDate(client);
     for (const date of firstRun.addedDates) {
