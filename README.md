@@ -113,7 +113,8 @@ pnpm --filter @katahimo/web dev     # http://localhost:5173
 `invoices`/`invoice_lines`/`payments`/`stripe_webhook_events`)、訪問割当の最適化
 (`trait_definitions`/`customer_traits`/`staff_traits`/`staff_customer_compatibilities`/
 `staff_customer_travel_estimates`)、移動手段別の手当(`transport_allowance_rules`/`travel_legs`)。
-テーブル一覧とER図は `doc/09_データベース構造解説.md`、設計理由と未決の論点は
+ER図と全列の一覧は `doc/16_データベース構造リファレンス.md`(スキーマ定義から自動生成。
+`pnpm db:docs` で再生成)、テーブルの役割と設計理由・未決の論点は
 `doc/15_追加ドメインの設計とレビュー論点.md` を参照。
 
 `http://localhost:5173` を開き、法人ID `demo` / `admin@example.com` / `admin1234` でログインすると、GAS版

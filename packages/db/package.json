@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
-    "studio": "drizzle-kit studio"
+    "studio": "drizzle-kit studio",
+    "docs": "tsx src/docs/generate.ts"
   },
   "dependencies": {
     "@katahimo/shared": "workspace:*",
