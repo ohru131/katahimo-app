@@ -23,9 +23,14 @@
 --    drizzleのスキーマ定義ではトリガーを表現できない。追記漏れは
 --    packages/db/src/updatedAtTriggers.test.ts が検出する。
 --
--- 【注意1】CREATE FUNCTION の本体($$ 〜 $$)の内側に `--> statement-breakpoint` を
+-- 【注意1】CREATE FUNCTION の本体($$ 〜 $$)の内側に、drizzle-kitが打つ区切りの目印
+-- (ハイフン2つと大なり記号に続けて statement-breakpoint と書いた行コメント)を
 -- 入れてはいけない。本番のマイグレータ(drizzle-orm/postgres-js/migrator)はこの目印で
 -- SQLを単純に文字列分割するため、関数定義が途中で切断されて壊れる。
+--
+-- この注意書きのような「コメントの中」も例外ではない。目印はSQLとして解釈される前の
+-- 単純な文字列分割で使われるので、コメントに書いてもそこで切られる。目印そのものを
+-- 文章中に書かないこと(実際、以前ここに書いてしまい migrate() が落ちていた)。
 --
 -- 【注意2】CHECK制約に定数を入れるときは、schema/_sqlLiteral.ts の sqlNumber()/sqlInList()
 -- を通すこと。drizzleの sql テンプレートにJavaScriptの値を直接埋めるとバインドパラメータ
