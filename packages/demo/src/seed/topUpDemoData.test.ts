@@ -175,4 +175,32 @@ describe('topUpDemoData(日付が変わったあとの追い足し)', () => {
     expect(counts.get('2026-05-11') ?? 0).toBeGreaterThan(0);
     expect(counts.get('2026-05-12') ?? 0).toBeGreaterThan(0);
   }, 180_000);
+
+  /**
+   * 何か月も空けて開き直された場合、間を全部作り直すと初回シードより長く待たせることになる。
+   * 直近HISTORY_DAYS日で頭を切り、それより前は空いたままにする(READMEの但し書きと対)。
+   * 上限を外すと待ち時間が跳ね、記録を進め忘れると毎回同じ範囲を作り直すので、範囲と
+   * 記録の両方を見張る。
+   */
+  it('何か月も空いていたら直近42日だけを作り、記録は今日まで進める', async () => {
+    const { client, container, customerIdByName, store } = await setupSeededDemo('2026-05-10');
+    // 4か月以上前まで遡った記録。素直に埋めると130日ぶんを作ることになる。
+    await store.write({ reportsThrough: '2026-01-01', receiptsMonth: '2026-01', birthdayMonth: '2026-01' });
+
+    vi.setSystemTime(new Date('2026-05-13T03:00:00Z'));
+    const result = await topUpDemoData(container, store, customerIdByName);
+
+    // 2026-04-02〜2026-05-13 の42日ぶん(今日を含む)だけを作る。
+    expect(result.addedDates).toHaveLength(42);
+    expect(result.addedDates.at(0)).toBe('2026-04-02');
+    expect(result.addedDates.at(-1)).toBe('2026-05-13');
+
+    // 切り落とした側は作らない(初回シードの履歴も届いていない日で確かめる)。
+    const counts = await countReportsByDate(client);
+    expect(counts.get('2026-02-01')).toBeUndefined();
+
+    // 記録は今日まで進める。ここを止めると、次に開くたびに同じ範囲を作り直す。
+    expect(result.reportsThrough).toBe('2026-05-13');
+    expect((await readSeedState(client))?.reportsThrough).toBe('2026-05-13');
+  }, 180_000);
 });
