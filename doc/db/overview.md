@@ -95,7 +95,7 @@ RLSは`SELECT`/`UPDATE`/`DELETE`を絞り込むだけで、**PostgreSQLのFK制�
 
 ## 1.7 `updated_at` をDBトリガーで一元管理する方針(`doc/db/guidelines.md` §5)
 
-更新日時はアプリのコードではなく、`set_updated_at()` トリガー関数を `updated_at` 列を持つ全テーブルにBEFORE UPDATEトリガーとして張って更新する(現在30テーブル。`receipts`/`sessions`/`password_reset_codes` は `created_at` のみで更新経路が無いため対象外)。アプリから `updatedAt` を明示指定しても、トリガーが常に `now()` で上書きする。唯一の正をDBに置くための意図した挙動である。
+更新日時はアプリのコードではなく、`set_updated_at()` トリガー関数を `updated_at` 列を持つ全テーブルにBEFORE UPDATEトリガーとして張って更新する(現在36テーブル。`receipts`/`sessions`/`password_reset_codes`/`prompt_templates`/`report_ai_generations`/`report_ai_generation_keywords`/`report_age_band_keywords` は追記のみ・対応表・`created_at`のみで更新経路が無いため対象外)。アプリから `updatedAt` を明示指定しても、トリガーが常に `now()` で上書きする。唯一の正をDBに置くための意図した挙動である。
 
 アプリ側でのセットを方針にしない理由は、ミラー書き込みジョブの冪等キーが `buildMirrorIdempotencyKey(kind, targetId, record.updatedAt)` のように更新時刻を材料にしているためである。UPDATE経路で `updated_at` のセットを書き忘れると冪等キーが前回と同一になり、`UNIQUE(tenant_id, idempotency_key)` に弾かれて編集内容がスプレッドシートへ永久に反映されなくなる。しかもエラーにならないため気付けない(`doc/db/guidelines.md` §5)。
 
@@ -113,7 +113,7 @@ PostgreSQLは**外部キーの参照する側に索引を自動作成しない**
 
 **このベースラインを再び作り直すことはしない。** 以後のスキーマ変更は `pnpm db:generate` で `0001` 以降の差分マイグレーションを積み増す通常の運用に戻す。本番にデータが乗れば「引き継ぐデータが無い」という前提が使えなくなるためで、稼働中のDBを段階的かつ安全に変更するには1本ずつ積む運用が要る。
 
-現在は `0000_baseline_schema` に加えて `0001_birthday_coupons_and_receipt_cancellation`(誕生月クーポンと領収書の取り消し)・`0002_receipt_closing_day_settings`(領収書の締め日設定)・`0003_drop_receipt_mirror_lead_days`(ミラー送信の遅延をやめたことによる列削除)が積まれている。ベースラインを作り直すと `_journal.json` の `when` が動き、既にベースラインを当てたDBでマイグレータが `CREATE TABLE` を流し直して落ちる(`drizzle-orm` の `PgDialect.migrate` は保存済みの `hash` ではなく `created_at` と `when` を比べる)。既存DBを引き継げる形を保つため、差分は必ず新しい番号で足す。
+現在は `0000_baseline_schema` に加えて `0001_birthday_coupons_and_receipt_cancellation`(誕生月クーポンと領収書の取り消し)・`0002_receipt_closing_day_settings`(領収書の締め日設定)・`0003_drop_receipt_mirror_lead_days`(ミラー送信の遅延をやめたことによる列削除)・`0004_family_member_allergy`(世帯構成員のアレルギー確認状況)・`0005_daily_report_prompt_customization`(日報AIのプロンプト調整。第2.6節)が積まれている。ベースラインを作り直すと `_journal.json` の `when` が動き、既にベースラインを当てたDBでマイグレータが `CREATE TABLE` を流し直して落ちる(`drizzle-orm` の `PgDialect.migrate` は保存済みの `hash` ではなく `created_at` と `when` を比べる)。既存DBを引き継げる形を保つため、差分は必ず新しい番号で足す。
 
 **差分マイグレーションは「既存行があっても通る」形で書く。** `NOT NULL` 列は「NULL許容で追加 → 既存行を埋める → `SET NOT NULL`」の3手に分ける(`0001` の `coupon_redemptions.customer_id` がその例)。`ADD COLUMN ... NOT NULL` をそのまま当てると、行が1件でもあるDBでは落ちる。
 
@@ -142,7 +142,7 @@ ER図と全列の一覧は `doc/db/reference.md` にある。あちらは
 
 GAS版から移行した範囲。テナント・スタッフ(認証を兼ねる)・顧客・世帯構成員・日報・事故報告・
 領収書・勤怠・セッション・パスワード再設定・ミラー送信キュー・管理者設定・クーポン。
-`customers`/`staff` は `(tenant_id, id)` にUNIQUEを持ち、参照元は複合FKで指す(第1.2節)。
+`customers`/`staff`/`family_members` は `(tenant_id, id)` にUNIQUEを持ち、参照元は複合FKで指す(第1.2節)。
 
 ## 2.2 顧客カルテ
 
