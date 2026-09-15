@@ -6,14 +6,38 @@ import { CookieJar } from './cookieJar';
  * 「ログアウトしたはずなのに使える」「期限切れのはずのセッションを送り続ける」といった、
  * 認証まわりの挙動が本番とずれる。
  */
+/** テストごとに使い捨てるsessionStorageの代役(ブラウザと同じくタブ単位の入れ物のつもり)。 */
+function createMemoryStorage(): Storage {
+  const entries = new Map<string, string>();
+  return {
+    get length() {
+      return entries.size;
+    },
+    key: (index) => [...entries.keys()][index] ?? null,
+    getItem: (key) => entries.get(key) ?? null,
+    setItem: (key, value) => {
+      entries.set(key, String(value));
+    },
+    removeItem: (key) => {
+      entries.delete(key);
+    },
+    clear: () => {
+      entries.clear();
+    },
+  } satisfies Storage;
+}
+
 describe('CookieJar', () => {
   beforeEach(() => {
-    // sessionStorageが無い環境(vitestのnode環境)でも動くことを兼ねて確認する。
     vi.useFakeTimers();
+    // CookieJarはsessionStorageへ保存・復元するので、差し替えないと同じプロセス内の
+    // テスト同士で中身が漏れる(Node 22.4以降はnode環境にもsessionStorageが存在する)。
+    vi.stubGlobal('sessionStorage', createMemoryStorage());
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('Set-Cookieの値をCookieヘッダーとして返す', () => {
@@ -93,5 +117,29 @@ describe('CookieJar', () => {
     const jar = new CookieJar();
     jar.applySetCookie('session=dGVuYW50=token=; Path=/');
     expect(jar.header()).toBe('session=dGVuYW50=token=');
+  });
+
+  it('sessionStorage経由で別インスタンスへ引き継ぐ(リロード相当)', () => {
+    const before = new CookieJar();
+    before.applySetCookie('katahimo_session=abc123; Path=/');
+
+    expect(new CookieJar().header()).toBe('katahimo_session=abc123');
+  });
+
+  it('sessionStorageが使えない環境でもメモリ上で動く(プライベートブラウジング等)', () => {
+    vi.stubGlobal('sessionStorage', {
+      getItem: () => {
+        throw new Error('storage disabled');
+      },
+      setItem: () => {
+        throw new Error('storage disabled');
+      },
+    });
+
+    const jar = new CookieJar();
+    jar.applySetCookie('katahimo_session=abc123; Path=/');
+    expect(jar.header()).toBe('katahimo_session=abc123');
+    // 保存できないので引き継ぎはされない。
+    expect(new CookieJar().header()).toBe('');
   });
 });
