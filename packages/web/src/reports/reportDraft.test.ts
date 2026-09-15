@@ -102,14 +102,18 @@ describe('日報・事故報告の書きかけの控え', () => {
     expect(loadReportDraft(OWNER)?.aiGenerationId).toBe('gen-1');
   });
 
-  it('3軸対応前(targetFamilyMemberId/aiGenerationIdが無い)の古い控えも読める', () => {
+  it('null可の項目が欠けた控えは、読み出しでnullに寄せる', () => {
     const key = `katahimo_report_draft_v1:${OWNER.tenantId}:${OWNER.staffId}`;
-    const legacy = draftOf({ memoText: 'あ' }) as Partial<ReportDraft>;
-    legacy.targetFamilyMemberId = undefined;
-    legacy.aiGenerationId = undefined;
-    localStorage.setItem(key, JSON.stringify(legacy));
+    const partial = draftOf({ memoText: 'あ' }) as Partial<ReportDraft>;
+    partial.stressLevel = undefined;
+    partial.esRating = undefined;
+    partial.targetFamilyMemberId = undefined;
+    partial.aiGenerationId = undefined;
+    localStorage.setItem(key, JSON.stringify(partial));
     const loaded = loadReportDraft(OWNER);
     expect(loaded?.memoText).toBe('あ');
+    expect(loaded?.stressLevel).toBeNull();
+    expect(loaded?.esRating).toBeNull();
     expect(loaded?.targetFamilyMemberId).toBeNull();
     expect(loaded?.aiGenerationId).toBeNull();
   });

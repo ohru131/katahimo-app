@@ -3,6 +3,7 @@ import type {
   ReportAgeBandRecord,
   ReportAiConfigRepositoryPort,
   ReportAiConfigSnapshot,
+  ReportAiLevelsSnapshot,
   ReportEducationLevelInput,
   ReportEducationLevelRecord,
   ReportKeywordInput,
@@ -221,6 +222,26 @@ export class DrizzleReportAiConfigRepository implements ReportAiConfigRepository
         educationLevels: educationLevels.map(toEducationLevel),
         stressLevels: stressLevels.map(toStressLevel),
         phrases: phrases.map(toPhrase),
+      };
+    });
+  }
+
+  /** レベルの2表だけ。全スタッフが開く画面向けなので、キーワード表・表現までは読まない。 */
+  async loadLevels(tenantId: string): Promise<ReportAiLevelsSnapshot> {
+    return withTenant(this.db, tenantId, async (tx) => {
+      const educationLevels = await tx
+        .select()
+        .from(reportEducationLevels)
+        .where(eq(reportEducationLevels.tenantId, tenantId))
+        .orderBy(asc(reportEducationLevels.level));
+      const stressLevels = await tx
+        .select()
+        .from(reportStressLevels)
+        .where(eq(reportStressLevels.tenantId, tenantId))
+        .orderBy(asc(reportStressLevels.level));
+      return {
+        educationLevels: educationLevels.map(toEducationLevel),
+        stressLevels: stressLevels.map(toStressLevel),
       };
     });
   }

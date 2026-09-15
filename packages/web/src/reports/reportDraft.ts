@@ -129,10 +129,13 @@ export function loadReportDraft(owner: ReportDraftOwner): ReportDraft | null {
       clearReportDraft(owner);
       return null;
     }
-    // これらの項目が無い古い控え(3軸対応前に保存されたもの)も読めるよう、
-    // undefinedはnullに補う。
+    // 控えは端末に置いたJSONをそのまま読むので、項目が欠けていることがある
+    // (手で書き換えられた・別の版の画面が書いた等)。「未入力」を表すnull可の項目は
+    // undefinedのままだと画面の状態がnullでもない値になるため、読み出しでnullに寄せる。
     return {
       ...draft,
+      stressLevel: draft.stressLevel ?? null,
+      esRating: draft.esRating ?? null,
       targetFamilyMemberId: draft.targetFamilyMemberId ?? null,
       aiGenerationId: draft.aiGenerationId ?? null,
     };

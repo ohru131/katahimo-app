@@ -92,15 +92,25 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [creatingNew, setCreatingNew] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [dirty, setDirty] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const sorted = [...keywords].sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code));
   const sortedAgeBands = [...ageBands].sort((a, b) => a.sortOrder - b.sortOrder);
   const selected = sorted.find((k) => k.code === selectedCode) ?? null;
 
+  // サーバーの内容が変わった(保存後の再取得・他タブの取込)ときは、未編集ならそれに追従する。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dirtyは判定にだけ使い、依存に加えると編集中に再実行されてしまう
   useEffect(() => {
+    if (dirty) return;
     if (selected) setForm(toForm(selected));
   }, [selected]);
+
+  /** 入力を変える口はここ1つ。編集中(dirty)は再取得でフォームを上書きしない。 */
+  const editForm = (update: (f: FormState) => FormState) => {
+    setDirty(true);
+    setForm(update);
+  };
 
   const saveMutation = useMutation({
     mutationFn: (input: { code: string; body: KeywordBody }) => saveKeyword(input.code, input.body),
@@ -109,6 +119,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
       invalidate();
       setSelectedCode(keyword.code);
       setCreatingNew(false);
+      setForm(toForm(keyword));
+      setDirty(false);
     },
     onError: (e) => setFormError(e instanceof Error ? e.message : String(e)),
   });
@@ -117,22 +129,25 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
     setCreatingNew(true);
     setSelectedCode(null);
     setForm(EMPTY_FORM);
+    setDirty(false);
     setFormError(null);
   };
 
   const openEdit = (code: string) => {
     setCreatingNew(false);
     setSelectedCode(code);
+    setDirty(false);
     setFormError(null);
   };
 
   const closeForm = () => {
     setCreatingNew(false);
     setSelectedCode(null);
+    setDirty(false);
   };
 
   const toggleAgeBandCode = (code: string) => {
-    setForm((f) => ({
+    editForm((f) => ({
       ...f,
       ageBandCodes: f.ageBandCodes.includes(code)
         ? f.ageBandCodes.filter((c) => c !== code)
@@ -256,7 +271,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
           <div className="flex gap-2">
             <input
               value={form.code}
-              onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, code: e.target.value }))}
               disabled={!creatingNew}
               placeholder="コード(例 K01)"
               aria-label="コード"
@@ -264,7 +279,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             />
             <input
               value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, name: e.target.value }))}
               placeholder="キーワード(用語名)"
               aria-label="キーワード"
               className={`${INPUT_CLASS} flex-1 min-w-0`}
@@ -273,14 +288,14 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
           <div className="flex gap-2">
             <input
               value={form.category}
-              onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, category: e.target.value }))}
               placeholder="分類"
               aria-label="分類"
               className={`${INPUT_CLASS} flex-1 min-w-0`}
             />
             <input
               value={form.subConcept}
-              onChange={(e) => setForm((f) => ({ ...f, subConcept: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, subConcept: e.target.value }))}
               placeholder="副題・別名"
               aria-label="副題・別名"
               className={`${INPUT_CLASS} flex-1 min-w-0`}
@@ -294,7 +309,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               min={0}
               max={AGE_MONTHS_MAX}
               value={form.ageFromMonths}
-              onChange={(e) => setForm((f) => ({ ...f, ageFromMonths: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, ageFromMonths: e.target.value }))}
               aria-label="対象月齢(から)"
               className={`${INPUT_CLASS} flex-1 min-w-0`}
             />
@@ -304,7 +319,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               min={0}
               max={AGE_MONTHS_MAX}
               value={form.ageToMonths}
-              onChange={(e) => setForm((f) => ({ ...f, ageToMonths: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, ageToMonths: e.target.value }))}
               aria-label="対象月齢(まで、含まない)"
               className={`${INPUT_CLASS} flex-1 min-w-0`}
             />
@@ -314,7 +329,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             <span className="text-xs text-gray-500 shrink-0 w-16">教育関心度★</span>
             <select
               value={form.educationLevelMin}
-              onChange={(e) => setForm((f) => ({ ...f, educationLevelMin: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, educationLevelMin: e.target.value }))}
               aria-label="教育関心度★(下限)"
               className={`${INPUT_CLASS} flex-1 min-w-0 bg-white`}
             >
@@ -327,7 +342,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             <span className="text-gray-400 text-[10px] shrink-0">〜</span>
             <select
               value={form.educationLevelMax}
-              onChange={(e) => setForm((f) => ({ ...f, educationLevelMax: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, educationLevelMax: e.target.value }))}
               aria-label="教育関心度★(上限)"
               className={`${INPUT_CLASS} flex-1 min-w-0 bg-white`}
             >
@@ -346,7 +361,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             <select
               id="keywordStressLevelMin"
               value={form.stressLevelMin}
-              onChange={(e) => setForm((f) => ({ ...f, stressLevelMin: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, stressLevelMin: e.target.value }))}
               className={`${INPUT_CLASS} flex-1 min-w-0 bg-white`}
             >
               {REPORT_LEVELS.map((lv) => (
@@ -359,14 +374,14 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
 
           <input
             value={form.tone}
-            onChange={(e) => setForm((f) => ({ ...f, tone: e.target.value }))}
+            onChange={(e) => editForm((f) => ({ ...f, tone: e.target.value }))}
             placeholder="語調・トーン"
             aria-label="語調・トーン"
             className={INPUT_CLASS}
           />
           <textarea
             value={form.parentExplanation}
-            onChange={(e) => setForm((f) => ({ ...f, parentExplanation: e.target.value }))}
+            onChange={(e) => editForm((f) => ({ ...f, parentExplanation: e.target.value }))}
             rows={2}
             placeholder="親向けのやさしい言い換え"
             aria-label="親向けのやさしい言い換え"
@@ -374,7 +389,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
           />
           <textarea
             value={form.phraseExamples}
-            onChange={(e) => setForm((f) => ({ ...f, phraseExamples: e.target.value }))}
+            onChange={(e) => editForm((f) => ({ ...f, phraseExamples: e.target.value }))}
             rows={2}
             placeholder="言い回しの例"
             aria-label="言い回しの例"
@@ -382,7 +397,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
           />
           <textarea
             value={form.usageScene}
-            onChange={(e) => setForm((f) => ({ ...f, usageScene: e.target.value }))}
+            onChange={(e) => editForm((f) => ({ ...f, usageScene: e.target.value }))}
             rows={2}
             placeholder="使いどころ"
             aria-label="使いどころ"
@@ -390,7 +405,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
           />
           <textarea
             value={form.ngExample}
-            onChange={(e) => setForm((f) => ({ ...f, ngExample: e.target.value }))}
+            onChange={(e) => editForm((f) => ({ ...f, ngExample: e.target.value }))}
             rows={2}
             placeholder="避ける言い方(NG例)"
             aria-label="避ける言い方(NG例)"
@@ -429,7 +444,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
                 type="number"
                 min={0}
                 value={form.sortOrder}
-                onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))}
+                onChange={(e) => editForm((f) => ({ ...f, sortOrder: e.target.value }))}
                 className={`${INPUT_CLASS} w-24`}
               />
             </div>
@@ -437,7 +452,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               <input
                 type="checkbox"
                 checked={form.active}
-                onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))}
+                onChange={(e) => editForm((f) => ({ ...f, active: e.target.checked }))}
               />
               有効
             </label>

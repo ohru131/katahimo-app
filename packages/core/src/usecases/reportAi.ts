@@ -100,6 +100,7 @@ export interface DailyReportDraftResult {
   generationId: string | null;
   escalationRequired: boolean;
   childAgeMonths: number | null;
+  /** 引き下げ後に実際に適用した教育関心度★。ストレス度が未評価で教育語を使わなかった回は null。 */
   effectiveEducationLevel: number | null;
 }
 
@@ -179,6 +180,11 @@ export async function generateDailyReportDraft(
     warnings.push(ESCALATION_WARNING);
   }
 
+  // 成功か失敗かは `error` の有無1つで決める。DBの report_ai_generations_outcome_check が
+  // 「outputJson と errorMessage のちょうど一方だけ非NULL」を強制するので、空文字の error で
+  // 両方入りの行を作らないよう、ここで null に寄せてから振り分ける。
+  const errorMessage = draft.error || null;
+
   const generationId = await recordGeneration(deps, tenantId, {
     staffId: input.staffId,
     customerId: input.customerId,
@@ -188,13 +194,15 @@ export async function generateDailyReportDraft(
     model: reportAi.reportModel,
     childAgeMonths,
     educationLevel: profile?.educationLevel ?? null,
+    // 教育語を使わなかった回(PSI未評価)は null。
     effectiveEducationLevel: assembled.effectiveEducationLevel,
-    stressLevel,
+    // 実際に適用した値(1〜5に収めたもの)を残す。未評価は null。
+    stressLevel: assembled.appliedStressLevel,
     escalationRequired: assembled.escalationRequired,
     inputText: input.text,
     timeInfo,
-    outputJson: draft.error ? null : draft,
-    errorMessage: draft.error ?? null,
+    outputJson: errorMessage ? null : draft,
+    errorMessage,
     candidateKeywordIds: assembled.candidates.map((k) => k.id),
     // AIが表に無いコード(創作した語)を返すことがある。記録は語の行を参照するので
     // 解決できないコードは落とすが、draft.usedKeywords はそのまま画面に返す

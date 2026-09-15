@@ -12,7 +12,6 @@ export const REPORT_LEVELS: number[] = Array.from(
 
 export const INPUT_CLASS = 'w-full p-2 border border-gray-300 rounded text-xs';
 export const TEXTAREA_CLASS = `${INPUT_CLASS} resize-y`;
-export const SELECT_CLASS = `${INPUT_CLASS} bg-white`;
 export const BUTTON_PRIMARY_CLASS =
   'px-3 py-1.5 text-xs font-bold rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60';
 export const BUTTON_SECONDARY_CLASS =
@@ -28,11 +27,4 @@ export function ErrorText({ children }: { children: string | null }) {
 export function NoticeText({ children }: { children: string | null }) {
   if (!children) return null;
   return <p className="text-green-600 text-xs">{children}</p>;
-}
-
-/** 数値入力欄の値をnumberにする。空欄・不正な入力はnull(呼び出し側で検証エラーにする)。 */
-export function parseIntOrNull(value: string): number | null {
-  if (value.trim() === '') return null;
-  const n = Number(value);
-  return Number.isInteger(n) ? n : null;
 }

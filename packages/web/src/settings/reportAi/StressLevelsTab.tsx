@@ -45,18 +45,32 @@ function toForm(level: number, data: StressLevelView | undefined): FormState {
 function StressLevelForm({ level, data }: { level: number; data: StressLevelView | undefined }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(() => toForm(level, data));
+  const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // サーバーの内容が変わった(保存後の再取得・取込タブ)ときは、未編集ならそれに追従する。
+  // dirty はこのレベルのフォームだけのものなので、隣のレベルを編集していても追従は止まらない。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dirtyは判定にだけ使い、依存に加えると編集中に再実行されてしまう
   useEffect(() => {
+    if (dirty) return;
     setForm(toForm(level, data));
   }, [level, data]);
 
+  /** 入力を変える口はここ1つ。編集中(dirty)は再取得でフォームを上書きしない。 */
+  const editForm = (update: (f: FormState) => FormState) => {
+    setDirty(true);
+    setNotice(null);
+    setForm(update);
+  };
+
   const saveMutation = useMutation({
     mutationFn: (body: StressLevelBody) => saveStressLevel(level, body),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       setError(null);
       setNotice('保存しました。');
+      setForm(toForm(level, saved));
+      setDirty(false);
       queryClient.invalidateQueries({ queryKey: ['report-ai-admin'] });
     },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
@@ -89,14 +103,14 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
       <h4 className="text-xs font-bold text-gray-600">PSI{level}</h4>
       <input
         value={form.label}
-        onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+        onChange={(e) => editForm((f) => ({ ...f, label: e.target.value }))}
         placeholder="呼称"
         aria-label={`PSI${level} 呼称`}
         className={INPUT_CLASS}
       />
       <textarea
         value={form.criteria}
-        onChange={(e) => setForm((f) => ({ ...f, criteria: e.target.value }))}
+        onChange={(e) => editForm((f) => ({ ...f, criteria: e.target.value }))}
         rows={2}
         placeholder="判定基準(日報入力画面にも表示される)"
         aria-label={`PSI${level} 判定基準`}
@@ -104,7 +118,7 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
       />
       <textarea
         value={form.promptInstruction}
-        onChange={(e) => setForm((f) => ({ ...f, promptInstruction: e.target.value }))}
+        onChange={(e) => editForm((f) => ({ ...f, promptInstruction: e.target.value }))}
         rows={2}
         placeholder="AIへの指示文"
         aria-label={`PSI${level} AIへの指示文`}
@@ -121,7 +135,7 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
             min={EDUCATION_LEVEL_SHIFT_MIN}
             max={0}
             value={form.educationLevelShift}
-            onChange={(e) => setForm((f) => ({ ...f, educationLevelShift: e.target.value }))}
+            onChange={(e) => editForm((f) => ({ ...f, educationLevelShift: e.target.value }))}
             className={`${INPUT_CLASS} w-20`}
           />
         </div>
@@ -129,7 +143,7 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
           <input
             type="checkbox"
             checked={form.keywordsEnabled}
-            onChange={(e) => setForm((f) => ({ ...f, keywordsEnabled: e.target.checked }))}
+            onChange={(e) => editForm((f) => ({ ...f, keywordsEnabled: e.target.checked }))}
           />
           教育語を使う
         </label>
@@ -137,7 +151,7 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
           <input
             type="checkbox"
             checked={form.escalationRequired}
-            onChange={(e) => setForm((f) => ({ ...f, escalationRequired: e.target.checked }))}
+            onChange={(e) => editForm((f) => ({ ...f, escalationRequired: e.target.checked }))}
           />
           管理者連絡を要する
         </label>

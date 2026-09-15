@@ -3,7 +3,7 @@ import type {
   CustomerReportProfileRecord,
   CustomerReportProfileRepositoryPort,
 } from '@katahimo/core/ports';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { customerReportProfiles } from '../schema';
 import type { Database } from '../tenantScope';
 import { withTenant } from '../tenantScope';
@@ -42,23 +42,6 @@ export class DrizzleCustomerReportProfileRepository implements CustomerReportPro
         .limit(1);
       const row = rows[0];
       return row ? toRecord(row) : null;
-    });
-  }
-
-  /** 行がある顧客だけが返る(未設定の顧客は呼び出し側で null 扱いにする)。 */
-  async findMany(tenantId: string, customerIds: string[]): Promise<CustomerReportProfileRecord[]> {
-    if (customerIds.length === 0) return [];
-    return withTenant(this.db, tenantId, async (tx) => {
-      const rows = await tx
-        .select()
-        .from(customerReportProfiles)
-        .where(
-          and(
-            eq(customerReportProfiles.tenantId, tenantId),
-            inArray(customerReportProfiles.customerId, customerIds),
-          ),
-        );
-      return rows.map(toRecord);
     });
   }
 

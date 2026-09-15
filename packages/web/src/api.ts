@@ -871,7 +871,7 @@ export interface DailyReportDraft {
   escalationRequired: boolean;
   /** 対象児の月齢(生成時点)。対象児未選択・生年月日不明ならnull。 */
   childAgeMonths: number | null;
-  /** ストレス度による下げ幅を反映した後の教育関心度★。判定できなければnull。 */
+  /** ストレス度による下げ幅を反映した後の教育関心度★。ストレス度が未評価(教育キーワードを使わない)ならnull。 */
   effectiveEducationLevel: number | null;
 }
 

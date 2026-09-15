@@ -134,19 +134,21 @@ export async function getReportAiConfigForAdmin(
 /**
  * 一般スタッフ向けのレベル一覧。顧客詳細の★設定と、日報入力画面のストレス度の判定基準に使う。
  * テナントが行を作っていないレベルは含めない(選択肢に出さない)。
+ *
+ * 全スタッフが開く画面から呼ばれるので、レベルの2表だけを読む(`loadLevels`)。
  */
 export async function getReportAiLevelsForStaff(
   deps: ReportAiConfigDeps,
   tenantId: string,
 ): Promise<ReportAiLevelChoicesView> {
-  const snapshot = await deps.reportAiConfig.loadAll(tenantId);
+  const levels = await deps.reportAiConfig.loadLevels(tenantId);
   return {
-    educationLevels: snapshot.educationLevels.map((row) => ({
+    educationLevels: levels.educationLevels.map((row) => ({
       level: row.level,
       label: row.label,
       description: row.description,
     })),
-    stressLevels: snapshot.stressLevels.map((row) => ({
+    stressLevels: levels.stressLevels.map((row) => ({
       level: row.level,
       label: row.label,
       criteria: row.criteria,

@@ -197,6 +197,13 @@ describe('日報AIのリポジトリ(PGlite)', () => {
     });
   });
 
+  it('loadLevels はレベルの2表だけを返す', async () => {
+    const levels = await config.loadLevels(tenantId);
+    expect(levels.educationLevels.map((row) => row.level)).toEqual([2]);
+    expect(levels.stressLevels.map((row) => row.level)).toEqual([1]);
+    expect(await config.loadLevels(otherTenantId)).toEqual({ educationLevels: [], stressLevels: [] });
+  });
+
   it('キーワードを保存するたびに、相性の良い年齢帯の対応行が入れ替わる', async () => {
     await config.upsertKeyword(tenantId, keyword({ ageBandCodes: ['m0_6', 'y1'] }));
     const bandIds = (await config.loadAll(tenantId)).ageBands.map((band) => band.id);
@@ -273,8 +280,8 @@ describe('日報AIのリポジトリ(PGlite)', () => {
     expect(updated.educationLevel).toBeNull();
     expect(updated.updatedByStaffId).toBeNull();
 
-    expect(await profiles.findMany(tenantId, [customerId])).toHaveLength(1);
-    expect(await profiles.findMany(otherTenantId, [customerId])).toEqual([]);
+    expect((await profiles.find(tenantId, customerId))?.note).toBe('専門用語は控えてほしい');
+    expect(await profiles.find(otherTenantId, customerId)).toBeNull();
   });
 
   it('生成の記録は候補語と使用語を同じ行から辿れる', async () => {

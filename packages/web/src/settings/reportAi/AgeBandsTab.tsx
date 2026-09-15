@@ -57,14 +57,24 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [creatingNew, setCreatingNew] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [dirty, setDirty] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const sorted = [...ageBands].sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code));
   const selected = sorted.find((b) => b.code === selectedCode) ?? null;
 
+  // サーバーの内容が変わった(保存後の再取得・他タブの取込)ときは、未編集ならそれに追従する。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dirtyは判定にだけ使い、依存に加えると編集中に再実行されてしまう
   useEffect(() => {
+    if (dirty) return;
     if (selected) setForm(toForm(selected));
   }, [selected]);
+
+  /** 入力を変える口はここ1つ。編集中(dirty)は再取得でフォームを上書きしない。 */
+  const editForm = (update: (f: FormState) => FormState) => {
+    setDirty(true);
+    setForm(update);
+  };
 
   const saveMutation = useMutation({
     mutationFn: (input: { code: string; body: AgeBandBody }) => saveAgeBand(input.code, input.body),
@@ -73,6 +83,8 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
       invalidate();
       setSelectedCode(band.code);
       setCreatingNew(false);
+      setForm(toForm(band));
+      setDirty(false);
     },
     onError: (e) => setFormError(e instanceof Error ? e.message : String(e)),
   });
@@ -82,6 +94,7 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
     onSuccess: () => {
       setSelectedCode(null);
       setCreatingNew(false);
+      setDirty(false);
       invalidate();
     },
     onError: (e) => setFormError(e instanceof Error ? e.message : String(e)),
@@ -91,18 +104,21 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
     setCreatingNew(true);
     setSelectedCode(null);
     setForm(EMPTY_FORM);
+    setDirty(false);
     setFormError(null);
   };
 
   const openEdit = (code: string) => {
     setCreatingNew(false);
     setSelectedCode(code);
+    setDirty(false);
     setFormError(null);
   };
 
   const closeForm = () => {
     setCreatingNew(false);
     setSelectedCode(null);
+    setDirty(false);
   };
 
   const handleSubmit = (e: FormEvent) => {
@@ -187,7 +203,7 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
           <div className="flex gap-2">
             <input
               value={form.code}
-              onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, code: e.target.value }))}
               disabled={!creatingNew}
               placeholder="コード(例 y1)"
               aria-label="コード"
@@ -195,7 +211,7 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
             />
             <input
               value={form.label}
-              onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, label: e.target.value }))}
               placeholder="表示名(例 1歳)"
               aria-label="表示名"
               className={`${INPUT_CLASS} flex-1 min-w-0`}
@@ -208,7 +224,7 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
               min={0}
               max={AGE_MONTHS_MAX}
               value={form.ageFromMonths}
-              onChange={(e) => setForm((f) => ({ ...f, ageFromMonths: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, ageFromMonths: e.target.value }))}
               aria-label="対象月齢(から)"
               className={`${INPUT_CLASS} flex-1 min-w-0`}
             />
@@ -218,14 +234,14 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
               min={0}
               max={AGE_MONTHS_MAX}
               value={form.ageToMonths}
-              onChange={(e) => setForm((f) => ({ ...f, ageToMonths: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, ageToMonths: e.target.value }))}
               aria-label="対象月齢(まで、含まない)"
               className={`${INPUT_CLASS} flex-1 min-w-0`}
             />
           </div>
           <textarea
             value={form.behaviorWords}
-            onChange={(e) => setForm((f) => ({ ...f, behaviorWords: e.target.value }))}
+            onChange={(e) => editForm((f) => ({ ...f, behaviorWords: e.target.value }))}
             rows={2}
             placeholder="よく描く行動・言葉"
             aria-label="よく描く行動・言葉"
@@ -233,7 +249,7 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
           />
           <textarea
             value={form.developmentTopics}
-            onChange={(e) => setForm((f) => ({ ...f, developmentTopics: e.target.value }))}
+            onChange={(e) => editForm((f) => ({ ...f, developmentTopics: e.target.value }))}
             rows={2}
             placeholder="発達の主なトピック"
             aria-label="発達の主なトピック"
@@ -241,7 +257,7 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
           />
           <textarea
             value={form.sceneExamples}
-            onChange={(e) => setForm((f) => ({ ...f, sceneExamples: e.target.value }))}
+            onChange={(e) => editForm((f) => ({ ...f, sceneExamples: e.target.value }))}
             rows={2}
             placeholder="場面例"
             aria-label="場面例"
@@ -256,7 +272,7 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
               type="number"
               min={0}
               value={form.sortOrder}
-              onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))}
+              onChange={(e) => editForm((f) => ({ ...f, sortOrder: e.target.value }))}
               className={`${INPUT_CLASS} w-24`}
             />
           </div>

@@ -9,6 +9,7 @@ import type {
   ReportAiConfigSnapshot,
   ReportAiGenerationRecord,
   ReportAiGenerationRepositoryPort,
+  ReportAiLevelsSnapshot,
   ReportEducationLevelInput,
   ReportEducationLevelRecord,
   ReportKeywordInput,
@@ -54,6 +55,13 @@ export class FakeReportAiConfigRepository implements ReportAiConfigRepositoryPor
       educationLevels: this.educationLevels.filter((r) => r.tenantId === tenantId).map(copy),
       stressLevels: this.stressLevels.filter((r) => r.tenantId === tenantId).map(copy),
       phrases: this.phrases.filter((r) => r.tenantId === tenantId).map(copy),
+    };
+  }
+
+  async loadLevels(tenantId: string): Promise<ReportAiLevelsSnapshot> {
+    return {
+      educationLevels: this.educationLevels.filter((r) => r.tenantId === tenantId).map(copy),
+      stressLevels: this.stressLevels.filter((r) => r.tenantId === tenantId).map(copy),
     };
   }
 
@@ -171,11 +179,6 @@ export class FakeCustomerReportProfileRepository implements CustomerReportProfil
   async find(tenantId: string, customerId: string): Promise<CustomerReportProfileRecord | null> {
     const row = this.rows.find((r) => r.tenantId === tenantId && r.customerId === customerId);
     return row ? copy(row) : null;
-  }
-
-  async findMany(tenantId: string, customerIds: string[]): Promise<CustomerReportProfileRecord[]> {
-    const wanted = new Set(customerIds);
-    return this.rows.filter((r) => r.tenantId === tenantId && wanted.has(r.customerId)).map(copy);
   }
 
   async upsert(

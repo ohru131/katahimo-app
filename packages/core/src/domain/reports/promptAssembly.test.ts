@@ -391,8 +391,8 @@ describe('assembleDailyReportPrompt', () => {
     expect(out.prompt).not.toContain('ゆっくり休めますように');
     // 避ける表現は未評価でも渡す(禁止を減らす方向には倒さない)。
     expect(out.prompt).toContain('次回は〜してみましょう(宿題感)');
-    // ★の判定は従来どおり(引き下げが効かないだけ)。
-    expect(out.effectiveEducationLevel).toBe(5);
+    // 教育語を使っていないので、適用した★も残さない。
+    expect(out.effectiveEducationLevel).toBeNull();
   });
 
   it('対象児が未選択なら月齢の行を出さない(「不明」とも書かない)', () => {

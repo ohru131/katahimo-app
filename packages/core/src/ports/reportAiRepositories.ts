@@ -50,6 +50,15 @@ export interface ReportPhraseRecord extends ReportPhrase {
 }
 
 /**
+ * レベルの2表(教育関心度★・ストレス度)だけ。顧客詳細の★の選択肢と、日報入力画面の
+ * ストレス度の判定基準を出すのに使う。
+ */
+export interface ReportAiLevelsSnapshot {
+  educationLevels: ReportEducationLevelRecord[];
+  stressLevels: ReportStressLevelRecord[];
+}
+
+/**
  * 生成1回・管理画面1表示ぶんの設定一式。
  *
  * 【1回でまとめて読む理由】
@@ -61,13 +70,11 @@ export interface ReportPhraseRecord extends ReportPhrase {
  * 管理画面が「廃止した語」も一覧に出して戻せるようにするため。生成側の絞り込みは
  * `selectKeywords` / `selectPhrases` が `active` を見るので、ここで落とす必要はない。
  */
-export interface ReportAiConfigSnapshot {
+export interface ReportAiConfigSnapshot extends ReportAiLevelsSnapshot {
   ageBands: ReportAgeBandRecord[];
   keywords: ReportKeywordRecord[];
   /** 年齢帯ID → 相性の良いキーワードID(`report_age_band_keywords`)。並びは sort_order。 */
   ageBandKeywordIds: Record<string, string[]>;
-  educationLevels: ReportEducationLevelRecord[];
-  stressLevels: ReportStressLevelRecord[];
   phrases: ReportPhraseRecord[];
 }
 
@@ -95,6 +102,12 @@ export type ReportPhraseInput = Omit<ReportPhraseRecord, 'id' | 'tenantId'>;
 export interface ReportAiConfigRepositoryPort {
   /** テナントの設定一式。生成時も管理画面もこれ1回で読む。 */
   loadAll(tenantId: string): Promise<ReportAiConfigSnapshot>;
+
+  /**
+   * レベルの2表だけを読む。一般スタッフの画面(顧客詳細・日報入力)はこの2表しか使わず、
+   * 全員が開く画面なので、キーワード表・表現まで読む `loadAll` は使わない。
+   */
+  loadLevels(tenantId: string): Promise<ReportAiLevelsSnapshot>;
 
   /** 年齢帯を `code` で upsert する。 */
   upsertAgeBand(tenantId: string, input: ReportAgeBandInput): Promise<ReportAgeBandRecord>;
@@ -159,8 +172,6 @@ export type CustomerReportProfileInput = Pick<
 
 export interface CustomerReportProfileRepositoryPort {
   find(tenantId: string, customerId: string): Promise<CustomerReportProfileRecord | null>;
-  /** 顧客一覧に★を並べる用。渡したIDのうち、行がある顧客だけが返る。 */
-  findMany(tenantId: string, customerIds: string[]): Promise<CustomerReportProfileRecord[]>;
   upsert(
     tenantId: string,
     customerId: string,
@@ -194,7 +205,7 @@ export interface NewReportAiGenerationInput {
   childAgeMonths: number | null;
   /** 生成時点の家庭の★。未設定は null。 */
   educationLevel: number | null;
-  /** ストレス度による引き下げ後に実際に適用した★。 */
+  /** ストレス度による引き下げ後に実際に適用した★。PSI未評価で教育語を使わなかった回は null。 */
   effectiveEducationLevel: number | null;
   /** 生成時点のストレス度。未評価は null。 */
   stressLevel: number | null;

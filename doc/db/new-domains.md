@@ -463,7 +463,8 @@ drizzle の `sql` テンプレートに JavaScript の値を `${}` で直接埋�
 管理者API(`/api/settings/admin/report-ai/*`。年齢帯・キーワード・教育関心度・ストレス度・表現の
 upsert と `POST .../import` によるxlsx取込のマージ)・管理画面(設定モーダル「日報AIの調整(3軸)」の
 キーワード表/年齢帯/★/PSI/温かみ・避ける表現/取込の6タブ)・生成API・保存APIまで接続済み。
-`POST /api/reports/daily/generate` は `customerId`(必須)・`familyMemberId`・`stressLevel` を受け取り、
+`POST /api/reports/daily/generate` は `customerId`(必須)・`familyMemberId`・`stressLevel`・
+`reportDate`(対象児の月齢を数える基準日。省略時は今日)を受け取り、
 `assembleDailyReportPrompt` が3軸を適用したうえで `{childContext}` `{keywordGuide}` `{toneGuide}` を
 埋め、応答に `usedKeywords`・`escalationRequired`・`childAgeMonths`・`effectiveEducationLevel` を含める。
 `POST /api/reports/daily` は生成結果を保存するときの `targetFamilyMemberId` / `aiGenerationId` を受け取る。

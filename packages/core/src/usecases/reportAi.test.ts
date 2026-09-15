@@ -366,9 +366,12 @@ describe('3軸を適用した生成と、その記録', () => {
     expect(port.daily?.keywordCodes).toEqual([]);
     expect(port.daily?.prompt).toContain('教育キーワード(専門用語・発達の意味づけ)を使わないでください');
     expect(result.escalationRequired).toBe(false);
+    // 教育語を使っていないので、適用した★も残さない。
+    expect(result.effectiveEducationLevel).toBeNull();
 
     const row = reportAiGenerations.listForTest(tenantId)[0];
     expect(row?.stressLevel).toBeNull();
+    expect(row?.effectiveEducationLevel).toBeNull();
     expect(row?.candidateKeywordIds).toEqual([]);
   });
 

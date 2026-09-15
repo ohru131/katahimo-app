@@ -441,7 +441,11 @@ export interface AssembledDailyReportPrompt {
   /** プロンプトに提示した候補(report_ai_generation_keywords の candidate として記録する)。 */
   candidates: ReportKeyword[];
   ageBand: ReportAgeBand | null;
-  effectiveEducationLevel: number;
+  /**
+   * 引き下げ後に実際に適用した教育関心度★。PSI未評価のときは教育語を1つも使わないので null
+   * (使っていない回に「★を適用した」という記録を残さない)。
+   */
+  effectiveEducationLevel: number | null;
   /** 実際に適用したストレス度。未評価(スタッフがPSIを付けていない)なら null。 */
   appliedStressLevel: number | null;
   escalationRequired: boolean;
@@ -510,7 +514,8 @@ export function assembleDailyReportPrompt(input: AssembleDailyReportPromptInput)
     prompt,
     candidates,
     ageBand,
-    effectiveEducationLevel: adjustment.effectiveEducationLevel,
+    // 未評価のときは教育語を使わないので、適用した★も残さない(上のコメント参照)。
+    effectiveEducationLevel: stressLevel === null ? null : adjustment.effectiveEducationLevel,
     appliedStressLevel: stressLevel,
     escalationRequired: adjustment.escalationRequired,
   };
