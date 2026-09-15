@@ -46,7 +46,7 @@
 | ファイル | 対象読者 | 内容 | 生成元 |
 |---|---|---|---|
 | `db-review.pptx` | データベースの有識者 | 44テーブルの構成・設計上の問題点・相談事項(全30枚) | `scripts/slides/build_db_review.py` |
-| `db-for-business.pptx` | パートナー企業の実務担当・責任者 | 記録する項目を業務の言葉で並べ、抜けが無いかを確認いただくもの(全54枚) | `scripts/slides/build_db_for_business.py` |
+| `db-for-business.pptx` | パートナー企業の実務担当・責任者 | 記録する項目を業務の言葉で並べ、抜けが無いかを確認いただくもの(全55枚) | `scripts/slides/build_db_for_business.py` |
 | `architecture.pptx` | 技術の有識者 | アプリ構成・外部連携・品質の現状(全21枚) | `scripts/slides/build_architecture.py` |
 
 `.pptx` はすべてスクリプトが組み立てている。PowerPointで直接編集しても

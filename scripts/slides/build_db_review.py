@@ -358,17 +358,17 @@ rows = [
 cc = {(0, 3): MUTED}
 table(s, ML, 1.25, CW, ["テーブル", "役割", "鍵になる制約・特徴", "RLS"], rows,
       # 17行に増えたので行高を詰める(0.29のままだと下の注記(y=6.0)に食い込む)。
-      col_w=[2.2, 3.9, 5.4, 0.75], size=10, hsize=10.5, row_h=0.25, header_h=0.31,
+      col_w=[2.2, 3.9, 5.4, 0.75], size=9.5, hsize=10.5, row_h=0.245, header_h=0.31,
       first_bold=True, cell_colors=cc,
       aligns=[PP_ALIGN.LEFT, PP_ALIGN.LEFT, PP_ALIGN.LEFT, PP_ALIGN.CENTER])
-note(s, ML, 6.0, 6.0, 1.0, "複合FKとは(次章で図解します)",
+# 注記は本文2行までに抑える(3行になると自動で上に伸びて表の最終行に重なる)
+note(s, ML, 6.05, 6.0, 0.88, "複合FKとは(次章で図解します)",
      "外部キーを (tenant_id, customer_id) の2列セットにしたもの。そのIDが同じ法人の行かを"
      "データベース側で検査するための工夫です。",
      accent=ACCENT, fill=ACCENT_L, size=11)
-note(s, ML + 6.33, 6.0, 6.0, 1.0, "土台になる17枚",
-     "提案書の差別化要因のうち、予約・請求・カルテ・訪問割当の最適化・移動手当(18枚)は"
-     "次ページでスキーマだけ先に用意してあります。日報AIの3軸の9枚はその次のページで、"
-     "この一覧の prompt_templates と合わせて既に実装まで進んでいます。",
+note(s, ML + 6.33, 6.05, 6.0, 0.88, "土台になる17枚",
+     "予約・請求・カルテ・訪問割当の最適化・移動手当(18枚)は次ページでスキーマだけ先に用意。"
+     "日報AIの3軸(9枚)はその次のページで、実装済み。",
      accent=ORANGE, fill=ORANGE_L, size=11)
 
 # ══════════════════════════════════════════════════════════════
@@ -412,7 +412,7 @@ text(s, ML, 6.52, CW, 0.4,
 # 9c. テーブル一覧③ 稼働中 — 日報AIの3軸
 # ══════════════════════════════════════════════════════════════
 s = sl_("テーブル一覧③ — 稼働中: 日報AIの3軸(9枚)",
-        "年齢帯・教育関心度★・ストレス度PSIの表と、生成記録。生成まで接続済み。文面は一覧①",
+        "3軸の表と生成記録。文面は一覧①",
         source="doc/db/new-domains.md 第6章 / 区分値と値域は packages/shared/src/contracts/reportAi.ts",
         accent=VIOLET)
 rows3 = [
@@ -618,16 +618,17 @@ text(s, ML, 4.72, CW, 0.3,
 rows = [["daily_reports → staff / customers / reservations",
          "accident_reports → staff / customers",
          "receipts → staff / customers(顧客は空可)"],
-        ["attendance_days → staff(給与に直結するため特に重要)", "family_members → customers",
+        ["attendance_days → staff(給与に直結)", "family_members → customers",
          "sessions / password_reset_codes → staff"]]
 for r_i, row in enumerate(rows):
     for c_i, cell in enumerate(row):
         box(s, ML + c_i * 4.13, 5.04 + r_i * 0.5, 3.95, 0.42, cell, fill=WHITE, border=LINE,
             size=10.5, align=PP_ALIGN.LEFT)
+# 本文は2行までに抑える(3行になると自動で上に伸びて、上の箱に重なる)
 note(s, ML, 6.05, CW, 0.85, "補足",
-     "クーポンの2枚(customer_coupons / coupon_redemptions)も同じ形で customers・coupons・daily_reports を指しています。"
-     "先行整備の18枚・稼働中の日報AI3軸の10枚も同じ規約に載せてあり、複合外部キーは全部で63本です。参照先には UNIQUE(tenant_id, id) を張ってあります。"
-     "ON DELETE は全て no action(親を消せない)にしており、廃棄はテナント単位の物理削除で行う方針です。",
+     "クーポンの2枚(customer_coupons / coupon_redemptions)も同じ形で customers・coupons・daily_reports を指す。"
+     "先行整備の18枚・日報AI3軸の10枚も同じ規約で、複合外部キーは全63本。参照先に UNIQUE(tenant_id, id) を張り、"
+     "ON DELETE は全て no action。廃棄はテナント単位の物理削除で行う。",
      accent=ACCENT, fill=ACCENT_L, size=10.5)
 
 # ══════════════════════════════════════════════════════════════
@@ -849,23 +850,23 @@ text(s, ML, 1.2, CW, 0.3,
 cats = [
     ("識別子", 4, "id / tenant_id / 取込元 / 取込元ID", ACCENT),
     ("氏名", 5, "表示名 / 姓 / 名 / かな2種", ACCENT),
-    ("連絡先・住所", 7, "メール / 電話 / 市区 / 住所 / 駐車場2種 / 第2住所", VIOLET),
+    ("連絡先・住所", 7, "メール/電話/市区/住所/駐車場2/第2住所", VIOLET),
     ("第三者情報・自由記述", 4, "緊急連絡先 / 続柄 / 避難場所 / メモ", PINK),
     ("位置情報", 3, "緯度 / 経度 / 取込元の生表記", PINK),
     ("他システムの会員証", 1, "Benefit会員ID", PINK),
-    ("運用区分", 6, "会員種別 / 状態 / 支払方法 / 支払状況 / 性別 / 年代", GREEN),
+    ("運用区分", 6, "会員種別/状態/支払方法・状況/性別/年代", GREEN),
     ("生年月日", 2, "日付型 / 元表記(誕生月クーポン用・手入力)", GREEN),
-    ("日時", 7, "登録日 / 外部更新日 / 第2住所の期間2列 / 退会日 / 作成・更新", MUTED),
+    ("日時", 7, "登録・外部更新・退会日/第2住所の期間2/作成・更新", MUTED),
 ]
 text(s, ML, 1.58, 5.9, 0.28, "現状:1枚に9カテゴリが同居している", size=12, color=RED, bold=True)
 yy = 1.9
 for nm, n, cols, col in cats:
     rect(s, ML, yy, 5.9, 0.38, fill=WHITE, border=LINE)
     rect(s, ML, yy, 0.06, 0.38, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE)
-    text(s, ML + 0.16, yy + 0.04, 2.1, 0.3, nm, size=10.5, color=col, bold=True)
-    text(s, ML + 2.28, yy + 0.04, 0.55, 0.3, f"{n}列", size=10.5, color=INK, bold=True,
+    text(s, ML + 0.16, yy + 0.04, 1.85, 0.3, nm, size=10.5, color=col, bold=True)
+    text(s, ML + 2.0, yy + 0.04, 0.55, 0.3, f"{n}列", size=10.5, color=INK, bold=True,
          align=PP_ALIGN.RIGHT)
-    text(s, ML + 2.95, yy + 0.07, 2.9, 0.3, cols, size=9, color=MUTED)
+    text(s, ML + 2.65, yy + 0.08, 3.2, 0.3, cols, size=8.5, color=MUTED)
     # カテゴリが9つに増えたので行間を詰める(0.44のままだと下の注記(y=6.13)に食い込む)。
     yy += 0.40
 box(s, ML, yy, 5.9, 0.36, "合計 39列(1テーブル)", fill=RED_L, border=None, color=RED, size=11.5,
@@ -1141,7 +1142,7 @@ sec_("第 4 章", "先行して用意したスキーマと、相談事項",
 # 25. 先行整備した5領域
 # ══════════════════════════════════════════════════════════════
 s = sl_("実装より先に、DBの形だけ固めた5領域",
-        "18テーブル。リポジトリ実装・API・画面はまだ無い(日報AIの3軸は実装済みでここには含めない)",
+        "18テーブル。リポジトリ実装・API・画面はまだ無い",
         source="doc/db/new-domains.md", accent=ORANGE)
 text(s, ML, 1.16, CW, 0.3,
      "あとから足すと既存データの移行が伴うため、運用前のいまのうちに表と制約だけ作ってあります。",
@@ -1304,7 +1305,7 @@ table(s, ML, 4.35, CW, ["この資料での言い方", "正式な用語", "実�
        ["送信待ち行列", "Outbox パターン", "outbox_jobs テーブル / MirrorPort"],
        ["鍵を鍵で包む", "封筒暗号化(envelope encryption)", "tenant_keys.wrapped_dek / KeyManagementPort"],
        ["入ってよい値を縛る", "CHECK 制約", "check('xxx_check', sql`...`) / contracts の zod enum"]],
-      col_w=[3.2, 3.6, 5.5], size=10, hsize=10.5, row_h=0.32, header_h=0.32, first_bold=True)
+      col_w=[3.2, 3.6, 5.5], size=10, hsize=10.5, row_h=0.29, header_h=0.3, first_bold=True)
 text(s, ML, 6.78, CW, 0.3,
      "本資料の図はすべてPowerPointの図形で作ってあるため、コメントの書き込み・修正がそのままできます。",
      size=10.5, color=MUTED)

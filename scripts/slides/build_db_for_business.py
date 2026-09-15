@@ -194,10 +194,10 @@ note_(s, ML, 6.12, CW, "",
 s = sl_("Excelとは違うところ", "第1章 Excelに置き換える",
         source="「Excelで十分では?」というご質問への回答でもあります")
 left = [
-    ("同時に触れる", "Excelは誰かが開いていると編集できない。システムは全員が同時に入力できる"),
-    ("行が増えても重くならない", "数十万件でも一覧の表示が遅くならない仕掛けが入っている"),
+    ("同時に触れる", "Excelと違い、全員が同時に入力できる"),
+    ("行が増えても重くならない", "数十万件でも一覧表示が遅くならない"),
     ("入力規則が必ず効く", "Excelの入力規則はコピー&ペーストで破れる。システムでは破れない"),
-    ("計算式が壊れない", "行の挿入や並べ替えで式がずれることが無い。計算はその都度行う"),
+    ("計算式が壊れない", "行の挿入や並べ替えで式がずれない。計算はその都度行う"),
 ]
 right = [
     ("記録が消えない", "取り消しても行は残す(グレー表示)。記録が痕跡なく消えることがない"),
@@ -271,10 +271,10 @@ note_(s, ML, 4.6, CW, "なぜ画面のチェックだけでは足りないのか
      "守りたい条件はデータの置き場所そのものに書いておく方針です。"
      "Excelの入力規則はコピー&ペーストで破れますが、こちらは経路を問わず効きます。",
      accent=GREEN, fill=GREEN_L)
-card(s, ML, 5.85, CW, 0.95, "ご確認いただきたいのは「選べる値」の中身です", accent=VIOLET, items=[
+card(s, ML, 5.8, CW, 1.05, "ご確認いただきたいのは「選べる値」の中身です", accent=VIOLET, items=[
     {'t': "各章の「確認していただきたいこと」には、選択肢が足りているかの質問を入れています。"
-          "あとから選択肢を足すこと自体はできますが、運用開始後だと「どれにも当てはまらない」データが"
-          "先に溜まってしまい、後追いの仕分けが必要になります。"},
+          "あとから選択肢を足すことはできますが、運用開始後だと「どれにも当てはまらない」データが"
+          "先に溜まり、後追いの仕分けが必要になります。"},
 ], body_size=11.5)
 
 # ══════════════════════════════════════════════════════════════
@@ -353,14 +353,16 @@ gw = 4.06
 for i, (title, col, fl, sheets) in enumerate(groups):
     ci = min(range(3), key=lambda c: col_y[c])
     x, y = col_x[ci], col_y[ci]
-    h = 0.46 + math.ceil(len(sheets) / 2) * 0.3 + 0.1
+    # 3列に詰めたとき、いちばん背の高い列(第3-4・9・11・15章)が下端(6.88)を越えないよう
+    # 1行あたりの高さを 0.28 に抑えている
+    h = 0.42 + math.ceil(len(sheets) / 2) * 0.28 + 0.1
     rect(s, x, y, gw, h, fill=WHITE, border=col, border_w=1.2)
     rect(s, x, y, gw, 0.34, fill=fl, border=None, shape=MSO_SHAPE.RECTANGLE)
     text(s, x + 0.14, y + 0.05, gw - 0.28, 0.26, title, size=11, color=col, bold=True)
     for j, nm in enumerate(sheets):
         bx = x + 0.12 + (j % 2) * ((gw - 0.24) / 2)
-        by = y + 0.42 + (j // 2) * 0.3
-        box(s, bx, by, (gw - 0.24) / 2 - 0.06, 0.26, nm, fill=CARD, border=None, size=10,
+        by = y + 0.4 + (j // 2) * 0.28
+        box(s, bx, by, (gw - 0.24) / 2 - 0.06, 0.24, nm, fill=CARD, border=None, size=10,
             color=INK, radius=0.3)
     col_y[ci] = y + h + 0.16
 
@@ -379,7 +381,8 @@ def sheet_card(sl, x, y, w, sh):
     text(sl, x + 0.22, y + 0.08, w - 5.0, 0.28,
          [(sh['name'], {'size': 12.5, 'bold': True, 'color': col}),
           ("  " + sh['en'], {'size': 9.5, 'color': MUTED, 'font': MONO})])
-    unit_w = 0.3 + _text_w(sh['unit'], 9.5)
+    # 「×」「=」は _text_w が半角扱いで見積もるが実際は全角幅で出るため、余裕を持たせる
+    unit_w = 0.5 + _text_w(sh['unit'], 9.5) * 1.1
     badge(sl, x + w - unit_w - 0.16, y + 0.08, unit_w, 0.26, sh['unit'], color=col, fill=fl, size=9.5)
     text(sl, x + 0.22, y + 0.38, body_w, bh + 0.1, sh['cols'], size=11, color=INK, line=1.5)
     return h
@@ -427,8 +430,10 @@ def check_pages(d):
     def block_h(items, w):
         if not items:
             return 0.0
-        inner = w - 0.5
-        return 0.45 + sum(height_of("・" + t, inner, 11, lead=1.45) + 0.07 for t in items) + 0.1
+        # card() の本文は左右パディング 0.41 + 箇条書きのぶら下げ 0.2 のぶん狭い。
+        # 行送りは「フォントサイズ × 1.2(標準) × 行間 1.45」なので lead=1.75 で見積もる
+        inner = w - 0.66
+        return 0.45 + sum(height_of("・" + t, inner, 11, lead=1.75) + 0.07 for t in items) + 0.16
 
     rules, opens = d['rules'], d['opens']
     if rules and opens:
@@ -454,6 +459,9 @@ def check_pages(d):
     heights = [height_of(c, inner, 11, lead=1.48) + 0.22 for c in d['checks']]
     # 2列に振り分ける。あふれたら続きのページへ。
     idx, page_no = 0, 0
+    # 上段の決めごとが長く、下に1件も置けないときは最初から続きのページに送る
+    if BODY_BOTTOM - top - 0.42 < 0.9:
+        page_no = 1
     while idx < len(d['checks']):
         if page_no > 0:
             s = sl_(title + "(続き)",
@@ -592,7 +600,7 @@ note_(s, ML, 6.08, CW, "",
      accent=AMBER, fill=AMBER_L)
 
 s = sl_("作りかけのもの(入れ物はあるが画面が無い)", "第17章 まだ決まっていないこと")
-card(s, ML, BODY_TOP, 6.16, 2.4, "画面まで動くもの", accent=GREEN, items=[
+card(s, ML, BODY_TOP, 6.16, 2.6, "画面まで動くもの", accent=GREEN, items=[
     {'t': "顧客・世帯構成員の登録と一覧"},
     {'t': "保育日報・事故報告の登録"},
     {'t': "領収書(実費報告)の登録・一覧・取り消し"},
@@ -601,20 +609,20 @@ card(s, ML, BODY_TOP, 6.16, 2.4, "画面まで動くもの", accent=GREEN, items
     {'t': "AIに渡す文面の編集(版の履歴・既定に戻す)"},
     {'t': "日報AIの年齢帯・教育の言葉・判定基準・ご家庭の設定・生成の記録"},
 ], body_size=11)
-card(s, ML + 6.36, BODY_TOP, 6.16, 2.4, "記録する場所だけ決めてあるもの", accent=AMBER, items=[
+card(s, ML + 6.36, BODY_TOP, 6.16, 2.6, "記録する場所だけ決めてあるもの", accent=AMBER, items=[
     {'t': "顧客カルテ(写真の表示のしくみが未実装)"},
     {'t': "予約・サービスメニュー・スタッフ割当・受付枠"},
     {'t': "請求書・請求明細・入金・決済"},
     {'t': "特性・相性・移動時間の見積"},
     {'t': "移動手当の単価マスタ・移動区間"},
 ], body_size=11)
-note_(s, ML, 3.85, CW, "いまご確認いただきたい理由",
+note_(s, ML, 4.02, CW, "いまご確認いただきたい理由",
      "右側の項目は、記録する場所(シートと見出し)だけを先に決めた状態です。"
      "画面も無く、データも入っていないので、"
      "「この項目は要らない」「この項目が足りない」というご指摘を、いまなら短時間で反映できます。\n"
      "左側の「画面まで動くもの」も本番運用は始めていないため、同じく変更できます。",
      accent=ACCENT, fill=ACCENT_L)
-card(s, ML, 5.35, CW, 1.45, "本番環境について", accent=MUTED, items=[
+card(s, ML, 5.5, CW, 1.38, "本番環境について", accent=MUTED, items=[
     {'t': "本番のサーバー・データベースはまだ用意していません。"
           "バックアップ・保存時の暗号化・アクセス権限の設定は、本番を作るときにまとめて行います。"},
     {'t': "現在動いているのは、開発用の環境と、動きを見ていただくための公開デモだけです。"
@@ -671,16 +679,16 @@ table(s, ML, BODY_TOP, CW,
           ["第5章", "カルテの区分", "この7つで問題ない", "—"],
       ],
       col_w=[1.1, 1.9, 8.3, 0.9], size=10.5, hsize=10.5, row_h=0.44, header_h=0.34, first_bold=True)
-card(s, ML, 4.65, 6.16, 1.25, "急ぎ度の目安", accent=ACCENT, items=[
+card(s, ML, 4.65, 6.16, 1.35, "急ぎ度の目安", accent=ACCENT, items=[
     {'t': [("高 ", {'bold': True}), ("— これが無いと業務が回らない / 金額が合わない", {})]},
     {'t': [("中 ", {'bold': True}), ("— 運用でしのげるが、あると助かる", {})]},
     {'t': [("低 ", {'bold': True}), ("— いずれ欲しい", {})]},
 ], body_size=11)
-card(s, ML + 6.36, 4.65, 6.16, 1.25, "ご指摘の書き方のコツ", accent=GREEN, items=[
+card(s, ML + 6.36, 4.65, 6.16, 1.35, "ご指摘の書き方のコツ", accent=GREEN, items=[
     {'t': "「なぜ必要か」を一言添えていただけると、似た抜けをこちらで一緒に探せます"},
     {'t': "実際の件数・頻度(月に◯回、全体の◯割)があると、優先順位を付けられます"},
 ], body_size=11)
-note_(s, ML, 6.05, CW, "",
+note_(s, ML, 6.15, CW, "",
      "分量が多いので、章ごとに分けてご返信いただいても構いません。"
      "気づいた順にお送りいただく形でも問題ありません。",
      accent=MUTED, fill=CARD)
