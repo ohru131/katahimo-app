@@ -11,6 +11,7 @@ export * from './optimization';
 export * from './outbox';
 export * from './passwordResetCodes';
 export * from './receipts';
+export * from './reportAi';
 export * from './reservations';
 export * from './sessions';
 export * from './staff';

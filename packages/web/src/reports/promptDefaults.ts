@@ -1,8 +1,10 @@
 /**
  * GAS版GeminiReport.js DEFAULT_PROMPTSのうち、UI表示用のプレースホルダー/ヒント文言をそのまま
  * 移植したもの(AI生成プロンプト本体は@katahimo/integrationsのprompts.tsに別途移植済み)。
- * GAS版は「ＡＩプロンプト」シートで管理者が上書きできたが、そのための管理画面は本アプリに
- * まだ無いため、当面はこの既定値のみを使う。
+ * GAS版は「ＡＩプロンプト」シートで管理者が上書きできた。本アプリでの置き場所は
+ * prompt_templates テーブル(キー daily_memo_placeholder / accident_memo_placeholder /
+ * accident_hint / hiyari_hint)で、テナントの版が無ければこの既定値を使う。
+ * 画面からテナントの版を読む配線はまだ無く、現状はこの既定値のみを表示する。
  */
 
 export const DAILY_MEMO_PLACEHOLDER = `①訪問当日のサポート内容

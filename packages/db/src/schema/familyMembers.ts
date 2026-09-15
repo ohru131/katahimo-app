@@ -9,6 +9,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
@@ -100,6 +101,11 @@ export const familyMembers = pgTable(
       // 取込や移行スクリプトのように入口を通らない書き込みもあるため、DB側でも縛る。
       sql`${t.allergyStatus} <> 'present' OR NULLIF(btrim(${t.allergyNote}), '') IS NOT NULL`,
     ),
+    // daily_reports.target_family_member_id / report_ai_generations.target_family_member_id からの
+    // 複合FK(tenant_id, family_member_id)の参照先。customers.ts の customers_tenant_id_uk と同じ理由
+    // (RLSはFK制約をバイパスするため、単一列PKだけでは他テナントの構成員IDを誤って参照しても
+    // DBが検知できない)。
+    unique('family_members_tenant_id_uk').on(t.tenantId, t.id),
     // listByCustomer(WHERE tenant_id=? AND customer_id=?)を索引だけで返すため(doc/db/guidelines.md §3)。
     index('family_members_tenant_customer_idx').on(t.tenantId, t.customerId),
   ],

@@ -1,8 +1,15 @@
 /**
- * GAS版GeminiReport.js DEFAULT_PROMPTS からそのまま移植したプロンプトテンプレート。
- * GAS版は「ＡＩプロンプト」シートで管理者が上書きできたが、そのための管理画面は
- * 本アプリにまだ無いため、当面はこの既定値のみを使う(将来的にprompts.tsをDB化する余地は
- * packages/db/src/schema/ の拡張として残しておく)。
+ * GAS版GeminiReport.js DEFAULT_PROMPTS からそのまま移植したプロンプトテンプレート(既定文面)。
+ *
+ * GAS版は「ＡＩプロンプト」シートで管理者が上書きできた。本アプリではその置き場所として
+ * prompt_templates テーブル(packages/db/src/schema/reportAi.ts。キーは @katahimo/shared の
+ * PROMPT_TEMPLATE_KEYS)を用意しており、テナントの版が無いキーはこの既定文面へフォールバックする
+ * (GAS版 getPrompt の「シートに無ければ既定」と同じ挙動)。管理画面と生成APIへの接続はまだ無く、
+ * 現状の生成はこの既定文面だけで動く(doc/db/new-domains.md 第6章「実装の現状」)。
+ *
+ * 保護者向け文面を3軸(年齢帯・教育関心度・ストレス度)で組み替える差し込み
+ * ({childContext} {keywordGuide} {toneGuide})は、テナントが prompt_templates に置く文面側で使う。
+ * この既定文面はGAS版と同じ出力を保つため、差し込みを含まない。
  */
 
 export const GENERATE_DAILY_REPORT_PROMPT = `
