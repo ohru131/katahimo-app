@@ -95,7 +95,7 @@ RLSは`SELECT`/`UPDATE`/`DELETE`を絞り込むだけで、**PostgreSQLのFK制�
 
 ## 1.7 `updated_at` をDBトリガーで一元管理する方針(`doc/db/guidelines.md` §5)
 
-更新日時はアプリのコードではなく、`set_updated_at()` トリガー関数を `updated_at` 列を持つ全テーブルにBEFORE UPDATEトリガーとして張って更新する(現在30テーブル。`receipts`/`sessions`/`password_reset_codes` は `created_at` のみで更新経路が無いため対象外)。アプリから `updatedAt` を明示指定しても、トリガーが常に `now()` で上書きする。唯一の正をDBに置くための意図した挙動である。
+更新日時はアプリのコードではなく、`set_updated_at()` トリガー関数を `updated_at` 列を持つ全テーブルにBEFORE UPDATEトリガーとして張って更新する(全44テーブルのうち36テーブル。`updated_at` を持たない8テーブル — `tenants`/`receipts`/`sessions`/`password_reset_codes`/`prompt_templates`/`report_ai_generations`/`report_ai_generation_keywords`/`report_age_band_keywords` — は追記のみ・対応表・`created_at`のみで更新経路が無いため対象外)。アプリから `updatedAt` を明示指定しても、トリガーが常に `now()` で上書きする。唯一の正をDBに置くための意図した挙動である。
 
 アプリ側でのセットを方針にしない理由は、ミラー書き込みジョブの冪等キーが `buildMirrorIdempotencyKey(kind, targetId, record.updatedAt)` のように更新時刻を材料にしているためである。UPDATE経路で `updated_at` のセットを書き忘れると冪等キーが前回と同一になり、`UNIQUE(tenant_id, idempotency_key)` に弾かれて編集内容がスプレッドシートへ永久に反映されなくなる。しかもエラーにならないため気付けない(`doc/db/guidelines.md` §5)。
 
@@ -113,7 +113,7 @@ PostgreSQLは**外部キーの参照する側に索引を自動作成しない**
 
 **このベースラインを再び作り直すことはしない。** 以後のスキーマ変更は `pnpm db:generate` で `0001` 以降の差分マイグレーションを積み増す通常の運用に戻す。本番にデータが乗れば「引き継ぐデータが無い」という前提が使えなくなるためで、稼働中のDBを段階的かつ安全に変更するには1本ずつ積む運用が要る。
 
-現在は `0000_baseline_schema` に加えて `0001_birthday_coupons_and_receipt_cancellation`(誕生月クーポンと領収書の取り消し)・`0002_receipt_closing_day_settings`(領収書の締め日設定)・`0003_drop_receipt_mirror_lead_days`(ミラー送信の遅延をやめたことによる列削除)が積まれている。ベースラインを作り直すと `_journal.json` の `when` が動き、既にベースラインを当てたDBでマイグレータが `CREATE TABLE` を流し直して落ちる(`drizzle-orm` の `PgDialect.migrate` は保存済みの `hash` ではなく `created_at` と `when` を比べる)。既存DBを引き継げる形を保つため、差分は必ず新しい番号で足す。
+現在は `0000_baseline_schema` に加えて `0001_birthday_coupons_and_receipt_cancellation`(誕生月クーポンと領収書の取り消し)・`0002_receipt_closing_day_settings`(領収書の締め日設定)・`0003_drop_receipt_mirror_lead_days`(ミラー送信の遅延をやめたことによる列削除)・`0004_family_member_allergy`(世帯構成員のアレルギー確認状況)・`0005_daily_report_prompt_customization`(日報AIのプロンプト調整。第2.6節)が積まれている。ベースラインを作り直すと `_journal.json` の `when` が動き、既にベースラインを当てたDBでマイグレータが `CREATE TABLE` を流し直して落ちる(`drizzle-orm` の `PgDialect.migrate` は保存済みの `hash` ではなく `created_at` と `when` を比べる)。既存DBを引き継げる形を保つため、差分は必ず新しい番号で足す。
 
 **差分マイグレーションは「既存行があっても通る」形で書く。** `NOT NULL` 列は「NULL許容で追加 → 既存行を埋める → `SET NOT NULL`」の3手に分ける(`0001` の `coupon_redemptions.customer_id` がその例)。`ADD COLUMN ... NOT NULL` をそのまま当てると、行が1件でもあるDBでは落ちる。
 
@@ -136,13 +136,13 @@ ER図と全列の一覧は `doc/db/reference.md` にある。あちらは
 図が古いままになっていないことをCIで検査している。図をここに手書きで置くと本書だけが
 必ず古くなるため、本章は「どう分けたか・なぜその形か」の説明に絞る。
 
-ドメインの区切り(2.1〜2.5)は `doc/db/reference.md` の第1章・第2章と同じ順・同じ区切り。
+ドメインの区切り(2.1〜2.6)は `doc/db/reference.md` の第1章・第2章と同じ順・同じ区切り。
 
 ## 2.1 既存の業務データ
 
 GAS版から移行した範囲。テナント・スタッフ(認証を兼ねる)・顧客・世帯構成員・日報・事故報告・
 領収書・勤怠・セッション・パスワード再設定・ミラー送信キュー・管理者設定・クーポン。
-`customers`/`staff` は `(tenant_id, id)` にUNIQUEを持ち、参照元は複合FKで指す(第1.2節)。
+`customers`/`staff` は `(tenant_id, id)` にUNIQUEを持ち、参照元は複合FKで指す(第1.2節)。`family_members` は顧客IDまで含めた `(tenant_id, customer_id, id)` にUNIQUEを持ち、`daily_reports`/`report_ai_generations` からは3列の複合FKで指す(テナント内で別の家庭の子を指せないようにするため)。
 
 ## 2.2 顧客カルテ
 
@@ -159,6 +159,10 @@ Stripeによるカード決済等を扱う。設計上の判断(カード番号�
 ## 2.5 訪問割当の最適化と移動手当
 
 「どのスタッフをどの顧客に割り当てるべきか」の判断材料(特性・相性・移動時間)と、移動手当の算定を扱う。設計上の判断は `packages/db/src/schema/optimization.ts`/`transport.ts` 冒頭のコメント、許可値は `packages/shared/src/contracts/optimization.ts`/`transport.ts` 参照。
+
+## 2.6 日報AIのプロンプト調整
+
+GAS版が「ＡＩプロンプト」シートで持っていたプロンプト文面の置き場所(`prompt_templates`。版を積み、有効版は最大 `version`)と、保護者向け文面を「子の年齢帯 × 家庭の教育関心度 × 保護者のストレス度」の3軸で組み替えるための表(`report_age_bands`/`report_keywords`/`report_education_levels`/`report_stress_levels`/`report_phrases`/`customer_report_profiles`)、AI生成1回ごとの記録(`report_ai_generations`/`report_ai_generation_keywords`)。`daily_reports` は `ai_generation_id`(保存した本文の元になった生成)と `target_family_member_id`(主に描いている子)でこの領域を参照する。3軸の意味と設計判断は `doc/db/new-domains.md` 第6章、許可値・値域は `packages/shared/src/contracts/reportAi.ts`、組み立てロジックは `packages/core/src/domain/reports/promptAssembly.ts` 参照。
 
 ### 関係の読み方の補足
 
@@ -268,8 +272,8 @@ sequenceDiagram
 | `tenant_keys` | テナントごとのDEK(ラップ済み) | ○ | 主キーは`(tenant_id, dek_version)`。世代ごとに1行(第3章参照) |
 | `staff` | スタッフ(認証情報を兼ねる) | ○ | `(tenant_id, id)`にUNIQUE。ログイン試行の絞り込み(`failed_login_attempts`/`locked_until`)もここ。訪問割当の最適化用に`home_address`/`home_lat`/`home_lng`/`preferred_transport_mode`を持つ(第2.5節) |
 | `customers` | 顧客(利用世帯の代表者) | ○ | RESERVA CSVの全列に対応、39列。`(tenant_id, id)`にUNIQUE。緯度経度は`lat`/`lng`の数値2列(`doc/db/guidelines.md` §7)。生年月日は`dob_date`+`dob_raw`(`doc/db/guidelines.md` §6。CSVに列が無いため手入力で入り、再取込では上書きしない) |
-| `family_members` | 世帯構成員(子ども等) | ○ | `customers`の1:N。氏名・付帯情報は平文。生年月日は`dob_date`(日付型)+`dob_raw`(元表記)の2列(`doc/db/guidelines.md` §6)。アレルギーは自由記述と分けて`allergy_status`(未確認/なし/あり)+`allergy_note`の2列で持ち、取込での全件入れ替え時は氏名で突き合わせて引き継ぐ(`doc/db/guidelines.md` §11) |
-| `daily_reports` | 保育日報 | ○ | `staff`・`customers`双方への複合FK。本文は項目ごとの平文`text`列。開始・終了は`started_at`/`ended_at`(timestamptz)(`doc/db/guidelines.md` §6)。`reservation_id`で対応する予約に紐付け(任意。第2.3節) |
+| `family_members` | 世帯構成員(子ども等) | ○ | `customers`の1:N。氏名・付帯情報は平文。生年月日は`dob_date`(日付型)+`dob_raw`(元表記)の2列(`doc/db/guidelines.md` §6)。アレルギーは自由記述と分けて`allergy_status`(未確認/なし/あり)+`allergy_note`の2列で持ち、取込での全件入れ替え時は氏名で突き合わせて引き継ぐ(`doc/db/guidelines.md` §11)。`(tenant_id, customer_id, id)`にUNIQUE(`daily_reports`・`report_ai_generations`の`target_family_member_id`からの複合FKの参照先。顧客IDまで含めるのは、別の家庭の子を指せないようにするため) |
+| `daily_reports` | 保育日報 | ○ | `staff`・`customers`双方への複合FK。本文は項目ごとの平文`text`列。開始・終了は`started_at`/`ended_at`(timestamptz)(`doc/db/guidelines.md` §6)。`reservation_id`で対応する予約に紐付け(任意。第2.3節)。`risk_rating`は保護者のストレス度(PSI評価。1〜5)でAI生成の文面調整に使う。`target_family_member_id`(主に描いている子)・`ai_generation_id`(本文の元になったAI生成)はどちらも任意(第2.6節) |
 | `accident_reports` | 事故報告/ヒヤリハット | ○ | 同上。本文は項目ごとの平文`text`列。対象児の生年月日は`target_dob_date`+`target_dob_raw`の2列(`doc/db/guidelines.md` §6) |
 | `receipts` | 領収書登録(実費報告) | ○ | `customer_id`はnullable(経費のみの領収書を許容)。重複検出は平文`dedupe_key`の等値一致(取り消した行は対象外)。金額は`amount_yen`(整数)+`amount_raw`(生文字列)の2列、`billing_type`で顧客請求/会社経費を区別(`doc/db/guidelines.md` §1・§10)。訂正は編集ではなく`cancelled_at`を立てる論理削除で、行は消さない(`doc/db/guidelines.md` §10)。`(tenant_id, id)`にUNIQUE(`invoice_lines`からの複合FKの参照先。第2.4節) |
 | `attendance_days` | 勤怠(出勤簿)1日分 | ○ | 入力値は`row_data jsonb`(平文)。キーは`visits`/`officeWork`等の意味のあるキー(`doc/db/guidelines.md` §2)。派生値(残業時間等)は保存せず都度計算 |
@@ -298,6 +302,16 @@ sequenceDiagram
 | `staff_customer_travel_estimates` | スタッフ自宅↔顧客宅の所要時間・距離(移動手段ごと) | ○ | `(tenant_id, staff_id, customer_id, transport_mode)`にUNIQUE。第2.5節 |
 | `transport_allowance_rules` | 移動手当の単価マスタ(移動手段ごとの計算方法・単価) | ○ | `calc_kind`と`unit_amount_yen`の組み合わせをCHECKで縛る。第2.5節 |
 | `travel_legs` | 移動区間1件(誰が・いつ・どこから・何で移動し、手当額はいくらか) | ○ | `allowance_yen`と`allowance_rule_id`は必ず対で入る(CHECK)。第2.5節 |
+| `prompt_templates` | プロンプト文面(キーごとの版) | ○ | `(tenant_id, key, version)`にUNIQUE。追記のみで有効版は最大`version`。`key`はCHECK制約。テナントの版が無いキーはコードの既定文面へフォールバック。第2.6節 |
+| `report_education_levels` | 家庭の教育関心度★(1〜5)ごとの、教育キーワードの使い方 | ○ | `(tenant_id, level)`にUNIQUE。`max_keywords`(0〜3)・`allow_term_names`をコードが読んで指示文を組み立てる。第2.6節 |
+| `report_stress_levels` | 保護者のストレス度(1〜5)ごとの判定基準と文面への効き方 | ○ | `(tenant_id, level)`にUNIQUE。`education_level_shift`(0〜-4)・`keywords_enabled`・`escalation_required`の3列で★より優先する安全弁を表す。第2.6節 |
+| `report_age_bands` | 子の年齢帯(月齢の範囲と、その時期の行動語) | ○ | `(tenant_id, code)`・`(tenant_id, id)`にUNIQUE。月齢は半開区間`[age_from_months, age_to_months)`(CHECK)。帯どうしの重なり禁止は入口で担保。第2.6節 |
+| `report_keywords` | 教育キーワードと、使ってよい条件(月齢・★の範囲・ストレス度の下限) | ○ | `(tenant_id, code)`・`(tenant_id, id)`にUNIQUE。廃止は`active=false`(生成記録が参照するため行は消さない)。第2.6節 |
+| `report_age_band_keywords` | 年齢帯と相性の良いキーワードの対応 | ○ | 主キー`(tenant_id, age_band_id, keyword_id)`。双方への複合FK。第2.6節 |
+| `report_phrases` | 温かみ表現(`encourage`)と全日報で避ける表現(`avoid`) | ○ | `kind`/`placement`はCHECK制約。適用するストレス度の範囲を持つ。第2.6節 |
+| `customer_report_profiles` | 家庭ごとの日報の書き方の設定(教育関心度★) | ○ | 主キー`(tenant_id, customer_id)`。`customers`の列にしないのはCSV取込の上書きで消えないようにするため。第2.6節 |
+| `report_ai_generations` | AI生成1回の記録(モデル・使った版・送ったプロンプト全文・★/ストレス度・入力・生の出力) | ○ | 使った版は`prompt_template_id`(既定文面ならNULL)、実際に送った全文は`prompt_text`(既定文面はコードのリリースで変わるため、版IDだけでは復元できない)。`(tenant_id, id)`と`(tenant_id, customer_id, id)`にUNIQUE(後者は`daily_reports.ai_generation_id`からの複合FKの参照先)。`output_json`と`error_message`はちょうど一方だけ非NULL(CHECK)。`updated_at`を持たない事実の記録。第2.6節 |
+| `report_ai_generation_keywords` | 生成1回で提示した候補(`candidate`)とAIが使った語(`used`) | ○ | 主キー`(tenant_id, generation_id, keyword_id, role)`。`role`はCHECK制約。第2.6節 |
 
 ## 4.1 `customers` の列の設計意図
 

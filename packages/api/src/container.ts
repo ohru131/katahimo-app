@@ -15,6 +15,7 @@ import type {
   MirrorPort,
   NotifierPort,
   PasswordResetCodeRepositoryPort,
+  PromptTemplateRepositoryPort,
   ReceiptRepositoryPort,
   ReportAiPort,
   ReportAiPortFactory,
@@ -60,6 +61,11 @@ export interface Container {
   couponRedemptions: CouponRedemptionRepositoryPort;
   customerCoupons: CustomerCouponRepositoryPort;
   appSettings: AppSettingsRepositoryPort;
+  /**
+   * AIプロンプトの文面(テナントが管理画面で編集した版)。版が無いキーは
+   * @katahimo/shared の DEFAULT_PROMPT_TEMPLATES へフォールバックする。
+   */
+  promptTemplates: PromptTemplateRepositoryPort;
   /**
    * app_settingsの資格情報(Gemini APIキー・Google Chat Webhook URL)の暗号化/復号にだけ使う。
    * 顧客・日報等の業務データは平文列なので、ここを通らない(packages/core/src/ports/crypto.ts)。

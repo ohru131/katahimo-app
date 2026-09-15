@@ -1,13 +1,18 @@
 import {
   getAdminSettings,
+  listPromptTemplatesForAdmin,
+  listPromptTemplateVersions,
+  resetPromptTemplateToDefault,
   resolveGeminiApiKey,
   saveGeminiApiKey,
   saveGeminiModelSettings,
   saveGoogleChatWebhookSettings,
+  savePromptTemplate,
   saveReceiptDeadlineSettings,
 } from '@katahimo/core';
 import type { ResolvedSession } from '@katahimo/core/usecases';
 import { RECEIPT_CANCELLABLE_DAYS_MAX, RECEIPT_CLOSING_DAY_MAX } from '@katahimo/db/schema';
+import { PROMPT_TEMPLATE_KEYS, type PromptTemplateKey } from '@katahimo/shared';
 import { Hono } from 'hono';
 import type { Container } from '../container';
 import { getAuthenticatedSession } from '../session';
@@ -30,6 +35,17 @@ function isAdmin(session: ResolvedSession | null): session is ResolvedSession {
   return !!session && session.isAdmin;
 }
 
+/**
+ * URLのキーが @katahimo/shared の PROMPT_TEMPLATE_KEYS のどれかか。
+ * DBのCHECK制約(prompt_templates_key_check)と同じ許可値をここでも見る(doc/db/guidelines.md §4)。
+ */
+function parsePromptTemplateKey(value: string | undefined): PromptTemplateKey | null {
+  return (PROMPT_TEMPLATE_KEYS as readonly string[]).includes(value ?? '')
+    ? (value as PromptTemplateKey)
+    : null;
+}
+
+/** 管理者設定(Gemini APIキー・ミラー送信先・プロンプト文面等)のルートをまとめる。 */
 export function createSettingsRoutes(container: Container) {
   const app = new Hono();
 
@@ -164,6 +180,79 @@ export function createSettingsRoutes(container: Container) {
     } catch (e) {
       return c.json({ success: false, message: e instanceof Error ? e.message : String(e) }, 502);
     }
+  });
+
+  /**
+   * AIプロンプトの文面一覧。GAS版の「ＡＩプロンプト」シートに当たる画面のデータ源で、
+   * テナントが版を積んでいないキーは既定文面(@katahimo/shared)を編集前の値として返す。
+   */
+  app.get('/admin/prompts', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const templates = await listPromptTemplatesForAdmin(container, session.tenantId);
+    return c.json({ templates });
+  });
+
+  /** 1キーの版の履歴(新しい順)。文面は上書きせず積むので、前の版をそのまま読める。 */
+  app.get('/admin/prompts/:key/versions', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const key = parsePromptTemplateKey(c.req.param('key'));
+    if (!key) return c.json({ code: 'validation_failed', message: '不明なプロンプトの種類です' }, 400);
+
+    const rows = await listPromptTemplateVersions(container, session.tenantId, key);
+    return c.json({
+      versions: rows.map((row) => ({
+        id: row.id,
+        version: row.version,
+        body: row.body,
+        note: row.note,
+        createdByStaffId: row.createdByStaffId,
+        createdAt: row.createdAt,
+      })),
+    });
+  });
+
+  /** 文面を新しい版として保存する。検証に落ちたものはusecaseの日本語メッセージをそのまま400で返す。 */
+  app.put('/admin/prompts/:key', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const key = parsePromptTemplateKey(c.req.param('key'));
+    if (!key) return c.json({ ok: false, message: '不明なプロンプトの種類です' }, 400);
+
+    const body = await c.req.json().catch(() => null);
+    if (typeof body?.body !== 'string') {
+      return c.json({ ok: false, message: 'body が必要です' }, 400);
+    }
+    if (body.note !== undefined && typeof body.note !== 'string') {
+      return c.json({ ok: false, message: 'note は文字列にしてください' }, 400);
+    }
+
+    const result = await savePromptTemplate(container, session.tenantId, session.staffId, {
+      key,
+      body: body.body,
+      note: body.note,
+    });
+    return result.ok ? c.json(result) : c.json(result, 400);
+  });
+
+  /** 既定の文面を新しい版として積む(GAS版でシートの行を消して既定に戻したのと同じ結果)。 */
+  app.post('/admin/prompts/:key/reset', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const key = parsePromptTemplateKey(c.req.param('key'));
+    if (!key) return c.json({ ok: false, message: '不明なプロンプトの種類です' }, 400);
+
+    const result = await resetPromptTemplateToDefault(container, session.tenantId, session.staffId, key);
+    return result.ok ? c.json(result) : c.json(result, 400);
   });
 
   return app;

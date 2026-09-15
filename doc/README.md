@@ -28,8 +28,8 @@
 |---|---|---|
 | `overview.md` | 構造解説。テナント分離・データ保護・暗号化の方針と、テーブルの役割一覧 | 手書き |
 | `guidelines.md` | 設計の指針と、実際に踏んだ落とし穴。金額の持ち方・値域の縛り方・クーポン・領収書の設計判断 | 手書き |
-| `new-domains.md` | 予約・請求・カルテ・訪問割当・移動手当の設計理由と、まだ決めきれていない論点 | 手書き |
-| `reference.md` | ER図と全34テーブルの全列一覧 | **自動生成** |
+| `new-domains.md` | 予約・請求・カルテ・訪問割当・移動手当・日報AIのプロンプト調整の設計理由と、まだ決めきれていない論点 | 手書き |
+| `reference.md` | ER図と全44テーブルの全列一覧 | **自動生成** |
 
 `reference.md` は `packages/db/src/schema/*.ts` から機械的に書き出している。
 手で編集しても次の生成で消える。スキーマを変えたら `pnpm db:docs` で作り直す
@@ -39,8 +39,8 @@
 
 | ファイル | 対象読者 | 内容 | 生成元 |
 |---|---|---|---|
-| `db-review.pptx` | データベースの有識者 | 34テーブルの構成・設計上の問題点・相談事項(全29枚) | `scripts/slides/build_db_review.py` |
-| `db-for-business.pptx` | パートナー企業の実務担当・責任者 | 記録する項目を業務の言葉で並べ、抜けが無いかを確認いただくもの(全51枚) | `scripts/slides/build_db_for_business.py` |
+| `db-review.pptx` | データベースの有識者 | 44テーブルの構成・設計上の問題点・相談事項(全30枚) | `scripts/slides/build_db_review.py` |
+| `db-for-business.pptx` | パートナー企業の実務担当・責任者 | 記録する項目を業務の言葉で並べ、抜けが無いかを確認いただくもの(全54枚) | `scripts/slides/build_db_for_business.py` |
 | `architecture.pptx` | 技術の有識者 | アプリ構成・外部連携・品質の現状(全21枚) | `scripts/slides/build_architecture.py` |
 
 `.pptx` はすべてスクリプトが組み立てている。PowerPointで直接編集しても

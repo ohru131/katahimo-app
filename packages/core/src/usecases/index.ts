@@ -5,6 +5,7 @@ export * from './coupons';
 export * from './customers';
 export * from './mirrorWorker';
 export * from './passwordReset';
+export * from './promptTemplates';
 export * from './receipts';
 export * from './reportAi';
 export * from './reports';

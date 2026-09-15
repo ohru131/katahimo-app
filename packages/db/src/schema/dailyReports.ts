@@ -14,6 +14,8 @@ import {
 } from 'drizzle-orm/pg-core';
 import { TENANT_RLS_USING } from './_rls';
 import { customers } from './customers';
+import { familyMembers } from './familyMembers';
+import { reportAiGenerations } from './reportAi';
 import { reservations } from './reservations';
 import { staff } from './staff';
 import { tenants } from './tenants';
@@ -60,9 +62,26 @@ export const dailyReports = pgTable(
      * 日報が2件できることが無い(1回の訪問=1件)一方で、予約の無い日報はあるため。
      */
     reservationId: uuid(),
+    /**
+     * この日報が主に描いている子(世帯構成員)。兄弟のいる世帯で「誰の日報か」を区別し、
+     * AI生成時に月齢から年齢帯を決める材料にもなる(doc/db/new-domains.md 第6章)。
+     * GAS版には無い列で、未選択・世帯全体の日報は null。
+     */
+    targetFamilyMemberId: uuid(),
+    /**
+     * 保存した本文の元になったAI生成の記録(report_ai_generations)。手書きのみ・AI未使用は null。
+     * どのモデル・どの版のプロンプト・どのキーワード候補から生まれた文面かを後から辿るため
+     * (doc/proposal/tech-stack.md の「AIが生成した記録はモデル名・プロンプトのバージョンを残す」方針)。
+     */
+    aiGenerationId: uuid(),
 
     occurredAt: timestamp({ withTimezone: true }).notNull(),
-    /** PSI評価(1〜5)。未評価はnull(2026-08-28のGAS版仕様変更で未評価に戻せるようにしたのを踏襲)。 */
+    /**
+     * PSI評価(保護者のストレス度。1〜5、数値が低いほど負担が大きい)。未評価はnull
+     * (2026-08-28のGAS版仕様変更で未評価に戻せるようにしたのを踏襲)。
+     * AI生成ではこの値を report_stress_levels の定義に当てて、教育キーワードの使用可否と
+     * 文面の控えめさを切り替える(doc/db/new-domains.md 第6章)。列名は GAS版の Risk 列に由来。
+     */
     riskRating: integer(),
     /** 満足度(ES)評価(1〜5)。未評価はnull。 */
     esRating: integer(),
@@ -106,6 +125,20 @@ export const dailyReports = pgTable(
       name: 'daily_reports_tenant_reservation_fk',
       columns: [t.tenantId, t.reservationId],
       foreignColumns: [reservations.tenantId, reservations.id],
+    }),
+    // 対象児・AI生成記録も null 許容の複合FK(MATCH SIMPLE で null の行は対象外)。
+    // どちらも顧客IDまで組に含める。理由: テナント内で別の家庭の子・別の家庭の生成を
+    // 指せないようにする(下の daily_reports_tenant_id_customer_uk と同じ考え方で、
+    // 日報はすでに顧客IDを持っているので、食い違う組み合わせを残さない)。
+    foreignKey({
+      name: 'daily_reports_tenant_target_family_member_fk',
+      columns: [t.tenantId, t.customerId, t.targetFamilyMemberId],
+      foreignColumns: [familyMembers.tenantId, familyMembers.customerId, familyMembers.id],
+    }),
+    foreignKey({
+      name: 'daily_reports_tenant_ai_generation_fk',
+      columns: [t.tenantId, t.customerId, t.aiGenerationId],
+      foreignColumns: [reportAiGenerations.tenantId, reportAiGenerations.customerId, reportAiGenerations.id],
     }),
     // 1つの予約に日報が2件付くのを止める(二重登録で実施記録が重複すると、
     // サービス提供分の請求も二重になる)。nullの行同士は重複とみなさない。

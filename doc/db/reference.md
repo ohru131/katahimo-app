@@ -24,12 +24,12 @@ drizzleがDDLを起こすときと同じ解釈を通しているので、`packag
 
 | 項目 | 数 |
 |---|---|
-| テーブル | 34 |
-| 列 | 464 |
-| 外部キー | 83 |
-| インデックス | 54 |
-| CHECK制約 | 113 |
-| RLSポリシー | 33 |
+| テーブル | 44 |
+| 列 | 572 |
+| 外部キー | 106 |
+| インデックス | 57 |
+| CHECK制約 | 138 |
+| RLSポリシー | 43 |
 
 ---
 
@@ -71,6 +71,8 @@ erDiagram
         uuid staff_id "FK"
         uuid customer_id "FK"
         uuid reservation_id "FK"
+        uuid target_family_member_id "FK"
+        uuid ai_generation_id "FK"
     }
     accident_reports {
         uuid id "PK"
@@ -124,6 +126,8 @@ erDiagram
         uuid customer_id "FK"
         uuid coupon_id "FK"
     }
+    report_ai_generations {
+    }
     reservations {
     }
     tenants ||--o{ tenant_keys : "tenant_id"
@@ -135,6 +139,8 @@ erDiagram
     staff ||--o{ daily_reports : "tenant_id, staff_id"
     customers ||--o{ daily_reports : "tenant_id, customer_id"
     reservations |o--o| daily_reports : "tenant_id, reservation_id"
+    family_members |o--o{ daily_reports : "tenant_id, customer_id, target_family_member_id"
+    report_ai_generations |o--o{ daily_reports : "tenant_id, customer_id, ai_generation_id"
     tenants ||--o{ accident_reports : "tenant_id"
     staff ||--o{ accident_reports : "tenant_id, staff_id"
     customers ||--o{ accident_reports : "tenant_id, customer_id"
@@ -375,6 +381,92 @@ erDiagram
     transport_allowance_rules |o--o{ travel_legs : "tenant_id, allowance_rule_id"
 ```
 
+## 1.6 日報AIのプロンプト調整
+
+テナントごとのプロンプト文面・教育キーワード表・年齢帯・判定基準と、AI生成の記録。daily_reports は ai_generation_id / target_family_member_id でこの領域を参照する。
+
+```mermaid
+erDiagram
+    prompt_templates {
+        uuid id "PK"
+        uuid tenant_id "FK"
+        uuid created_by_staff_id "FK"
+    }
+    report_education_levels {
+        uuid id "PK"
+        uuid tenant_id "FK"
+    }
+    report_stress_levels {
+        uuid id "PK"
+        uuid tenant_id "FK"
+    }
+    report_age_bands {
+        uuid id "PK"
+        uuid tenant_id "FK"
+    }
+    report_keywords {
+        uuid id "PK"
+        uuid tenant_id "FK"
+    }
+    report_age_band_keywords {
+        uuid tenant_id "PK"
+        uuid age_band_id "PK"
+        uuid keyword_id "PK"
+    }
+    report_phrases {
+        uuid id "PK"
+        uuid tenant_id "FK"
+    }
+    customer_report_profiles {
+        uuid tenant_id "PK"
+        uuid customer_id "PK"
+        uuid updated_by_staff_id "FK"
+    }
+    report_ai_generations {
+        uuid id "PK"
+        uuid tenant_id "FK"
+        uuid staff_id "FK"
+        uuid customer_id "FK"
+        uuid target_family_member_id "FK"
+        uuid prompt_template_id "FK"
+    }
+    report_ai_generation_keywords {
+        uuid tenant_id "PK"
+        uuid generation_id "PK"
+        uuid keyword_id "PK"
+        text role "PK"
+    }
+    customers {
+    }
+    family_members {
+    }
+    staff {
+    }
+    tenants {
+    }
+    tenants ||--o{ prompt_templates : "tenant_id"
+    staff |o--o{ prompt_templates : "tenant_id, created_by_staff_id"
+    tenants ||--o{ report_education_levels : "tenant_id"
+    tenants ||--o{ report_stress_levels : "tenant_id"
+    tenants ||--o{ report_age_bands : "tenant_id"
+    tenants ||--o{ report_keywords : "tenant_id"
+    tenants ||--o{ report_age_band_keywords : "tenant_id"
+    report_age_bands ||--o{ report_age_band_keywords : "tenant_id, age_band_id"
+    report_keywords ||--o{ report_age_band_keywords : "tenant_id, keyword_id"
+    tenants ||--o{ report_phrases : "tenant_id"
+    tenants ||--o{ customer_report_profiles : "tenant_id"
+    customers ||--o| customer_report_profiles : "tenant_id, customer_id"
+    staff |o--o{ customer_report_profiles : "tenant_id, updated_by_staff_id"
+    tenants ||--o{ report_ai_generations : "tenant_id"
+    staff ||--o{ report_ai_generations : "tenant_id, staff_id"
+    customers ||--o{ report_ai_generations : "tenant_id, customer_id"
+    family_members |o--o{ report_ai_generations : "tenant_id, customer_id, target_family_member_id"
+    prompt_templates |o--o{ report_ai_generations : "tenant_id, prompt_template_id"
+    tenants ||--o{ report_ai_generation_keywords : "tenant_id"
+    report_ai_generations ||--o{ report_ai_generation_keywords : "tenant_id, generation_id"
+    report_keywords ||--o{ report_ai_generation_keywords : "tenant_id, keyword_id"
+```
+
 ---
 
 # 2. テーブル定義
@@ -555,6 +647,10 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |
 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |
 
+**一意制約**
+
+- `family_members_tenant_customer_id_uk` `(tenant_id, customer_id, id)`
+
 **外部キー**
 
 - `(tenant_id)` → `tenants(id)`
@@ -581,6 +677,8 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 | `staff_id` | `uuid` | NOT NULL | — |
 | `customer_id` | `uuid` | NOT NULL | — |
 | `reservation_id` | `uuid` | NULL可 | — |
+| `target_family_member_id` | `uuid` | NULL可 | — |
+| `ai_generation_id` | `uuid` | NULL可 | — |
 | `occurred_at` | `timestamp with time zone` | NOT NULL | — |
 | `risk_rating` | `integer` | NULL可 | — |
 | `es_rating` | `integer` | NULL可 | — |
@@ -603,6 +701,8 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 - `(tenant_id, staff_id)` → `staff(tenant_id, id)`
 - `(tenant_id, customer_id)` → `customers(tenant_id, id)`
 - `(tenant_id, reservation_id)` → `reservations(tenant_id, id)`
+- `(tenant_id, customer_id, target_family_member_id)` → `family_members(tenant_id, customer_id, id)`
+- `(tenant_id, customer_id, ai_generation_id)` → `report_ai_generations(tenant_id, customer_id, id)`
 
 **CHECK制約**
 
@@ -1758,3 +1858,346 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 
 - `travel_legs_tenant_staff_date_idx` `(tenant_id, staff_id, business_date)`
 - `travel_legs_tenant_daily_report_idx` `(tenant_id, daily_report_id)` WHERE `"travel_legs"."daily_report_id" IS NOT NULL`
+
+
+## 2.6 日報AIのプロンプト調整
+
+### `prompt_templates`
+
+RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', true)::uuid`
+
+| 列 | 型 | NULL | 既定値 |
+|---|---|---|---|
+| `id` (PK) | `uuid` | NOT NULL | `gen_random_uuid()` |
+| `tenant_id` | `uuid` | NOT NULL | — |
+| `key` | `text` | NOT NULL | — |
+| `version` | `integer` | NOT NULL | — |
+| `body` | `text` | NOT NULL | — |
+| `note` | `text` | NOT NULL | `''` |
+| `created_by_staff_id` | `uuid` | NULL可 | — |
+| `created_at` | `timestamp with time zone` | NOT NULL | `now()` |
+
+**一意制約**
+
+- `prompt_templates_tenant_key_version_uk` `(tenant_id, key, version)`
+- `prompt_templates_tenant_id_uk` `(tenant_id, id)`
+
+**外部キー**
+
+- `(tenant_id)` → `tenants(id)`
+- `(tenant_id, created_by_staff_id)` → `staff(tenant_id, id)`
+
+**CHECK制約**
+
+- `prompt_templates_key_check` — `"prompt_templates"."key" IN ('daily_report', 'daily_report_stance', 'accident_report', 'receipt_ocr', 'daily_memo_placeholder', 'accident_memo_placeholder', 'accident_hint', 'hiyari_hint')`
+- `prompt_templates_version_check` — `"prompt_templates"."version" >= 1`
+- `prompt_templates_body_not_blank` — `NULLIF(btrim("prompt_templates"."body"), '') IS NOT NULL`
+- `prompt_templates_body_length_check` — `char_length("prompt_templates"."body") <= 20000`
+
+
+### `report_education_levels`
+
+RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', true)::uuid`
+
+| 列 | 型 | NULL | 既定値 |
+|---|---|---|---|
+| `id` (PK) | `uuid` | NOT NULL | `gen_random_uuid()` |
+| `tenant_id` | `uuid` | NOT NULL | — |
+| `level` | `integer` | NOT NULL | — |
+| `label` | `text` | NOT NULL | — |
+| `description` | `text` | NOT NULL | `''` |
+| `prompt_instruction` | `text` | NOT NULL | `''` |
+| `max_keywords` | `integer` | NOT NULL | `1` |
+| `allow_term_names` | `boolean` | NOT NULL | `false` |
+| `created_at` | `timestamp with time zone` | NOT NULL | `now()` |
+| `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |
+
+**一意制約**
+
+- `report_education_levels_tenant_level_uk` `(tenant_id, level)`
+
+**外部キー**
+
+- `(tenant_id)` → `tenants(id)`
+
+**CHECK制約**
+
+- `report_education_levels_level_check` — `"report_education_levels"."level" BETWEEN 1 AND 5`
+- `report_education_levels_max_keywords_check` — `"report_education_levels"."max_keywords" BETWEEN 0 AND 3`
+
+
+### `report_stress_levels`
+
+RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', true)::uuid`
+
+| 列 | 型 | NULL | 既定値 |
+|---|---|---|---|
+| `id` (PK) | `uuid` | NOT NULL | `gen_random_uuid()` |
+| `tenant_id` | `uuid` | NOT NULL | — |
+| `level` | `integer` | NOT NULL | — |
+| `label` | `text` | NOT NULL | — |
+| `criteria` | `text` | NOT NULL | `''` |
+| `prompt_instruction` | `text` | NOT NULL | `''` |
+| `education_level_shift` | `integer` | NOT NULL | `0` |
+| `keywords_enabled` | `boolean` | NOT NULL | `true` |
+| `escalation_required` | `boolean` | NOT NULL | `false` |
+| `created_at` | `timestamp with time zone` | NOT NULL | `now()` |
+| `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |
+
+**一意制約**
+
+- `report_stress_levels_tenant_level_uk` `(tenant_id, level)`
+
+**外部キー**
+
+- `(tenant_id)` → `tenants(id)`
+
+**CHECK制約**
+
+- `report_stress_levels_level_check` — `"report_stress_levels"."level" BETWEEN 1 AND 5`
+- `report_stress_levels_shift_check` — `"report_stress_levels"."education_level_shift" BETWEEN -4 AND 0`
+
+
+### `report_age_bands`
+
+RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', true)::uuid`
+
+| 列 | 型 | NULL | 既定値 |
+|---|---|---|---|
+| `id` (PK) | `uuid` | NOT NULL | `gen_random_uuid()` |
+| `tenant_id` | `uuid` | NOT NULL | — |
+| `code` | `text` | NOT NULL | — |
+| `label` | `text` | NOT NULL | — |
+| `age_from_months` | `integer` | NOT NULL | — |
+| `age_to_months` | `integer` | NOT NULL | — |
+| `behavior_words` | `text` | NOT NULL | `''` |
+| `development_topics` | `text` | NOT NULL | `''` |
+| `scene_examples` | `text` | NOT NULL | `''` |
+| `sort_order` | `integer` | NOT NULL | `0` |
+| `created_at` | `timestamp with time zone` | NOT NULL | `now()` |
+| `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |
+
+**一意制約**
+
+- `report_age_bands_tenant_code_uk` `(tenant_id, code)`
+- `report_age_bands_tenant_id_uk` `(tenant_id, id)`
+
+**外部キー**
+
+- `(tenant_id)` → `tenants(id)`
+
+**CHECK制約**
+
+- `report_age_bands_code_not_blank` — `NULLIF(btrim("report_age_bands"."code"), '') IS NOT NULL`
+- `report_age_bands_age_range_check` — `"report_age_bands"."age_from_months" >= 0 AND "report_age_bands"."age_to_months" > "report_age_bands"."age_from_months" AND "report_age_bands"."age_to_months" <= 144`
+
+
+### `report_keywords`
+
+RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', true)::uuid`
+
+| 列 | 型 | NULL | 既定値 |
+|---|---|---|---|
+| `id` (PK) | `uuid` | NOT NULL | `gen_random_uuid()` |
+| `tenant_id` | `uuid` | NOT NULL | — |
+| `code` | `text` | NOT NULL | — |
+| `category` | `text` | NOT NULL | `''` |
+| `name` | `text` | NOT NULL | — |
+| `sub_concept` | `text` | NOT NULL | `''` |
+| `age_from_months` | `integer` | NOT NULL | — |
+| `age_to_months` | `integer` | NOT NULL | — |
+| `education_level_min` | `integer` | NOT NULL | — |
+| `education_level_max` | `integer` | NOT NULL | — |
+| `stress_level_min` | `integer` | NOT NULL | — |
+| `tone` | `text` | NOT NULL | `''` |
+| `parent_explanation` | `text` | NOT NULL | `''` |
+| `phrase_examples` | `text` | NOT NULL | `''` |
+| `usage_scene` | `text` | NOT NULL | `''` |
+| `ng_example` | `text` | NOT NULL | `''` |
+| `sort_order` | `integer` | NOT NULL | `0` |
+| `active` | `boolean` | NOT NULL | `true` |
+| `created_at` | `timestamp with time zone` | NOT NULL | `now()` |
+| `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |
+
+**一意制約**
+
+- `report_keywords_tenant_code_uk` `(tenant_id, code)`
+- `report_keywords_tenant_id_uk` `(tenant_id, id)`
+
+**外部キー**
+
+- `(tenant_id)` → `tenants(id)`
+
+**CHECK制約**
+
+- `report_keywords_code_not_blank` — `NULLIF(btrim("report_keywords"."code"), '') IS NOT NULL`
+- `report_keywords_name_not_blank` — `NULLIF(btrim("report_keywords"."name"), '') IS NOT NULL`
+- `report_keywords_age_range_check` — `"report_keywords"."age_from_months" >= 0 AND "report_keywords"."age_to_months" > "report_keywords"."age_from_months" AND "report_keywords"."age_to_months" <= 144`
+- `report_keywords_education_level_check` — `"report_keywords"."education_level_min" BETWEEN 1 AND 5 AND "report_keywords"."education_level_max" BETWEEN 1 AND 5 AND "report_keywords"."education_level_min" <= "report_keywords"."education_level_max"`
+- `report_keywords_stress_level_check` — `"report_keywords"."stress_level_min" BETWEEN 1 AND 5`
+
+
+### `report_age_band_keywords`
+
+RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', true)::uuid`
+
+| 列 | 型 | NULL | 既定値 |
+|---|---|---|---|
+| `tenant_id` (PK) | `uuid` | NOT NULL | — |
+| `age_band_id` (PK) | `uuid` | NOT NULL | — |
+| `keyword_id` (PK) | `uuid` | NOT NULL | — |
+| `sort_order` | `integer` | NOT NULL | `0` |
+
+**主キー(複合)**
+
+- `(tenant_id, age_band_id, keyword_id)`
+
+**外部キー**
+
+- `(tenant_id)` → `tenants(id)`
+- `(tenant_id, age_band_id)` → `report_age_bands(tenant_id, id)`
+- `(tenant_id, keyword_id)` → `report_keywords(tenant_id, id)`
+
+
+### `report_phrases`
+
+RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', true)::uuid`
+
+| 列 | 型 | NULL | 既定値 |
+|---|---|---|---|
+| `id` (PK) | `uuid` | NOT NULL | `gen_random_uuid()` |
+| `tenant_id` | `uuid` | NOT NULL | — |
+| `kind` | `text` | NOT NULL | — |
+| `body` | `text` | NOT NULL | — |
+| `intent` | `text` | NOT NULL | `''` |
+| `stress_level_min` | `integer` | NOT NULL | `1` |
+| `stress_level_max` | `integer` | NOT NULL | `5` |
+| `placement` | `text` | NOT NULL | `'any'` |
+| `sort_order` | `integer` | NOT NULL | `0` |
+| `active` | `boolean` | NOT NULL | `true` |
+| `created_at` | `timestamp with time zone` | NOT NULL | `now()` |
+| `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |
+
+**外部キー**
+
+- `(tenant_id)` → `tenants(id)`
+
+**CHECK制約**
+
+- `report_phrases_kind_check` — `"report_phrases"."kind" IN ('encourage', 'avoid')`
+- `report_phrases_placement_check` — `"report_phrases"."placement" IN ('any', 'closing')`
+- `report_phrases_body_not_blank` — `NULLIF(btrim("report_phrases"."body"), '') IS NOT NULL`
+- `report_phrases_stress_level_check` — `"report_phrases"."stress_level_min" BETWEEN 1 AND 5 AND "report_phrases"."stress_level_max" BETWEEN 1 AND 5 AND "report_phrases"."stress_level_min" <= "report_phrases"."stress_level_max"`
+
+**インデックス**
+
+- `report_phrases_tenant_kind_idx` `(tenant_id, kind)` WHERE `"report_phrases"."active"`
+
+
+### `customer_report_profiles`
+
+RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', true)::uuid`
+
+| 列 | 型 | NULL | 既定値 |
+|---|---|---|---|
+| `tenant_id` (PK) | `uuid` | NOT NULL | — |
+| `customer_id` (PK) | `uuid` | NOT NULL | — |
+| `education_level` | `integer` | NULL可 | — |
+| `note` | `text` | NOT NULL | `''` |
+| `updated_by_staff_id` | `uuid` | NULL可 | — |
+| `created_at` | `timestamp with time zone` | NOT NULL | `now()` |
+| `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |
+
+**主キー(複合)**
+
+- `(tenant_id, customer_id)`
+
+**外部キー**
+
+- `(tenant_id)` → `tenants(id)`
+- `(tenant_id, customer_id)` → `customers(tenant_id, id)`
+- `(tenant_id, updated_by_staff_id)` → `staff(tenant_id, id)`
+
+**CHECK制約**
+
+- `customer_report_profiles_education_level_check` — `"customer_report_profiles"."education_level" IS NULL OR "customer_report_profiles"."education_level" BETWEEN 1 AND 5`
+
+
+### `report_ai_generations`
+
+RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', true)::uuid`
+
+| 列 | 型 | NULL | 既定値 |
+|---|---|---|---|
+| `id` (PK) | `uuid` | NOT NULL | `gen_random_uuid()` |
+| `tenant_id` | `uuid` | NOT NULL | — |
+| `staff_id` | `uuid` | NOT NULL | — |
+| `customer_id` | `uuid` | NOT NULL | — |
+| `target_family_member_id` | `uuid` | NULL可 | — |
+| `prompt_template_id` | `uuid` | NULL可 | — |
+| `prompt_text` | `text` | NOT NULL | — |
+| `model` | `text` | NOT NULL | — |
+| `child_age_months` | `integer` | NULL可 | — |
+| `education_level` | `integer` | NULL可 | — |
+| `effective_education_level` | `integer` | NULL可 | — |
+| `stress_level` | `integer` | NULL可 | — |
+| `escalation_required` | `boolean` | NOT NULL | `false` |
+| `input_text` | `text` | NOT NULL | — |
+| `time_info` | `text` | NOT NULL | `''` |
+| `output_json` | `jsonb` | NULL可 | — |
+| `error_message` | `text` | NULL可 | — |
+| `created_at` | `timestamp with time zone` | NOT NULL | `now()` |
+
+**一意制約**
+
+- `report_ai_generations_tenant_id_uk` `(tenant_id, id)`
+- `report_ai_generations_tenant_customer_id_uk` `(tenant_id, customer_id, id)`
+
+**外部キー**
+
+- `(tenant_id)` → `tenants(id)`
+- `(tenant_id, staff_id)` → `staff(tenant_id, id)`
+- `(tenant_id, customer_id)` → `customers(tenant_id, id)`
+- `(tenant_id, customer_id, target_family_member_id)` → `family_members(tenant_id, customer_id, id)`
+- `(tenant_id, prompt_template_id)` → `prompt_templates(tenant_id, id)`
+
+**CHECK制約**
+
+- `report_ai_generations_levels_check` — `("report_ai_generations"."education_level" IS NULL OR "report_ai_generations"."education_level" BETWEEN 1 AND 5) AND ("report_ai_generations"."effective_education_level" IS NULL OR "report_ai_generations"."effective_education_level" BETWEEN 1 AND 5) AND ("report_ai_generations"."stress_level" IS NULL OR "report_ai_generations"."stress_level" BETWEEN 1 AND 5)`
+- `report_ai_generations_child_age_check` — `"report_ai_generations"."child_age_months" IS NULL OR "report_ai_generations"."child_age_months" BETWEEN 0 AND 144`
+- `report_ai_generations_child_target_check` — `"report_ai_generations"."target_family_member_id" IS NOT NULL OR "report_ai_generations"."child_age_months" IS NULL`
+- `report_ai_generations_outcome_check` — `("report_ai_generations"."output_json" IS NULL) <> ("report_ai_generations"."error_message" IS NULL)`
+
+**インデックス**
+
+- `report_ai_generations_tenant_customer_created_idx` `(tenant_id, customer_id, created_at DESC NULLS LAST)`
+
+
+### `report_ai_generation_keywords`
+
+RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', true)::uuid`
+
+| 列 | 型 | NULL | 既定値 |
+|---|---|---|---|
+| `tenant_id` (PK) | `uuid` | NOT NULL | — |
+| `generation_id` (PK) | `uuid` | NOT NULL | — |
+| `keyword_id` (PK) | `uuid` | NOT NULL | — |
+| `role` (PK) | `text` | NOT NULL | — |
+
+**主キー(複合)**
+
+- `(tenant_id, generation_id, keyword_id, role)`
+
+**外部キー**
+
+- `(tenant_id)` → `tenants(id)`
+- `(tenant_id, generation_id)` → `report_ai_generations(tenant_id, id)`
+- `(tenant_id, keyword_id)` → `report_keywords(tenant_id, id)`
+
+**CHECK制約**
+
+- `report_ai_generation_keywords_role_check` — `"report_ai_generation_keywords"."role" IN ('candidate', 'used')`
+
+**インデックス**
+
+- `report_ai_generation_keywords_tenant_keyword_idx` `(tenant_id, keyword_id, role)`

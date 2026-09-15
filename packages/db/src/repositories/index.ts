@@ -9,6 +9,7 @@ export * from './dailyReportRepository';
 export * from './familyMemberRepository';
 export * from './outboxRepository';
 export * from './passwordResetCodeRepository';
+export * from './promptTemplateRepository';
 export * from './receiptRepository';
 export * from './sessionRepository';
 export * from './staffRepository';

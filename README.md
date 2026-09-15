@@ -160,6 +160,15 @@ psql -U katahimo -d katahimo_dev -c "SELECT gemini_api_key_ciphertext FROM app_s
   管理者設定APIも平文では返さない**(設定済みかどうかの`hasGeminiApiKey`と末尾4文字の`geminiApiKeyPreview`
   だけを返す。12文字未満のキーはプレビューもnull)。モデル一覧の取得は保存済みキーをサーバー側で解決して
   行い、保存前の入力中のキーで試すこともできる。
+- **AIプロンプト(管理者)**: GAS版が「ＡＩプロンプト」シートで管理者に開放していた文面の上書きを、
+  設定モーダルの「AIプロンプト」から行う。日報生成・保護者向け文面の文体ルール・事故報告生成・
+  領収書OCR・入力欄の入力例/記載要領の文面をキーごとに編集し、保存すると`prompt_templates`に
+  新しい版として積まれる(上書きしない。
+  有効なのは最新版で、「既定に戻す」も版として記録される)。テナントの版が無いキーは
+  `@katahimo/shared`の既定文面(GAS版の`DEFAULT_PROMPTS`をそのまま移植)で動く。差し込みは
+  GAS版と同じ`{anonymizedText}`(メモ本文)と`{timeInfo}`(保育時間)。子の年齢帯・家庭の教育関心度・
+  保護者のストレス度で文面を組み替える3軸の差し込み(`{childContext}`等)はDBの表と組み立てロジックまで
+  用意してあり、生成への接続はまだ(`doc/db/new-domains.md`第6章)。
 - **📅 予定**: 今日/明日トグル・予定カード一覧・「🚗 ルート・移動時間を取得」ボタンをGAS版と同じ見た目で
   実装し、予定タップで訪問先一覧タブへ切り替え検索欄に反映する(`jumpToCustomerFromSchedule`)動作も
   再現した。Google Calendar/Maps連携はGAS版Web Appへのブリッジ経由で、ブリッジ未設定の環境では

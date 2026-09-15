@@ -2,6 +2,7 @@ import {
   generateAccidentReportDraft,
   generateDailyReportDraft,
   getCustomerHistory,
+  getReportUiTexts,
   saveAccidentReport,
   saveDailyReport,
   sendVisitCompleteNotification,
@@ -21,6 +22,7 @@ const HISTORY_LIMIT = 5;
 export const ACCIDENT_REPORT_TYPES = ['事故報告', 'ヒヤリハット'] as const;
 export type AccidentReportType = (typeof ACCIDENT_REPORT_TYPES)[number];
 
+/** 外から来た値が区分値(ACCIDENT_REPORT_TYPES)のどちらかかを判定する。 */
 export function isAccidentReportType(value: unknown): value is AccidentReportType {
   return (ACCIDENT_REPORT_TYPES as readonly unknown[]).includes(value);
 }
@@ -33,8 +35,21 @@ export function isValidRating(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5;
 }
 
+/** 日報・事故報告・AI生成・領収書OCRのルートをまとめる。 */
 export function createReportRoutes(container: Container) {
   const app = new Hono();
+
+  /**
+   * 入力欄のプレースホルダー・記載要領。GAS版 Main.js getUiConfig に対応する。
+   * テナントが管理画面で文面を編集していればその版、していなければ既定文面が返る。
+   */
+  app.get('/ui-texts', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    const texts = await getReportUiTexts(container, session.tenantId);
+    return c.json(texts);
+  });
 
   /** 保育日報の下書きをAI生成する(GAS版generateReportWithWarnings相当)。 */
   app.post('/daily/generate', async (c) => {

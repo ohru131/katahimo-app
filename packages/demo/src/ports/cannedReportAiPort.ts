@@ -14,6 +14,7 @@ const FAKE_LATENCY_MS = 900;
 const DEMO_NOTICE =
   '【デモ】このテキストは定型応答です。管理者設定でGemini APIキーを登録すると実際に生成されます。';
 
+/** 指定ミリ秒だけ待つ。生成しているように見せるためだけの遅延。 */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -25,6 +26,7 @@ function summarize(text: string): string {
   return cleaned.length > 120 ? `${cleaned.slice(0, 120)}…` : cleaned;
 }
 
+/** 開始・終了時刻を「10:00〜13:00」の形にする。片方でも欠けていれば記録なしとする。 */
 function timeRange(start?: string, end?: string): string {
   if (start && end) return `${start}〜${end}`;
   return '訪問時間の記録なし';
@@ -36,8 +38,12 @@ function timeRange(start?: string, end?: string): string {
  * 本番のNoopReportAiPortは「APIキーが未設定です」と返すだけで、公開デモとしては
  * 何も見えない。ここでは入力メモを実際に使った定型文を返し、画面遷移と編集フローを
  * 一通り体験できるようにする。AIが書いたように見せかけないよう、必ず断り書きを含める。
+ *
+ * 組み立て済みのプロンプト(input.prompt)は使わず、メモ本体(input.text)だけを素材にする。
+ * 文面をそのまま出しても定型応答としては読めないため。
  */
 export class CannedReportAiPort implements ReportAiPort {
+  /** 入力メモを素材にした定型の日報下書きを返す(断り書き付き)。 */
   async generateDailyReport(input: GenerateDailyReportInput): Promise<DailyReportDraft> {
     await delay(FAKE_LATENCY_MS);
     const summary = summarize(input.text);
@@ -74,7 +80,8 @@ export class CannedReportAiPort implements ReportAiPort {
     };
   }
 
-  async extractReceiptAmount(_base64Image: string): Promise<ReceiptOcrResult> {
+  /** 領収書OCRは定型の読み取り結果を返す(画像は見ない)。 */
+  async extractReceiptAmount(): Promise<ReceiptOcrResult> {
     await delay(FAKE_LATENCY_MS);
     // 読み取れなかった扱いにして手入力へ誘導する。もっともらしい金額を捏造すると、
     // デモを見た人が「OCRの精度がこの程度」と誤解しかねない。

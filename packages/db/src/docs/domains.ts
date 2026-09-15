@@ -1,7 +1,7 @@
 /**
  * 自動生成するリファレンス(doc/db/reference.md)で、ER図を分割する単位。
  *
- * 34テーブルを1枚の図に収めると読めない大きさになるため、業務ドメインごとに分ける。
+ * 44テーブルを1枚の図に収めると読めない大きさになるため、業務ドメインごとに分ける。
  * 区切り方は doc/db/overview.md の第2章(レビュー用の手書き図)と揃えてある。
  * 図を見比べる人が同じ切り口で読めるようにするため。
  *
@@ -68,6 +68,22 @@ export const SCHEMA_DOMAINS: readonly SchemaDomain[] = [
       'staff_customer_travel_estimates',
       'transport_allowance_rules',
       'travel_legs',
+    ],
+  },
+  {
+    title: '日報AIのプロンプト調整',
+    note: 'テナントごとのプロンプト文面・教育キーワード表・年齢帯・判定基準と、AI生成の記録。daily_reports は ai_generation_id / target_family_member_id でこの領域を参照する。',
+    tables: [
+      'prompt_templates',
+      'report_education_levels',
+      'report_stress_levels',
+      'report_age_bands',
+      'report_keywords',
+      'report_age_band_keywords',
+      'report_phrases',
+      'customer_report_profiles',
+      'report_ai_generations',
+      'report_ai_generation_keywords',
     ],
   },
 ];

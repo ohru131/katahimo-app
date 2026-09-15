@@ -10,6 +10,7 @@ import type {
   CustomerCouponUpsertRequest,
   FamilyAllergyStatus,
   FamilyMemberAllergyUpdateRequest,
+  PromptTemplateKey,
 } from '@katahimo/shared';
 
 export type {
@@ -341,6 +342,98 @@ export async function listAvailableGeminiModels(apiKey?: string): Promise<Gemini
   );
   if (!body.success) throw new Error(body.message || 'モデル一覧の取得に失敗しました');
   return body.models ?? [];
+}
+
+// ── AIプロンプトテンプレート(GAS版「ＡＩプロンプト」シートに対応) ──
+
+/**
+ * 管理者向けプロンプトテンプレート1件の表示用データ。`isDefault=true` はテナントが版を
+ * 保存しておらず、`defaultBody`(@katahimo/shared DEFAULT_PROMPT_TEMPLATES)がそのまま
+ * 使われていることを示す。
+ */
+export interface PromptTemplateAdminView {
+  key: PromptTemplateKey;
+  label: string;
+  body: string;
+  version: number | null;
+  isDefault: boolean;
+  note: string;
+  updatedAt: string | null;
+  defaultBody: string;
+  placeholders: string[];
+}
+
+export interface PromptTemplateVersionView {
+  id: string;
+  version: number;
+  body: string;
+  note: string;
+  createdByStaffId: string | null;
+  createdAt: string;
+}
+
+/** 管理者のAIプロンプト管理画面用。全キーを既定/保存済みの区別付きで返す。 */
+export async function fetchPromptTemplatesForAdmin(): Promise<PromptTemplateAdminView[]> {
+  const res = await fetch('/api/settings/admin/prompts', { credentials: 'include' });
+  const body = await parseJsonOrThrow<{ templates: PromptTemplateAdminView[] }>(res);
+  return body.templates;
+}
+
+/** 指定キーの保存履歴(新しい順)。 */
+export async function fetchPromptTemplateVersions(
+  key: PromptTemplateKey,
+): Promise<PromptTemplateVersionView[]> {
+  const res = await fetch(`/api/settings/admin/prompts/${key}/versions`, { credentials: 'include' });
+  const body = await parseJsonOrThrow<{ versions: PromptTemplateVersionView[] }>(res);
+  return body.versions;
+}
+
+export interface SavePromptTemplateResult {
+  ok: boolean;
+  message: string;
+  template?: PromptTemplateAdminView;
+}
+
+/**
+ * 文面を新しい版として保存する。他の管理者設定(postSettings)と違い、検証エラーは
+ * HTTPステータス400で返る(`{ ok: false, message }`)。parseJsonOrThrowがそのmessageを
+ * そのままErrorにするので、呼び出し側はtry/catchで受け取れば良い。
+ */
+export async function savePromptTemplate(
+  key: PromptTemplateKey,
+  body: string,
+  note?: string,
+): Promise<SavePromptTemplateResult> {
+  const res = await fetch(`/api/settings/admin/prompts/${key}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ body, note }),
+  });
+  return parseJsonOrThrow<SavePromptTemplateResult>(res);
+}
+
+/** 既定の文面に戻す(既定に戻したことも新しい版として記録される)。エラー時の扱いはsavePromptTemplateと同じ。 */
+export async function resetPromptTemplate(key: PromptTemplateKey): Promise<SavePromptTemplateResult> {
+  const res = await fetch(`/api/settings/admin/prompts/${key}/reset`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  return parseJsonOrThrow<SavePromptTemplateResult>(res);
+}
+
+/** 日報・事故報告の入力欄プレースホルダー/記載要領(UI文言)。ログイン済みスタッフなら誰でも取得できる。 */
+export interface ReportUiTextsView {
+  dailyMemoPlaceholder: string;
+  accidentMemoPlaceholder: string;
+  accidentHint: string;
+  hiyariHint: string;
+}
+
+/** 日報・事故報告の入力欄プレースホルダー/記載要領(UI文言)をサーバーから取得する。 */
+export async function fetchReportUiTexts(): Promise<ReportUiTextsView> {
+  const res = await fetch('/api/reports/ui-texts', { credentials: 'include' });
+  return parseJsonOrThrow<ReportUiTextsView>(res);
 }
 
 export async function searchCustomersByFamilyName(familyName: string): Promise<CustomerView[]> {

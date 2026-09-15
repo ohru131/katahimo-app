@@ -1,10 +1,12 @@
+import { DEFAULT_PROMPT_TEMPLATES } from '@katahimo/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import type { ReceiptBillingType, ReceiptImageUpload } from '../api';
+import type { ReceiptBillingType, ReceiptImageUpload, ReportUiTextsView } from '../api';
 import {
   extractReceiptOcr,
   fetchCouponsForSelection,
   fetchCustomerDetail,
+  fetchReportUiTexts,
   generateAccidentReportDraft,
   generateDailyReportDraft,
   saveAccidentReport,
@@ -14,12 +16,6 @@ import {
 } from '../api';
 import { markCustomerRecentlyUsed } from '../recentCustomers';
 import { ASSESSMENT_DEFINITIONS, type AssessmentType } from './assessmentDefinitions';
-import {
-  ACCIDENT_MEMO_PLACEHOLDER,
-  ACCIDENT_WRITING_HINT,
-  DAILY_MEMO_PLACEHOLDER,
-  HIYARI_WRITING_HINT,
-} from './promptDefaults';
 import { clearReportDraft, loadReportDraft, type ReportDraftOwner, saveReportDraft } from './reportDraft';
 import { useVoiceInput } from './useVoiceInput';
 
@@ -182,19 +178,24 @@ function AssessmentHintModal({ type, onClose }: { type: AssessmentType; onClose:
 
 /**
  * 事故報告/ヒヤリハットの「💡書き方のヒント」モーダル。GAS版toggleHintと同じく、
- * 種別(reportType)がヒヤリハットの場合はHIYARI_WRITING_HINT、それ以外はACCIDENT_WRITING_HINT
- * を表示する(タイトルも切り替える)。
+ * 種別(reportType)がヒヤリハットの場合はhiyariHint、それ以外はaccidentHintを表示する
+ * (タイトルも切り替える)。文面は呼び出し側(ReportModal)がAPI(/api/reports/ui-texts)から
+ * 取得したものを渡す。
  */
 function WritingHintModal({
   reportType,
+  accidentHint,
+  hiyariHint,
   onClose,
 }: {
   reportType: '事故報告' | 'ヒヤリハット';
+  accidentHint: string;
+  hiyariHint: string;
   onClose: () => void;
 }) {
   const isHiyari = reportType === 'ヒヤリハット';
   const title = isHiyari ? 'ヒヤリハットの書き方ヒント' : '事故報告書の書き方ヒント';
-  const content = isHiyari ? HIYARI_WRITING_HINT : ACCIDENT_WRITING_HINT;
+  const content = isHiyari ? hiyariHint : accidentHint;
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-[130] flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-md rounded-xl shadow-xl flex flex-col max-h-[85vh]">
@@ -345,6 +346,21 @@ export function ReportModal({
     queryFn: () => fetchCustomerDetail(customerId as string),
     enabled: customerId !== null,
   });
+
+  // 入力欄のプレースホルダー・書き方ヒント(UI文言)。テナントが管理画面
+  // (PromptTemplateAdminModal)で上書きしていればそれを、まだ読み込めていない間や
+  // 取得に失敗した場合は@katahimo/sharedの既定値をそのまま使う(GAS版と同じ文面)。
+  const reportUiTextsQuery = useQuery({
+    queryKey: ['report-ui-texts'],
+    queryFn: fetchReportUiTexts,
+    staleTime: 5 * 60_000,
+  });
+  const reportUiTexts: ReportUiTextsView = reportUiTextsQuery.data ?? {
+    dailyMemoPlaceholder: DEFAULT_PROMPT_TEMPLATES.daily_memo_placeholder,
+    accidentMemoPlaceholder: DEFAULT_PROMPT_TEMPLATES.accident_memo_placeholder,
+    accidentHint: DEFAULT_PROMPT_TEMPLATES.accident_hint,
+    hiyariHint: DEFAULT_PROMPT_TEMPLATES.hiyari_hint,
+  };
 
   const [mode, setMode] = useState<Mode>('daily');
   const [selectedFamilyId, setSelectedFamilyId] = useState('');
@@ -1400,7 +1416,7 @@ export function ReportModal({
                   value={memoText}
                   onChange={(e) => setMemoText(e.target.value)}
                   rows={4}
-                  placeholder={DAILY_MEMO_PLACEHOLDER}
+                  placeholder={reportUiTexts.dailyMemoPlaceholder}
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
                 />
                 {dailyVoice.error && <p className="text-red-500 text-xs mt-1">{dailyVoice.error}</p>}
@@ -1528,7 +1544,7 @@ export function ReportModal({
                   value={accidentMemo}
                   onChange={(e) => setAccidentMemo(e.target.value)}
                   rows={4}
-                  placeholder={ACCIDENT_MEMO_PLACEHOLDER}
+                  placeholder={reportUiTexts.accidentMemoPlaceholder}
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
                 />
                 {accidentVoice.error && <p className="text-red-500 text-xs mt-1">{accidentVoice.error}</p>}
@@ -1627,7 +1643,12 @@ export function ReportModal({
 
       {hintType && <AssessmentHintModal type={hintType} onClose={() => setHintType(null)} />}
       {showWritingHint && (
-        <WritingHintModal reportType={reportType} onClose={() => setShowWritingHint(false)} />
+        <WritingHintModal
+          reportType={reportType}
+          accidentHint={reportUiTexts.accidentHint}
+          hiyariHint={reportUiTexts.hiyariHint}
+          onClose={() => setShowWritingHint(false)}
+        />
       )}
     </div>
   );
