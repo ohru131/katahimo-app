@@ -894,6 +894,8 @@ export interface GenerateDailyReportDraftInput {
   text: string;
   start?: string;
   end?: string;
+  /** 訪問日('YYYY-MM-DD')。対象児の月齢はこの日付時点で数える。省略時はサーバー側で今日として扱う。 */
+  reportDate?: string;
   customerId: string;
   /** 対象児(familyMembers)。未選択(世帯全体)はnull/省略。 */
   familyMemberId?: string | null;
@@ -1042,6 +1044,10 @@ export interface HistoryItem {
   es?: number | null;
   isAccident?: boolean;
   subtype?: string;
+  /** 対象児(世帯構成員)。日報にのみ持つ。未選択はnull。 */
+  targetFamilyMemberId?: string | null;
+  /** 本文の元になったAI生成の記録。日報にのみ持つ。手書きのみはnull。 */
+  aiGenerationId?: string | null;
 }
 
 export async function fetchCustomerHistory(customerId: string, before?: string): Promise<HistoryItem[]> {

@@ -2,13 +2,18 @@ import {
   type EducationLevelBody,
   type EducationLevelView,
   MAX_KEYWORDS_PER_REPORT_LIMIT,
-  REPORT_LEVEL_MAX,
-  REPORT_LEVEL_MIN,
 } from '@katahimo/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { saveEducationLevel } from '../reportAiAdminApi';
-import { BUTTON_PRIMARY_CLASS, ErrorText, INPUT_CLASS, NoticeText, TEXTAREA_CLASS } from './shared';
+import {
+  BUTTON_PRIMARY_CLASS,
+  ErrorText,
+  INPUT_CLASS,
+  NoticeText,
+  REPORT_LEVELS,
+  TEXTAREA_CLASS,
+} from './shared';
 
 interface FormState {
   label: string;
@@ -146,16 +151,12 @@ function EducationLevelForm({ level, data }: { level: number; data: EducationLev
  */
 export function EducationLevelsTab({ educationLevels }: { educationLevels: EducationLevelView[] }) {
   const byLevel = new Map(educationLevels.map((e) => [e.level, e]));
-  const levels = Array.from(
-    { length: REPORT_LEVEL_MAX - REPORT_LEVEL_MIN + 1 },
-    (_, i) => REPORT_LEVEL_MIN + i,
-  );
   return (
     <div className="space-y-3">
       <p className="text-[10px] text-gray-400">
         ★は教育関心度(高いほど教育語への関心が高い家庭)。行が無いレベルは保存すると作られます。
       </p>
-      {levels.map((level) => (
+      {REPORT_LEVELS.map((level) => (
         <EducationLevelForm key={level} level={level} data={byLevel.get(level)} />
       ))}
     </div>

@@ -9,7 +9,14 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { replacePhrases } from '../reportAiAdminApi';
-import { BUTTON_PRIMARY_CLASS, BUTTON_SECONDARY_CLASS, ErrorText, INPUT_CLASS, NoticeText } from './shared';
+import {
+  BUTTON_PRIMARY_CLASS,
+  BUTTON_SECONDARY_CLASS,
+  ErrorText,
+  INPUT_CLASS,
+  NoticeText,
+  REPORT_LEVELS,
+} from './shared';
 
 /** 保存前の画面上だけのキー。DBの行を指すものではないので、削除・並べ替えの識別にだけ使う。 */
 let nextRowKey = 0;
@@ -91,10 +98,7 @@ function PhraseRowEditor({
                 aria-label="対象PSI(下限)"
                 className={`${INPUT_CLASS} w-16 bg-white`}
               >
-                {Array.from(
-                  { length: REPORT_LEVEL_MAX - REPORT_LEVEL_MIN + 1 },
-                  (_, i) => REPORT_LEVEL_MIN + i,
-                ).map((lv) => (
+                {REPORT_LEVELS.map((lv) => (
                   <option key={lv} value={lv}>
                     {lv}
                   </option>
@@ -107,10 +111,7 @@ function PhraseRowEditor({
                 aria-label="対象PSI(上限)"
                 className={`${INPUT_CLASS} w-16 bg-white`}
               >
-                {Array.from(
-                  { length: REPORT_LEVEL_MAX - REPORT_LEVEL_MIN + 1 },
-                  (_, i) => REPORT_LEVEL_MIN + i,
-                ).map((lv) => (
+                {REPORT_LEVELS.map((lv) => (
                   <option key={lv} value={lv}>
                     {lv}
                   </option>

@@ -14,6 +14,7 @@ import {
   BUTTON_SECONDARY_CLASS,
   ErrorText,
   INPUT_CLASS,
+  REPORT_LEVELS,
   TEXTAREA_CLASS,
 } from './shared';
 
@@ -317,10 +318,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               aria-label="教育関心度★(下限)"
               className={`${INPUT_CLASS} flex-1 min-w-0 bg-white`}
             >
-              {Array.from(
-                { length: REPORT_LEVEL_MAX - REPORT_LEVEL_MIN + 1 },
-                (_, i) => REPORT_LEVEL_MIN + i,
-              ).map((lv) => (
+              {REPORT_LEVELS.map((lv) => (
                 <option key={lv} value={lv}>
                   ★{lv}
                 </option>
@@ -333,10 +331,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               aria-label="教育関心度★(上限)"
               className={`${INPUT_CLASS} flex-1 min-w-0 bg-white`}
             >
-              {Array.from(
-                { length: REPORT_LEVEL_MAX - REPORT_LEVEL_MIN + 1 },
-                (_, i) => REPORT_LEVEL_MIN + i,
-              ).map((lv) => (
+              {REPORT_LEVELS.map((lv) => (
                 <option key={lv} value={lv}>
                   ★{lv}
                 </option>
@@ -354,10 +349,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               onChange={(e) => setForm((f) => ({ ...f, stressLevelMin: e.target.value }))}
               className={`${INPUT_CLASS} flex-1 min-w-0 bg-white`}
             >
-              {Array.from(
-                { length: REPORT_LEVEL_MAX - REPORT_LEVEL_MIN + 1 },
-                (_, i) => REPORT_LEVEL_MIN + i,
-              ).map((lv) => (
+              {REPORT_LEVELS.map((lv) => (
                 <option key={lv} value={lv}>
                   {lv}以上で使用可
                 </option>

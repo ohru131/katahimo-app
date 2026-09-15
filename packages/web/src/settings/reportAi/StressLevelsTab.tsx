@@ -1,14 +1,15 @@
-import {
-  EDUCATION_LEVEL_SHIFT_MIN,
-  REPORT_LEVEL_MAX,
-  REPORT_LEVEL_MIN,
-  type StressLevelBody,
-  type StressLevelView,
-} from '@katahimo/shared';
+import { EDUCATION_LEVEL_SHIFT_MIN, type StressLevelBody, type StressLevelView } from '@katahimo/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { saveStressLevel } from '../reportAiAdminApi';
-import { BUTTON_PRIMARY_CLASS, ErrorText, INPUT_CLASS, NoticeText, TEXTAREA_CLASS } from './shared';
+import {
+  BUTTON_PRIMARY_CLASS,
+  ErrorText,
+  INPUT_CLASS,
+  NoticeText,
+  REPORT_LEVELS,
+  TEXTAREA_CLASS,
+} from './shared';
 
 interface FormState {
   label: string;
@@ -159,17 +160,13 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
  */
 export function StressLevelsTab({ stressLevels }: { stressLevels: StressLevelView[] }) {
   const byLevel = new Map(stressLevels.map((s) => [s.level, s]));
-  const levels = Array.from(
-    { length: REPORT_LEVEL_MAX - REPORT_LEVEL_MIN + 1 },
-    (_, i) => REPORT_LEVEL_MIN + i,
-  );
   return (
     <div className="space-y-3">
       <p className="text-[10px] text-gray-400">
         PSIは数値が低いほど保護者の負担が大きい判定です。未評価(スタッフが選ばなかった場合)は
         教育キーワードを使わず、管理者連絡も要しない安全側の扱いになります。
       </p>
-      {levels.map((level) => (
+      {REPORT_LEVELS.map((level) => (
         <StressLevelForm key={level} level={level} data={byLevel.get(level)} />
       ))}
     </div>

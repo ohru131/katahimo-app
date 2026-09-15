@@ -35,12 +35,17 @@ export async function saveAgeBand(code: string, body: AgeBandBody): Promise<AgeB
   return data.ageBand;
 }
 
-/** 年齢帯を削除する(report_age_band_keywordsの対応行もサーバー側で消える)。 */
+/**
+ * 年齢帯を削除する(report_age_band_keywordsの対応行もサーバー側で消える)。
+ * 既に消えている行を消そうとした場合、サーバーは404を返す。呼び出し側(AgeBandsTabのonSuccess)は
+ * 一覧を再取得すれば辻褄が合うだけなので、ここではエラーにせず正常終了として扱う。
+ */
 export async function deleteAgeBand(code: string): Promise<void> {
   const res = await fetch(`${BASE}/age-bands/${encodeURIComponent(code)}`, {
     method: 'DELETE',
     credentials: 'include',
   });
+  if (res.status === 404) return;
   await parseJsonOrThrow<{ success: boolean }>(res);
 }
 

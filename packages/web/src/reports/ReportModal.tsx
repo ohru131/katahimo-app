@@ -144,7 +144,7 @@ function StarRating({
 }
 
 /**
- * GAS版showAssessmentHintと同じ、評価基準一覧のモーダル。PSI(risk)はテナントが
+ * GAS版showAssessmentHintと同じ、評価基準一覧のモーダル。PSI(stress)はテナントが
  * /api/reports/ai-configで判定基準を設定していれば`levels`にその内容(label/criteria)を渡す。
  * 渡さない場合・行が無いレベルはassessmentDefinitions.tsの固定文言のまま表示する。
  */
@@ -236,44 +236,41 @@ function WritingHintModal({
   );
 }
 
-/** GAS版index.htmlのcalculateAge()と同じ「(N歳Mか月)」表示。dobは'YYYY-MM-DD'想定。 */
-function calculateAgeLabel(dob: string | null): string {
-  if (!dob) return '';
+/** 生年月日から基準日時点の年齢(歳・か月)を計算する。dobが無い/解析できない場合はnull。 */
+function calculateAgeParts(
+  dob: string | null,
+  referenceDate: Date,
+): { years: number; months: number } | null {
+  if (!dob) return null;
   const parts = dob.split(/[-/]/).map(Number);
-  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return '';
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null;
   const [y, m, d] = parts as [number, number, number];
   const birth = new Date(y, m - 1, d);
-  const today = new Date();
-  let years = today.getFullYear() - birth.getFullYear();
-  let months = today.getMonth() - birth.getMonth();
-  if (today.getDate() < birth.getDate()) months--;
+  let years = referenceDate.getFullYear() - birth.getFullYear();
+  let months = referenceDate.getMonth() - birth.getMonth();
+  if (referenceDate.getDate() < birth.getDate()) months--;
   if (months < 0) {
     years--;
     months += 12;
   }
-  return `(${years}歳${months}か月)`;
+  return { years, months };
+}
+
+/** GAS版index.htmlのcalculateAge()と同じ「(N歳Mか月)」表示(今日基準)。dobは'YYYY-MM-DD'想定。 */
+function calculateAgeLabel(dob: string | null): string {
+  const age = calculateAgeParts(dob, new Date());
+  return age ? `(${age.years}歳${age.months}か月)` : '';
 }
 
 /**
  * 日報の対象児選択の隣に出す月齢表示。訪問日(visitDate)を基準に「○歳○か月」を計算する
- * (生年月日の「日」に達していなければその月は数えない。calculateAgeLabelと同じ考え方だが、
- * 基準日は「今日」ではなく訪問日にする)。dobDateが無い/解析できない場合は空文字。
+ * (生年月日の「日」に達していなければその月は数えない)。dobDateが無い/解析できない場合、
+ * または訪問日が生年月日より前の場合は空文字。
  */
 function calculateAgeAtVisit(dobDate: string | null, visitDate: Date): string {
-  if (!dobDate) return '';
-  const parts = dobDate.split(/[-/]/).map(Number);
-  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return '';
-  const [y, m, d] = parts as [number, number, number];
-  const birth = new Date(y, m - 1, d);
-  let years = visitDate.getFullYear() - birth.getFullYear();
-  let months = visitDate.getMonth() - birth.getMonth();
-  if (visitDate.getDate() < birth.getDate()) months--;
-  if (months < 0) {
-    years--;
-    months += 12;
-  }
-  if (years < 0) return '';
-  return `${years}歳${months}か月`;
+  const age = calculateAgeParts(dobDate, visitDate);
+  if (!age || age.years < 0) return '';
+  return `${age.years}歳${age.months}か月`;
 }
 
 interface ReceiptImageState {
@@ -417,10 +414,10 @@ export function ReportModal({
   const psiLevelLabel = (score: number): string => {
     const tenantRow = reportAiConfig?.stressLevels.find((s) => s.level === score);
     if (tenantRow) return tenantRow.label;
-    return ASSESSMENT_DEFINITIONS.risk.levels.find((l) => l.score === score)?.label ?? '';
+    return ASSESSMENT_DEFINITIONS.stress.levels.find((l) => l.score === score)?.label ?? '';
   };
   /** PSIの評価基準一覧モーダルに出す行。レベルごとにテナント設定があればそちらを優先する。 */
-  const psiHintLevels: AssessmentLevel[] = ASSESSMENT_DEFINITIONS.risk.levels.map((l) => {
+  const psiHintLevels: AssessmentLevel[] = ASSESSMENT_DEFINITIONS.stress.levels.map((l) => {
     const tenantRow = reportAiConfig?.stressLevels.find((s) => s.level === l.score);
     return tenantRow ? { score: l.score, label: tenantRow.label, desc: tenantRow.criteria } : l;
   });
@@ -617,6 +614,7 @@ export function ReportModal({
         text: memoText,
         start: `${startHour}:${startMinute}`,
         end: `${endHour}:${endMinute}`,
+        reportDate: formatDateKey(visitDate),
         customerId,
         familyMemberId: targetFamilyMemberId,
         stressLevel,
@@ -1499,10 +1497,10 @@ export function ReportModal({
             <div className="space-y-4">
               <div className="space-y-1">
                 <StarRating
-                  type="risk"
+                  type="stress"
                   value={stressLevel}
                   onChange={setStressLevel}
-                  onShowHint={() => setHintType('risk')}
+                  onShowHint={() => setHintType('stress')}
                   levelLabel={psiLevelLabel}
                 />
                 <StarRating
@@ -1787,7 +1785,7 @@ export function ReportModal({
       {hintType && (
         <AssessmentHintModal
           type={hintType}
-          levels={hintType === 'risk' ? psiHintLevels : undefined}
+          levels={hintType === 'stress' ? psiHintLevels : undefined}
           onClose={() => setHintType(null)}
         />
       )}

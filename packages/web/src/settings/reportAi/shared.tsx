@@ -2,6 +2,13 @@
  * ReportAiAdminModal配下の各タブで使う共通のTailwindクラス・小さな見た目部品。
  * 既存の管理モーダル(PromptTemplateAdminModal・CouponAdminModal)と見た目を揃えるためのもの。
  */
+import { REPORT_LEVEL_MAX, REPORT_LEVEL_MIN } from '@katahimo/shared';
+
+/** 教育関心度★・ストレス度(PSI)が取りうるレベル一覧(REPORT_LEVEL_MIN〜REPORT_LEVEL_MAX)。 */
+export const REPORT_LEVELS: number[] = Array.from(
+  { length: REPORT_LEVEL_MAX - REPORT_LEVEL_MIN + 1 },
+  (_, i) => REPORT_LEVEL_MIN + i,
+);
 
 export const INPUT_CLASS = 'w-full p-2 border border-gray-300 rounded text-xs';
 export const TEXTAREA_CLASS = `${INPUT_CLASS} resize-y`;
