@@ -12,9 +12,10 @@ import type { PromptTemplateKey } from './contracts/reportAi';
  * ここ(@katahimo/shared)に置くのは、生成側(@katahimo/core のユースケース)と画面側
  * (@katahimo/web の入力欄フォールバック)の両方が同じ文面を参照するため。
  *
- * 日報生成(daily_report)の差し込みは GAS版と同じ {anonymizedText} と {timeInfo} だけ。
- * 3軸の差し込み({childContext} {keywordGuide} {toneGuide})は既定文面には含めず、
- * テナントが文面を編集して足す(doc/db/new-domains.md 第6章)。
+ * 日報生成(daily_report)には、GAS版と同じ {anonymizedText} {timeInfo} に加えて、3軸の
+ * 差し込み {childContext} {keywordGuide} {toneGuide} を置いてある。3軸の表(年齢帯・
+ * キーワード・判定基準・表現)を1行も入れていないテナントではこの3つが空文字に描画され、
+ * 余った空行も畳まれるので、GAS版と同じプロンプトが渡る(doc/db/new-domains.md 第6章)。
  */
 export const DEFAULT_PROMPT_TEMPLATES: Readonly<Record<PromptTemplateKey, string>> = {
   daily_report: `
@@ -30,6 +31,10 @@ export const DEFAULT_PROMPT_TEMPLATES: Readonly<Record<PromptTemplateKey, string
 # 指示
 - 不足している必須情報があれば、その項目名を "warnings" 配列にリストアップしてください(例: ["お客様情報", "振り返り"])。
 - 不足情報の有無に関わらず、入力された情報を元に可能な範囲でレポートを作成してください。
+{keywordGuide}
+{toneGuide}
+
+{childContext}
 
 # 入力テキスト
 {anonymizedText}

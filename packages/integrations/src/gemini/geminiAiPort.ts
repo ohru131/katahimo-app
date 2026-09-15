@@ -185,6 +185,11 @@ export function parseImageDataUrl(base64Image: string): ParsedImageData | null {
 export class GeminiAiPort implements ReportAiPort {
   constructor(private readonly options: GeminiAiPortOptions) {}
 
+  /** 生成の記録(report_ai_generations.model)に残す、実際に呼ぶモデル名。 */
+  get reportModel(): string {
+    return this.options.reportModel || DEFAULT_MODEL_REPORT;
+  }
+
   /** 保育日報の下書きを生成する。GAS版 GeminiReport.js generateReport に対応。 */
   async generateDailyReport(input: GenerateDailyReportInput): Promise<DailyReportDraft> {
     const schema = {
@@ -193,7 +198,11 @@ export class GeminiAiPort implements ReportAiPort {
         warnings: { type: 'ARRAY', items: { type: 'STRING' } },
         internal: { type: 'STRING' },
         customer: { type: 'STRING' },
+        usedKeywords: { type: 'ARRAY', items: { type: 'STRING' } },
       },
+      // usedKeywords は required に入れない。教育キーワードを提示しない生成(テナントが
+      // キーワード表を持っていない・ストレス度で教育語を止めた)でも同じスキーマを使うので、
+      // 必須にするとモデルが空でない何かを埋めようとしてコードを創作する。
       required: ['warnings', 'internal', 'customer'],
     };
 
@@ -201,14 +210,18 @@ export class GeminiAiPort implements ReportAiPort {
       this.options.apiKey,
       [{ text: input.prompt }],
       { responseMimeType: 'application/json', responseSchema: schema },
-      this.options.reportModel || DEFAULT_MODEL_REPORT,
+      this.reportModel,
     );
 
     if (!result.ok) {
       const detail = result.rawError ? `${result.error}\n\n[詳細] ${result.rawError}` : result.error;
-      return { warnings: ['API Error'], internal: detail, customer: '' };
+      // GAS版と同じく warnings/internal にも詰めたうえで、生成そのものが失敗した事実を
+      // error にも残す(呼び出し側がこれを見て失敗として記録する)。
+      return { warnings: ['API Error'], internal: detail, customer: '', usedKeywords: [], error: detail };
     }
-    return result.value as DailyReportDraft;
+    const draft = result.value as DailyReportDraft;
+    // 応答に usedKeywords が無い(required にしていない)場合に空配列へ寄せる。
+    return { ...draft, usedKeywords: Array.isArray(draft.usedKeywords) ? draft.usedKeywords : [] };
   }
 
   /** 事故報告/ヒヤリハットの下書きを生成する。GAS版 GeminiReport.js generateAccidentReport に対応。 */
@@ -243,7 +256,7 @@ export class GeminiAiPort implements ReportAiPort {
       this.options.apiKey,
       [{ text: input.prompt }],
       { responseMimeType: 'application/json', responseSchema: schema },
-      this.options.reportModel || DEFAULT_MODEL_REPORT,
+      this.reportModel,
     );
 
     if (!result.ok) return { error: result.error };
@@ -270,9 +283,18 @@ export class GeminiAiPort implements ReportAiPort {
 
 /** GEMINI_API_KEY未設定時のフォールバック。GAS版のapiKey未設定時の挙動と同じ値を返す。 */
 export class NoopReportAiPort implements ReportAiPort {
+  /** モデルを呼んでいないことが記録から分かる名前(report_ai_generations.model は NOT NULL)。 */
+  readonly reportModel = 'noop';
+
   /** APIキーが無いので生成せず、GAS版と同じ「API Key Missing」を返す。 */
   async generateDailyReport(): Promise<DailyReportDraft> {
-    return { warnings: ['API Key Missing'], internal: 'Error: API Key not set', customer: '' };
+    return {
+      warnings: ['API Key Missing'],
+      internal: 'Error: API Key not set',
+      customer: '',
+      usedKeywords: [],
+      error: 'API Key Missing',
+    };
   }
 
   /** 同上。事故報告も生成せずエラーだけを返す。 */

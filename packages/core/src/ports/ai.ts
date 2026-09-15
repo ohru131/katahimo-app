@@ -26,12 +26,32 @@ export interface GenerateDailyReportInput {
   text: string;
   start?: string;
   end?: string;
+  /**
+   * プロンプトで提示した教育キーワードの候補コード。公開デモの定型応答が
+   * 「候補を使ったふり」をするための素材で、実アダプタは使わない(候補はもう prompt に入っている)。
+   */
+  keywordCodes?: string[];
 }
 
 export interface DailyReportDraft {
   warnings: string[];
   internal: string;
   customer: string;
+  /**
+   * AIが「使った」と答えた教育キーワードのコード。応答に無ければ空配列。
+   *
+   * アダプタは候補の集合やキーワード表と突き合わせない(AIが返した通りに渡す)。
+   * 表に無いコード=創作した語を落とすかどうかは記録側の判断で、アダプタが黙って
+   * 削ると「AIが何と答えたか」が分からなくなるため(usecases/reportAi.ts参照)。
+   */
+  usedKeywords: string[];
+  /**
+   * 生成そのものが失敗した理由(APIキー未設定・API呼び出しエラー等)。成功時は undefined。
+   * 失敗してもGAS版と同じく warnings/internal にも内容を詰めた同じ形を返すが、
+   * 「文面が生成できたのか、失敗の説明が入っているだけなのか」を呼び出し側が
+   * 区別できないと、失敗した下書きを成功として記録してしまう。
+   */
+  error?: string;
 }
 
 export interface GenerateAccidentReportInput {
@@ -79,6 +99,13 @@ export interface ReceiptOcrResult {
 }
 
 export interface ReportAiPort {
+  /**
+   * 日報・事故報告の生成に使うモデル名。生成の記録(report_ai_generations.model)に残すため、
+   * 呼び出し側がアダプタの設定を覗かずに取れるようにしている。APIキー未設定のno-op実装や
+   * 公開デモの定型応答も、モデルを使っていないことが分かる名前を返す(空文字にはしない。
+   * DBの列が NOT NULL で、かつ「何で生成したか不明の記録」を残さないため)。
+   */
+  readonly reportModel: string;
   /** 組み立て済みプロンプトから保育日報の下書き(警告・社内向け・保護者向け)を作る。失敗も戻り値で表す。 */
   generateDailyReport(input: GenerateDailyReportInput): Promise<DailyReportDraft>;
   /** 組み立て済みプロンプトから事故報告/ヒヤリハットの下書きを作る。失敗は error だけを持つ形で返す。 */

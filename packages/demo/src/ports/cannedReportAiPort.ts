@@ -43,6 +43,9 @@ function timeRange(start?: string, end?: string): string {
  * 文面をそのまま出しても定型応答としては読めないため。
  */
 export class CannedReportAiPort implements ReportAiPort {
+  /** モデルを呼んでいないことが記録から分かる名前(report_ai_generations.model は NOT NULL)。 */
+  readonly reportModel = 'demo-canned';
+
   /** 入力メモを素材にした定型の日報下書きを返す(断り書き付き)。 */
   async generateDailyReport(input: GenerateDailyReportInput): Promise<DailyReportDraft> {
     await delay(FAKE_LATENCY_MS);
@@ -60,6 +63,9 @@ export class CannedReportAiPort implements ReportAiPort {
         `${summary}`,
         'お子さまは終始落ち着いて過ごされていました。次回もどうぞよろしくお願いいたします。',
       ].join('\n'),
+      // 定型文は教育キーワードを実際には織り込んでいないので、候補が提示されていても空配列にする
+      // (使ったことにすると、公開デモの生成記録に「使われた語」として嘘が残る)。
+      usedKeywords: [],
     };
   }
 

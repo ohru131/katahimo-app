@@ -1,19 +1,39 @@
 import {
+  deleteAgeBand,
   getAdminSettings,
+  getReportAiConfigForAdmin,
+  importReportAiConfig,
   listPromptTemplatesForAdmin,
   listPromptTemplateVersions,
+  replacePhrases,
   resetPromptTemplateToDefault,
   resolveGeminiApiKey,
+  saveAgeBand,
+  saveEducationLevel,
   saveGeminiApiKey,
   saveGeminiModelSettings,
   saveGoogleChatWebhookSettings,
+  saveKeyword,
   savePromptTemplate,
   saveReceiptDeadlineSettings,
+  saveStressLevel,
 } from '@katahimo/core';
 import type { ResolvedSession } from '@katahimo/core/usecases';
 import { RECEIPT_CANCELLABLE_DAYS_MAX, RECEIPT_CLOSING_DAY_MAX } from '@katahimo/db/schema';
-import { PROMPT_TEMPLATE_KEYS, type PromptTemplateKey } from '@katahimo/shared';
+import {
+  ageBandBodySchema,
+  educationLevelBodySchema,
+  keywordBodySchema,
+  PROMPT_TEMPLATE_KEYS,
+  type PromptTemplateKey,
+  phrasesReplaceRequestSchema,
+  REPORT_LEVEL_MAX,
+  REPORT_LEVEL_MIN,
+  reportAiImportPayloadSchema,
+  stressLevelBodySchema,
+} from '@katahimo/shared';
 import { Hono } from 'hono';
+import type { ZodError } from 'zod';
 import type { Container } from '../container';
 import { getAuthenticatedSession } from '../session';
 
@@ -43,6 +63,40 @@ function parsePromptTemplateKey(value: string | undefined): PromptTemplateKey | 
   return (PROMPT_TEMPLATE_KEYS as readonly string[]).includes(value ?? '')
     ? (value as PromptTemplateKey)
     : null;
+}
+
+/**
+ * zodの失敗を、画面にそのまま出せる日本語1行にする。どの項目が悪いのかが分からないと
+ * 管理者が表を直せないため、パスとメッセージを並べて返す(routes/attendance.ts の
+ * fields と同じ内容を、1行の文字列にしたもの)。
+ */
+function toValidationMessage(error: ZodError): string {
+  return error.issues.map((issue) => `${issue.path.join('.') || '値'}: ${issue.message}`).join(' / ');
+}
+
+/**
+ * URLの `:level` を教育関心度★・ストレス度の値(1〜5)として読む。
+ * 値域は @katahimo/shared の REPORT_LEVEL_MIN/MAX(DBのCHECK制約もここから組み立てている)。
+ */
+function parseLevelParam(value: string | undefined): number | null {
+  const level = Number(value);
+  if (!Number.isInteger(level)) return null;
+  return level >= REPORT_LEVEL_MIN && level <= REPORT_LEVEL_MAX ? level : null;
+}
+
+/** URLの `:code`(年齢帯・キーワードの識別子)。空白だけの値は受けない。 */
+function parseCodeParam(value: string | undefined): string | null {
+  const code = (value ?? '').trim();
+  return code ? code : null;
+}
+
+/**
+ * ユースケースが投げた検証エラー(年齢帯の重なり・未登録の年齢帯コード等)を400で返す。
+ * メッセージは管理者がそのまま読める日本語なので、加工せずに渡す
+ * (routes/reports.ts の保存系と同じ形)。
+ */
+function toUsecaseErrorResponse(e: unknown) {
+  return { success: false as const, message: e instanceof Error ? e.message : String(e) };
 }
 
 /** 管理者設定(Gemini APIキー・ミラー送信先・プロンプト文面等)のルートをまとめる。 */
@@ -253,6 +307,191 @@ export function createSettingsRoutes(container: Container) {
 
     const result = await resetPromptTemplateToDefault(container, session.tenantId, session.staffId, key);
     return result.ok ? c.json(result) : c.json(result, 400);
+  });
+
+  // -------------------------------------------------------------------------
+  // 日報AIの3軸(年齢帯・教育関心度★・ストレス度)の設定(doc/db/new-domains.md 第6章)
+  //
+  // 入力の検証は @katahimo/shared の zod スキーマで行い、画面(ReportAiAdminModal)と
+  // 同じ判定を共有する。行を指す鍵は `code`(年齢帯・キーワード)と `level`(各レベル定義)で
+  // UUIDは使わないため、URLにその鍵を置いて本文からは省く(contracts/reportAiAdmin.ts)。
+  // -------------------------------------------------------------------------
+
+  /** 管理画面の1表示ぶん。廃止した語(active=false)も含む。 */
+  app.get('/admin/report-ai', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const config = await getReportAiConfigForAdmin(container, session.tenantId);
+    return c.json(config);
+  });
+
+  /** 年齢帯を1件 upsert する(URLの code が識別子)。他の帯と月齢が重なれば400。 */
+  app.put('/admin/report-ai/age-bands/:code', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const code = parseCodeParam(c.req.param('code'));
+    if (!code) return c.json({ code: 'validation_failed', message: 'コードを指定してください' }, 400);
+
+    const parsed = ageBandBodySchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ code: 'validation_failed', message: toValidationMessage(parsed.error) }, 400);
+    }
+
+    try {
+      const ageBand = await saveAgeBand(container, session.tenantId, { ...parsed.data, code });
+      return c.json({ ageBand });
+    } catch (e) {
+      return c.json(toUsecaseErrorResponse(e), 400);
+    }
+  });
+
+  /** 年齢帯を消す(report_age_band_keywords の対応行も一緒に消える)。 */
+  app.delete('/admin/report-ai/age-bands/:code', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const code = parseCodeParam(c.req.param('code'));
+    if (!code) return c.json({ code: 'validation_failed', message: 'コードを指定してください' }, 400);
+
+    const deleted = await deleteAgeBand(container, session.tenantId, code);
+    if (!deleted) return c.json({ code: 'not_found', message: '年齢帯が見つかりません' }, 404);
+    return c.json({ success: true });
+  });
+
+  /**
+   * キーワードを1件 upsert する(URLの code が識別子)。削除は無く、廃止は `active=false`
+   * (過去の生成記録が語の行を参照するため)。
+   */
+  app.put('/admin/report-ai/keywords/:code', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const code = parseCodeParam(c.req.param('code'));
+    if (!code) return c.json({ code: 'validation_failed', message: 'コードを指定してください' }, 400);
+
+    const parsed = keywordBodySchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ code: 'validation_failed', message: toValidationMessage(parsed.error) }, 400);
+    }
+
+    try {
+      const keyword = await saveKeyword(container, session.tenantId, { ...parsed.data, code });
+      return c.json({ keyword });
+    } catch (e) {
+      return c.json(toUsecaseErrorResponse(e), 400);
+    }
+  });
+
+  /** 教育関心度★の定義を1件 upsert する(URLの level が識別子)。 */
+  app.put('/admin/report-ai/education-levels/:level', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const level = parseLevelParam(c.req.param('level'));
+    if (level === null) {
+      return c.json(
+        {
+          code: 'validation_failed',
+          message: `教育関心度★は${REPORT_LEVEL_MIN}〜${REPORT_LEVEL_MAX}で指定してください`,
+        },
+        400,
+      );
+    }
+
+    const parsed = educationLevelBodySchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ code: 'validation_failed', message: toValidationMessage(parsed.error) }, 400);
+    }
+
+    try {
+      const educationLevel = await saveEducationLevel(container, session.tenantId, {
+        ...parsed.data,
+        level,
+      });
+      return c.json({ educationLevel });
+    } catch (e) {
+      return c.json(toUsecaseErrorResponse(e), 400);
+    }
+  });
+
+  /** ストレス度の定義を1件 upsert する(URLの level が識別子)。 */
+  app.put('/admin/report-ai/stress-levels/:level', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const level = parseLevelParam(c.req.param('level'));
+    if (level === null) {
+      return c.json(
+        {
+          code: 'validation_failed',
+          message: `ストレス度は${REPORT_LEVEL_MIN}〜${REPORT_LEVEL_MAX}で指定してください`,
+        },
+        400,
+      );
+    }
+
+    const parsed = stressLevelBodySchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ code: 'validation_failed', message: toValidationMessage(parsed.error) }, 400);
+    }
+
+    try {
+      const stressLevel = await saveStressLevel(container, session.tenantId, { ...parsed.data, level });
+      return c.json({ stressLevel });
+    } catch (e) {
+      return c.json(toUsecaseErrorResponse(e), 400);
+    }
+  });
+
+  /** 温かみ表現・避ける表現を全件入れ替える(管理画面の一覧がそのままテナントの一式になる)。 */
+  app.put('/admin/report-ai/phrases', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const parsed = phrasesReplaceRequestSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ code: 'validation_failed', message: toValidationMessage(parsed.error) }, 400);
+    }
+
+    try {
+      const phrases = await replacePhrases(container, session.tenantId, parsed.data.phrases);
+      return c.json({ phrases });
+    } catch (e) {
+      return c.json(toUsecaseErrorResponse(e), 400);
+    }
+  });
+
+  /**
+   * xlsx から作った取込データを反映する(画面側が表を読んで payload に変換してから送る)。
+   * 取込はマージで、表に載っていない既存の行は消さない。
+   */
+  app.post('/admin/report-ai/import', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+    if (!isAdmin(session)) return c.json({ code: 'forbidden', message: '権限がありません' }, 403);
+
+    const parsed = reportAiImportPayloadSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ code: 'validation_failed', message: toValidationMessage(parsed.error) }, 400);
+    }
+
+    try {
+      const result = await importReportAiConfig(container, session.tenantId, parsed.data, {
+        staffId: session.staffId,
+      });
+      return c.json({ result });
+    } catch (e) {
+      return c.json(toUsecaseErrorResponse(e), 400);
+    }
   });
 
   return app;

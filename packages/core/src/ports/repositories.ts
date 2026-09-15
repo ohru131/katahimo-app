@@ -510,6 +510,17 @@ export interface DailyReportRecord {
   stressLevel: number | null;
   esRating: number | null;
   /**
+   * この日報が主に描いている子(世帯構成員)。未選択・世帯全体は null。
+   * AI生成では月齢から年齢帯を決める材料になる(doc/db/new-domains.md 第6章)。
+   */
+  targetFamilyMemberId: string | null;
+  /**
+   * 保存した本文の元になったAI生成の記録(report_ai_generations)。手書きのみ・AI未使用は null。
+   * どのモデル・どの版の文面・どの候補語から生まれた文面かを後から辿るために残す。
+   */
+  aiGenerationId: string | null;
+
+  /**
    * 開始/終了時刻(doc/db/guidelines.md §6)。未入力はnull。occurredAtとの関係は
    * packages/db/src/schema/dailyReports.tsのヘッダーコメント参照。
    */
@@ -527,6 +538,16 @@ export interface NewDailyReportInput {
   occurredAt: Date;
   stressLevel: number | null;
   esRating: number | null;
+  /**
+   * この日報が主に描いている子(世帯構成員)。未選択・世帯全体は null。
+   * AI生成では月齢から年齢帯を決める材料になる(doc/db/new-domains.md 第6章)。
+   */
+  targetFamilyMemberId: string | null;
+  /**
+   * 保存した本文の元になったAI生成の記録(report_ai_generations)。手書きのみ・AI未使用は null。
+   * どのモデル・どの版の文面・どの候補語から生まれた文面かを後から辿るために残す。
+   */
+  aiGenerationId: string | null;
   startedAt: Date | null;
   endedAt: Date | null;
   content: DailyReportContent;

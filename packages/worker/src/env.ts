@@ -1,3 +1,4 @@
+import { DEFAULT_AI_GENERATION_RETENTION_DAYS } from '@katahimo/core';
 import { z } from 'zod';
 
 /**
@@ -27,6 +28,15 @@ const envSchema = z.object({
   OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
   // 1テナント・1ポーリングあたりの最大処理件数。
   OUTBOX_BATCH_SIZE: z.coerce.number().int().positive().default(10),
+
+  // AI生成の記録(report_ai_generations)のうち、どの日報からも参照されていない下書きを
+  // 何日で消すか。日報が参照している行は期間を過ぎても残る
+  // (packages/core/src/usecases/reportAiRetention.ts、doc/db/new-domains.md 第6章)。
+  AI_GENERATION_RETENTION_DAYS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_AI_GENERATION_RETENTION_DAYS),
 });
 
 export type WorkerEnv = z.infer<typeof envSchema>;

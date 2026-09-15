@@ -8,6 +8,7 @@ import type {
   CouponUpdateRequest,
   CouponUsageLimitKind,
   CustomerCouponUpsertRequest,
+  CustomerReportProfileView,
   FamilyAllergyStatus,
   FamilyMemberAllergyUpdateRequest,
   PromptTemplateKey,
@@ -94,9 +95,16 @@ export interface CustomerDetailView {
   externalLastUpdatedAt: string | null;
   deactivatedAt: string | null;
   familyMembers: FamilyMemberView[];
+  /** 日報の書き方(教育関心度★)の設定。未設定の顧客はnull(生成時は既定★2として扱われる)。 */
+  reportProfile: CustomerReportProfileView | null;
 }
 
-async function parseJsonOrThrow<T>(res: Response): Promise<T> {
+/**
+ * fetchのレスポンスをJSONにし、失敗時は`{message}`からErrorを組み立てる共通ヘルパー。
+ * settings/reportAiAdminApi.ts・CustomerReportProfileEditor.tsxが同じ形の
+ * エラーハンドリングをするためexportしている。
+ */
+export async function parseJsonOrThrow<T>(res: Response): Promise<T> {
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     const message = body && typeof body.message === 'string' ? body.message : `APIエラー: ${res.status}`;

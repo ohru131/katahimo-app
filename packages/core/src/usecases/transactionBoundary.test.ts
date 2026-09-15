@@ -7,6 +7,7 @@ import type { PasswordResetDeps } from './passwordReset';
 import { requestPasswordReset, resetPasswordWithCode } from './passwordReset';
 import type { ReceiptDeps } from './receipts';
 import { uploadReceipts } from './receipts';
+import { FakeReportAiGenerationRepository } from './reportAiTestDoubles';
 import type { ReportDeps } from './reports';
 import { saveAccidentReport, saveDailyReport } from './reports';
 import {
@@ -115,6 +116,7 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
       couponRedemptions,
       customerCoupons: new FakeCustomerCouponRepository(),
       familyMembers: new FakeFamilyMemberRepository(),
+      reportAiGenerations: new FakeReportAiGenerationRepository(),
       notifier: new FakeNotifierPort(),
       mirror: new FailingMirrorPort(),
       unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, couponRedemptions, outbox]),

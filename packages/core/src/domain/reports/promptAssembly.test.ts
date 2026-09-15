@@ -3,8 +3,9 @@ import {
   ageInMonths,
   applyStressLevel,
   assembleDailyReportPrompt,
+  buildChildContext,
+  collapseBlankLines,
   DEFAULT_EDUCATION_LEVEL,
-  DEFAULT_STRESS_LEVEL,
   findAgeBand,
   type ReportAgeBand,
   type ReportEducationLevel,
@@ -361,18 +362,95 @@ describe('assembleDailyReportPrompt', () => {
     expect(out.prompt).toContain('管理者へ連絡');
   });
 
-  it('★・ストレス度が未設定なら既定値で動き、★1は候補があっても教育語オフ', () => {
+  it('★未設定は既定の★2で動き、★1は候補があっても教育語オフ', () => {
+    const out = assembleDailyReportPrompt({
+      ...base,
+      childAgeMonths: 8,
+      educationLevel: null,
+      stressLevel: 4,
+    });
+    expect(out.effectiveEducationLevel).toBe(DEFAULT_EDUCATION_LEVEL);
+    expect(out.appliedStressLevel).toBe(4);
+
+    const low = assembleDailyReportPrompt({ ...base, childAgeMonths: 8, educationLevel: 1, stressLevel: 5 });
+    expect(low.prompt).toContain('使わないでください');
+  });
+
+  it('ストレス度が未評価なら教育語も温かみ表現も使わず、管理者連絡も要さない', () => {
+    const out = assembleDailyReportPrompt({
+      ...base,
+      childAgeMonths: 8,
+      educationLevel: 5,
+      stressLevel: null,
+    });
+    expect(out.appliedStressLevel).toBeNull();
+    expect(out.candidates).toEqual([]);
+    expect(out.escalationRequired).toBe(false);
+    expect(out.prompt).toContain('教育キーワード(専門用語・発達の意味づけ)を使わないでください');
+    // 温かみ表現は「どの度合いの家庭に向けた言葉か」が決まらないので1つも選ばない。
+    expect(out.prompt).not.toContain('ゆっくり休めますように');
+    // 避ける表現は未評価でも渡す(禁止を減らす方向には倒さない)。
+    expect(out.prompt).toContain('次回は〜してみましょう(宿題感)');
+    // ★の判定は従来どおり(引き下げが効かないだけ)。
+    expect(out.effectiveEducationLevel).toBe(5);
+  });
+
+  it('対象児が未選択なら月齢の行を出さない(「不明」とも書かない)', () => {
+    expect(buildChildContext(null, null)).toBe('');
     const out = assembleDailyReportPrompt({
       ...base,
       childAgeMonths: null,
       educationLevel: null,
+      stressLevel: 4,
+    });
+    expect(out.prompt).not.toContain('対象児の月齢');
+    expect(out.ageBand).toBeNull();
+  });
+
+  it('テナントが表を1行も入れておらず対象児も未選択なら、3つの差し込みは全部空文字', () => {
+    const out = assembleDailyReportPrompt({
+      template,
+      stanceTemplate: '',
+      anonymizedText: 'メモ本文',
+      timeInfo: '10:00〜13:00',
+      ageBands: [],
+      keywords: [],
+      educationLevels: [],
+      stressLevels: [],
+      phrases: [],
+      childAgeMonths: null,
+      educationLevel: null,
       stressLevel: null,
     });
-    expect(out.effectiveEducationLevel).toBe(DEFAULT_EDUCATION_LEVEL);
-    expect(out.appliedStressLevel).toBe(DEFAULT_STRESS_LEVEL);
-    expect(out.prompt).toContain('対象児の月齢: 不明');
+    // 見出しだけが残り、GAS版と同じく「メモと時間情報だけを渡すプロンプト」になる。
+    expect(out.prompt).toBe('# 子\n\n# 語\n\n# 文体\n\n# メモ\nメモ本文\n10:00〜13:00');
+    expect(out.candidates).toEqual([]);
+    expect(out.appliedStressLevel).toBeNull();
+  });
 
-    const low = assembleDailyReportPrompt({ ...base, childAgeMonths: 8, educationLevel: 1, stressLevel: 5 });
-    expect(low.prompt).toContain('使わないでください');
+  it('差し込みが全部空でも空行が3行以上続かない', () => {
+    const out = assembleDailyReportPrompt({
+      template: '# 指示\n{keywordGuide}\n{toneGuide}\n\n{childContext}\n\n# 入力テキスト\n{anonymizedText}',
+      stanceTemplate: '',
+      anonymizedText: 'メモ',
+      timeInfo: '',
+      ageBands: [],
+      keywords: [],
+      educationLevels: [],
+      stressLevels: [],
+      phrases: [],
+      childAgeMonths: null,
+      educationLevel: null,
+      stressLevel: null,
+    });
+    expect(out.prompt).toBe('# 指示\n\n# 入力テキスト\nメモ');
+  });
+});
+
+describe('collapseBlankLines', () => {
+  it('改行3つ以上は2つに畳む(空行1行まで)', () => {
+    expect(collapseBlankLines('a\n\n\n\nb')).toBe('a\n\nb');
+    expect(collapseBlankLines('a\n\nb')).toBe('a\n\nb');
+    expect(collapseBlankLines('a\nb')).toBe('a\nb');
   });
 });

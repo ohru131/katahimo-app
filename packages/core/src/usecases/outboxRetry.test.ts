@@ -45,6 +45,8 @@ describe('ミラージョブの再試行', () => {
       occurredAt: new Date('2026-08-30T01:00:00.000Z'),
       stressLevel: null,
       esRating: null,
+      targetFamilyMemberId: null,
+      aiGenerationId: null,
       startedAt: new Date('2026-08-30T01:00:00.000Z'),
       endedAt: null,
       content: { inputText: '', internalText: '', customerText: '' },

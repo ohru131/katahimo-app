@@ -21,6 +21,11 @@ import {
  *   3. 月齢・引き下げ後の★・ストレス度の3条件を全部満たす語だけを候補にする
  *   4. 候補が空(教育語オフ)なら温かみ表現に切り替える
  * 絞り込みはここで済ませ、AIにはキーワード表を丸ごと渡さない。
+ *
+ * 【テナントが何も設定していないときはGAS版と同じ1プロンプトになる】
+ * 表(年齢帯・キーワード・判定基準・表現)が1行も無く、対象児も選ばれていなければ、
+ * {childContext} {keywordGuide} {toneGuide} はすべて空文字に描画される。差し込みが
+ * 空文字になったぶんの空行は描画後に畳むので、既定文面はGAS版の文面と同じ形で渡る。
  */
 
 // ---------------------------------------------------------------------------
@@ -103,13 +108,6 @@ export interface ReportPhrase {
  * いない家庭の日報が急に素っ気なくならないようにするため。
  */
 export const DEFAULT_EDUCATION_LEVEL = 2;
-
-/**
- * ストレス度が未評価の訪問に適用する値。「通常(★どおりに使う)」に当たる。
- * 未評価を「危険」側に寄せないのは、評価の手間を省いた訪問すべてが教育語オフに
- * なると、設定した★の意味が無くなるため。危険側はスタッフが評価して初めて効く。
- */
-export const DEFAULT_STRESS_LEVEL = 4;
 
 /** プロンプトに提示するキーワード候補の上限。多すぎるとAIが詰め込むため、少数に絞る。 */
 export const DEFAULT_MAX_KEYWORD_CANDIDATES = 6;
@@ -235,15 +233,23 @@ export function selectKeywords(input: SelectKeywordsInput): ReportKeyword[] {
     .slice(0, limit);
 }
 
-/** ストレス度に合う有効な表現を種類別に取り出す。並びは sortOrder → body。 */
+/**
+ * ストレス度に合う有効な表現を種類別に取り出す。並びは sortOrder → body。
+ *
+ * `stressLevel` が null(PSI未評価)のときは度合いで絞らず、その種類の有効な表現を全部返す。
+ * これを使ってよいのは「避ける表現」だけで、温かみ表現は未評価なら1つも選ばない
+ * (どの度合いの家庭に向けた言葉かが決まらないため。呼び出し側の assembleDailyReportPrompt 参照)。
+ */
 export function selectPhrases(
   phrases: readonly ReportPhrase[],
   kind: ReportPhraseKind,
-  stressLevel: number,
+  stressLevel: number | null,
 ): ReportPhrase[] {
   return phrases
     .filter((p) => p.active && p.kind === kind)
-    .filter((p) => stressLevel >= p.stressLevelMin && stressLevel <= p.stressLevelMax)
+    .filter(
+      (p) => stressLevel === null || (stressLevel >= p.stressLevelMin && stressLevel <= p.stressLevelMax),
+    )
     .sort((a, b) => a.sortOrder - b.sortOrder || a.body.localeCompare(b.body));
 }
 
@@ -251,11 +257,15 @@ export function selectPhrases(
 // 差し込み文の組み立て
 // ---------------------------------------------------------------------------
 
-/** 対象児の月齢・年齢帯と行動語。子が選ばれていなければその旨。 */
+/**
+ * 対象児の月齢・年齢帯と行動語。
+ *
+ * 対象児が選ばれていない(月齢が分からない)ときは空文字にする。「月齢不明」とわざわざ
+ * 書くとAIが月齢の話題を出そうとしてしまううえ、対象児を選ぶ運用をしていないテナントでは
+ * 毎回この1行だけが差し込まれることになる(GAS版と同じ文面にならない)。
+ */
 export function buildChildContext(childAgeMonths: number | null, band: ReportAgeBand | null): string {
-  if (childAgeMonths === null) {
-    return '対象児の月齢: 不明(メモ本文から推定してよいが、断定はしない)';
-  }
+  if (childAgeMonths === null) return '';
   const years = Math.floor(childAgeMonths / 12);
   const rest = childAgeMonths % 12;
   const ageText = years === 0 ? `${childAgeMonths}ヶ月` : rest === 0 ? `${years}歳` : `${years}歳${rest}ヶ月`;
@@ -275,11 +285,21 @@ export interface KeywordGuideInput {
   adjustment: StressAdjustment;
   /** 教育語を使わないときに代わりに提示する温かみ表現(selectPhrases の encourage)。 */
   encouragePhrases: readonly ReportPhrase[];
+  /**
+   * テナントのキーワード表に有効な語が1つでもあるか。
+   * 「候補が0件」には、そもそも表が空の場合と、表はあるが条件に合わなかった場合の2つがある。
+   * 前者で「教育キーワードを使わないでください」と書くと、キーワード機能を使っていない
+   * テナントの日報にだけ余計な指示が入る(GAS版と同じ文面にならない)ので、その1行も出さない。
+   */
+  hasActiveKeywords: boolean;
 }
 
 /**
  * 教育キーワードの候補と使い方。候補が空(教育語オフ、または条件に合う語が無い)のときは
  * 教育語を使わない指示と温かみ表現の候補を出す。
+ *
+ * テナントが3軸を何も設定しておらず、言うことが1つも無いときは空文字を返す
+ * (差し込み先に空行が1つ増えるだけになり、GAS版と同じプロンプトになる)。
  */
 export function buildKeywordGuide(input: KeywordGuideInput): string {
   const lines: string[] = [];
@@ -295,6 +315,16 @@ export function buildKeywordGuide(input: KeywordGuideInput): string {
   const useKeywords =
     adjustment.keywordsEnabled && input.candidates.length > 0 && (educationRule?.maxKeywords ?? 1) > 0;
   if (!useKeywords) {
+    // ストレス度の指示も★の定義も温かみ表現も無く、キーワード表も空 = テナントが
+    // 3軸を使っていない。差し込む指示が何も無いので空文字にする。
+    if (
+      lines.length === 0 &&
+      !educationRule &&
+      input.encouragePhrases.length === 0 &&
+      !input.hasActiveKeywords
+    ) {
+      return '';
+    }
     lines.push('この日報では教育キーワード(専門用語・発達の意味づけ)を使わないでください。');
     if (input.encouragePhrases.length > 0) {
       lines.push('代わりに、次のような保護者をねぎらう・寄り添う表現から1つ選んで自然に添えてください:');
@@ -367,6 +397,18 @@ export function renderPromptTemplate(template: string, values: Record<PromptPlac
   );
 }
 
+/**
+ * 連続する空行を1行に畳む(改行3つ以上を2つにする)。
+ *
+ * 3軸を1つも設定していないテナントでは {childContext} {keywordGuide} {toneGuide} が
+ * すべて空文字になり、文面に置いた差し込みの行だけが空行として残る。畳まないと
+ * 見出しの間に空行が4つ並んだプロンプトがモデルへ渡ることになるので、描画の最後に均す。
+ * これでGAS版の既定文面と同じ形になる。
+ */
+export function collapseBlankLines(text: string): string {
+  return text.replace(/\n{3,}/g, '\n\n');
+}
+
 // ---------------------------------------------------------------------------
 // 入口
 // ---------------------------------------------------------------------------
@@ -400,46 +442,69 @@ export interface AssembledDailyReportPrompt {
   candidates: ReportKeyword[];
   ageBand: ReportAgeBand | null;
   effectiveEducationLevel: number;
-  /** 実際に適用したストレス度(未評価なら既定値)。 */
-  appliedStressLevel: number;
+  /** 実際に適用したストレス度。未評価(スタッフがPSIを付けていない)なら null。 */
+  appliedStressLevel: number | null;
   escalationRequired: boolean;
 }
 
-/** 3軸を適用して日報生成プロンプトを組み立てる。 */
+/**
+ * 3軸を適用して日報生成プロンプトを組み立てる。
+ *
+ * 【ストレス度(PSI)が未評価のときに安全側へ倒す理由】
+ * 教育キーワードは「保護者に余裕があるとき」にだけ効く言葉で、余裕が無い家庭に向けると
+ * 追い詰める文面になる。評価が付いていない訪問は余裕の有無が分からないので、教育語は
+ * 使わず(候補は空)、温かみ表現も選ばない(どの度合いに向けた言葉かが決まらないため)。
+ * 管理者への連絡も要さない(スタッフが危険を見て評価したときだけ立てる印なので、
+ * 未評価を危険と同じ扱いにすると連絡の意味が薄れる)。
+ */
 export function assembleDailyReportPrompt(input: AssembleDailyReportPromptInput): AssembledDailyReportPrompt {
-  const stressLevel = clampLevel(input.stressLevel ?? DEFAULT_STRESS_LEVEL);
-  const stressRule = input.stressLevels.find((s) => s.level === stressLevel) ?? null;
-  const adjustment = applyStressLevel(input.educationLevel, stressRule);
+  const stressLevel = input.stressLevel === null ? null : clampLevel(input.stressLevel);
+  const stressRule =
+    stressLevel === null ? null : (input.stressLevels.find((s) => s.level === stressLevel) ?? null);
+  const adjustment: StressAdjustment =
+    stressLevel === null
+      ? {
+          effectiveEducationLevel: clampLevel(input.educationLevel ?? DEFAULT_EDUCATION_LEVEL),
+          keywordsEnabled: false,
+          escalationRequired: false,
+        }
+      : applyStressLevel(input.educationLevel, stressRule);
   const educationRule =
     input.educationLevels.find((e) => e.level === adjustment.effectiveEducationLevel) ?? null;
 
   const ageBand = input.childAgeMonths === null ? null : findAgeBand(input.ageBands, input.childAgeMonths);
   const affinityKeywordIds = ageBand ? (input.ageBandKeywordIds?.[ageBand.id] ?? []) : [];
 
-  const candidates = adjustment.keywordsEnabled
-    ? selectKeywords({
-        keywords: input.keywords,
-        childAgeMonths: input.childAgeMonths,
-        effectiveEducationLevel: adjustment.effectiveEducationLevel,
-        stressLevel,
-        affinityKeywordIds,
-        maxCandidates: input.maxCandidates,
-      })
-    : [];
+  const candidates =
+    adjustment.keywordsEnabled && stressLevel !== null
+      ? selectKeywords({
+          keywords: input.keywords,
+          childAgeMonths: input.childAgeMonths,
+          effectiveEducationLevel: adjustment.effectiveEducationLevel,
+          stressLevel,
+          affinityKeywordIds,
+          maxCandidates: input.maxCandidates,
+        })
+      : [];
 
-  const prompt = renderPromptTemplate(input.template, {
-    anonymizedText: input.anonymizedText,
-    timeInfo: input.timeInfo,
-    childContext: buildChildContext(input.childAgeMonths, ageBand),
-    keywordGuide: buildKeywordGuide({
-      candidates,
-      educationRule,
-      stressRule,
-      adjustment,
-      encouragePhrases: selectPhrases(input.phrases, 'encourage', stressLevel),
+  const prompt = collapseBlankLines(
+    renderPromptTemplate(input.template, {
+      anonymizedText: input.anonymizedText,
+      timeInfo: input.timeInfo,
+      childContext: buildChildContext(input.childAgeMonths, ageBand),
+      keywordGuide: buildKeywordGuide({
+        candidates,
+        educationRule,
+        stressRule,
+        adjustment,
+        // 未評価のときは温かみ表現も選ばない(上のコメント参照)。
+        encouragePhrases: stressLevel === null ? [] : selectPhrases(input.phrases, 'encourage', stressLevel),
+        hasActiveKeywords: input.keywords.some((k) => k.active),
+      }),
+      // 避ける表現は未評価でも全部渡す(禁止を減らす方向には倒さない。selectPhrases のコメント参照)。
+      toneGuide: buildToneGuide(input.stanceTemplate, selectPhrases(input.phrases, 'avoid', stressLevel)),
     }),
-    toneGuide: buildToneGuide(input.stanceTemplate, selectPhrases(input.phrases, 'avoid', stressLevel)),
-  });
+  );
 
   return {
     prompt,
