@@ -162,7 +162,7 @@ Stripeによるカード決済等を扱う。設計上の判断(カード番号�
 
 ## 2.6 日報AIのプロンプト調整
 
-GAS版が「ＡＩプロンプト」シートで持っていたプロンプト文面の置き場所(`prompt_templates`。版を積み、有効版は最大 `version`)と、保護者向け文面を「子の年齢帯 × 家庭の教育関心度 × 保護者のストレス度」の3軸で組み替えるための表(`report_age_bands`/`report_keywords`/`report_education_levels`/`report_stress_levels`/`report_phrases`/`customer_report_profiles`)、AI生成1回ごとの記録(`report_ai_generations`/`report_ai_generation_keywords`)。`daily_reports` は `ai_generation_id`(保存した本文の元になった生成)と `target_family_member_id`(主に描いている子)でこの領域を参照する。3軸の意味と設計判断は `doc/db/new-domains.md` 第6章、許可値・値域は `packages/shared/src/contracts/reportAi.ts`、組み立てロジックは `packages/core/src/domain/reports/promptAssembly.ts` 参照。
+GAS版が「ＡＩプロンプト」シートで持っていたプロンプト文面の置き場所(`prompt_templates`。版を積み、有効版は最大 `version`)と、保護者向け文面を「子の年齢帯 × 家庭の教育関心度 × 保護者のストレス度」の3軸で組み替えるための表(`report_age_bands`/`report_keywords`/`report_education_levels`/`report_stress_levels`/`report_phrases`/`customer_report_profiles`)、AI生成1回ごとの記録(`report_ai_generations`/`report_ai_generation_keywords`)。`daily_reports` は `ai_generation_id`(保存した本文の元になった生成)と `target_family_member_id`(主に描いている子)でこの領域を参照する。日報から参照されない生成記録(保存されなかった下書き)は、既定365日(環境変数 `AI_GENERATION_RETENTION_DAYS`)を過ぎたら `packages/worker` が日次で削除する。日報から参照されている記録は保持期間を過ぎても消さない。3軸の意味と設計判断は `doc/db/new-domains.md` 第6章、許可値・値域は `packages/shared/src/contracts/reportAi.ts`、組み立てロジックは `packages/core/src/domain/reports/promptAssembly.ts` 参照。
 
 ### 関係の読み方の補足
 
@@ -310,7 +310,7 @@ sequenceDiagram
 | `report_age_band_keywords` | 年齢帯と相性の良いキーワードの対応 | ○ | 主キー`(tenant_id, age_band_id, keyword_id)`。双方への複合FK。第2.6節 |
 | `report_phrases` | 温かみ表現(`encourage`)と全日報で避ける表現(`avoid`) | ○ | `kind`/`placement`はCHECK制約。適用するストレス度の範囲を持つ。第2.6節 |
 | `customer_report_profiles` | 家庭ごとの日報の書き方の設定(教育関心度★) | ○ | 主キー`(tenant_id, customer_id)`。`customers`の列にしないのはCSV取込の上書きで消えないようにするため。第2.6節 |
-| `report_ai_generations` | AI生成1回の記録(モデル・使った版・送ったプロンプト全文・★/ストレス度・入力・生の出力) | ○ | 使った版は`prompt_template_id`(既定文面ならNULL)、実際に送った全文は`prompt_text`(既定文面はコードのリリースで変わるため、版IDだけでは復元できない)。`(tenant_id, id)`と`(tenant_id, customer_id, id)`にUNIQUE(後者は`daily_reports.ai_generation_id`からの複合FKの参照先)。`output_json`と`error_message`はちょうど一方だけ非NULL(CHECK)。`updated_at`を持たない事実の記録。第2.6節 |
+| `report_ai_generations` | AI生成1回の記録(モデル・使った版・送ったプロンプト全文・★/ストレス度・入力・生の出力) | ○ | 使った版は`prompt_template_id`(既定文面ならNULL)、実際に送った全文は`prompt_text`(既定文面はコードのリリースで変わるため、版IDだけでは復元できない)。`(tenant_id, id)`と`(tenant_id, customer_id, id)`にUNIQUE(後者は`daily_reports.ai_generation_id`からの複合FKの参照先)。`output_json`と`error_message`はちょうど一方だけ非NULL(CHECK)。`updated_at`を持たない事実の記録。日報から参照されない行(下書き)は既定365日でワーカーが削除、参照されている行は残す。第2.6節 |
 | `report_ai_generation_keywords` | 生成1回で提示した候補(`candidate`)とAIが使った語(`used`) | ○ | 主キー`(tenant_id, generation_id, keyword_id, role)`。`role`はCHECK制約。第2.6節 |
 
 ## 4.1 `customers` の列の設計意図

@@ -166,9 +166,15 @@ psql -U katahimo -d katahimo_dev -c "SELECT gemini_api_key_ciphertext FROM app_s
   新しい版として積まれる(上書きしない。
   有効なのは最新版で、「既定に戻す」も版として記録される)。テナントの版が無いキーは
   `@katahimo/shared`の既定文面(GAS版の`DEFAULT_PROMPTS`をそのまま移植)で動く。差し込みは
-  GAS版と同じ`{anonymizedText}`(メモ本文)と`{timeInfo}`(保育時間)。子の年齢帯・家庭の教育関心度・
-  保護者のストレス度で文面を組み替える3軸の差し込み(`{childContext}`等)はDBの表と組み立てロジックまで
-  用意してあり、生成への接続はまだ(`doc/db/new-domains.md`第6章)。
+  GAS版と同じ`{anonymizedText}`(メモ本文)と`{timeInfo}`(保育時間)に加えて、子の年齢帯・家庭の
+  教育関心度★・保護者のストレス度(PSI)で文面を組み替える3軸の差し込み(`{childContext}`
+  `{keywordGuide}` `{toneGuide}`)が生成まで接続済み(`doc/db/new-domains.md`第6章)。テナントが
+  3軸の表を1行も設定していなければこれらは空文字になり、GAS版と同じ1プロンプトのまま動く。
+  3軸は設定モーダル「🧩 日報AIの調整(3軸)」(年齢帯・教育キーワード表・教育関心度★の判定基準・
+  ストレス度(PSI)の判定基準・温かみ/避ける表現・取込の6タブ)で管理者が編集し、顧客詳細では
+  家庭ごとの教育関心度★を設定できる(管理者に限らず担当者も付けられる)。日報入力画面は
+  対象児セレクタ・PSI判定基準の表示・使用した教育キーワードの表示・管理者連絡が必要な評価が
+  出たときの注意表示を持つ。
 - **📅 予定**: 今日/明日トグル・予定カード一覧・「🚗 ルート・移動時間を取得」ボタンをGAS版と同じ見た目で
   実装し、予定タップで訪問先一覧タブへ切り替え検索欄に反映する(`jumpToCustomerFromSchedule`)動作も
   再現した。Google Calendar/Maps連携はGAS版Web Appへのブリッジ経由で、ブリッジ未設定の環境では
@@ -419,6 +425,18 @@ GAS版(`reference/gas-childcare-visit-app`)からの移植。**本番環境は�
   Node 実行結果と突き合わせて移植した。`GEMINI_API_KEY` 未設定時は GAS版と同じフォールバック応答を返す
   (`NoopReportAiPort`)。領収書画像は `StoragePort`(ローカルは `LocalFileStoragePort`、本番はGCS想定)に保存し、
   Google Chat 通知は `WebhookNotifierPort`(URL 未設定時はスキップ)で送る。
+- **日報AIの3軸(年齢帯×教育関心度★×ストレス度PSI)**: `POST /api/reports/daily/generate`が
+  `customerId`(必須)・`familyMemberId`・`stressLevel`を受け取り、`assembleDailyReportPrompt`
+  (`packages/core/src/domain/reports/promptAssembly.ts`)が3軸(子の月齢・家庭の教育関心度★・
+  訪問ごとのPSI評価)を適用してプロンプトを組み立てる。年齢帯・キーワード表・判定基準・表現
+  (`report_*`テーブル)はテナントごとに管理画面(`/api/settings/admin/report-ai/*`)またはxlsx等の
+  取込(`doc/report-ai-import.md`)で設定し、1行も設定していなければGAS版と同じ1プロンプトのまま
+  動く。生成1回ごとに`report_ai_generations`(提示した候補・実際に使われた語は
+  `report_ai_generation_keywords`)へモデル名・使った版・送った全文・入力・出力を記録し、
+  `daily_reports.ai_generation_id`/`target_family_member_id`で保存された日報から参照する。
+  日報から参照されない記録(保存されなかった下書き)は`packages/worker`が日次で削除する
+  (既定365日。環境変数`AI_GENERATION_RETENTION_DAYS`で変更可。
+  `packages/core/src/usecases/reportAiRetention.ts`)。設計理由は`doc/db/new-domains.md`第6章。
 - **割引クーポン**: 種別マスタ(`coupons`)・顧客への配布(`customer_coupons`)・適用記録
   (`coupon_redemptions`)の3テーブル。管理画面で「使える日(いつでも/対象者の誕生月のみ)」
   「使える人(全顧客/配布した顧客のみ)」「使用回数の上限(制限なし/顧客ごと1回/顧客ごと年1回)」を

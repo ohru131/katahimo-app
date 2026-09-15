@@ -15,7 +15,7 @@ from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 
 from pptx_kit import (ACCENT, ACCENT_L, AMBER, AMBER_L, CARD, CARD2, CW, GREEN, GREEN_L, INK, LINE,
                       ML, MONO, MUTED, NAVY, ORANGE, ORANGE_L, PINK, PINK_L, RED, RED_L, SLIDE_W,
-                      TEAL, TEAL_L, VIOLET, VIOLET_L, WHITE, arrow, badge, box, bullets, card,
+                      VIOLET, VIOLET_L, WHITE, arrow, badge, box, bullets, card,
                       chip_row, fill_text, hline, new_deck, note, rect, section_slide, slide,
                       table, text, title_slide, vline)
 
@@ -238,9 +238,10 @@ card(s, ML, 4.15, 6.0, 1.35, "記録は「後から書き換えない」デー�
     {"t": "日報・事故報告・領収書・勤怠は、その日の事実を積み上げる性質。削除は行わず、"
           "顧客の退会も deactivated_at を立てるだけ(ソフトデリート)"},
 ], body_size=11.5)
-card(s, ML + 6.2, 4.15, 6.13, 1.35, "この①〜④の外側に、先に形だけ固めた6領域がある", accent=ORANGE, items=[
-    {"t": "予約 / 請求・決済 / 顧客カルテ / 訪問割当の最適化 / 移動手段別の手当 / 日報AIのプロンプト調整。"
-          "表と制約を先に用意してあり、この資料の第4章で扱う(文面の版管理だけは稼働中)"},
+card(s, ML + 6.2, 4.15, 6.13, 1.35, "この①〜④の外側に、先に形だけ固めた5領域がある", accent=ORANGE, items=[
+    {"t": "予約 / 請求・決済 / 顧客カルテ / 訪問割当の最適化 / 移動手段別の手当。"
+          "表と制約を先に用意してあり、この資料の第4章で扱う(日報AIのプロンプト調整は3軸まで実装済みで、"
+          "この5領域には含めない)"},
 ], body_size=11)
 note(s, ML, 5.72, CW, 1.1, "設計の出発点",
      "現行のGoogle Apps Script版は、データがすべてスプレッドシートとDriveにあり、1法人・1Googleアカウントに強く依存しています。"
@@ -251,7 +252,7 @@ note(s, ML, 5.72, CW, 1.1, "設計の出発点",
 # ══════════════════════════════════════════════════════════════
 # 8. 全体像 44テーブル
 # ══════════════════════════════════════════════════════════════
-s = sl_("全体像 — 44テーブル", "業務ドメインごとに12のまとまり。tenants以外の43枚はすべて同じ形を守る",
+s = sl_("全体像 — 44テーブル", "業務ドメインごとに11のまとまり。tenants以外の43枚はすべて同じ形を守る",
         source="packages/db/src/schema/*.ts / ドメイン別のER図は doc/db/reference.md 第1章(自動生成)")
 
 chip_row(s, ML, 1.10, [("全テーブルが tenant_id を持つ", ACCENT, ACCENT_L),
@@ -263,15 +264,16 @@ GG = 0.16
 GW = (CW - GG * 5) / 6  # 1列あたり1.92in。6列に増えたので幅を計算で出す
 
 
-def group_box(x, y, h, title, n, names, col, fl):
-    rect(s, x, y, GW, h, fill=WHITE, border=col, border_w=1.2)
-    fill_text(rect(s, x, y, GW, 0.38, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE),
+def group_box(x, y, h, title, n, names, col, fl, w=None):
+    bw = GW if w is None else w
+    rect(s, x, y, bw, h, fill=WHITE, border=col, border_w=1.2)
+    fill_text(rect(s, x, y, bw, 0.38, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE),
               f"{title} ({n})", size=10, color=WHITE, bold=True)
-    text(s, x + 0.09, y + 0.45, GW - 0.18, h - 0.53, "\n".join(names), size=7, color=INK,
+    text(s, x + 0.09, y + 0.45, bw - 0.18, h - 0.53, "\n".join(names), size=7, color=INK,
          font=MONO, line=1.5)
 
 
-text(s, ML, 1.44, 8.0, 0.26, "稼働中 — アプリが読み書きしている17枚", size=11.5, color=VIOLET,
+text(s, ML, 1.44, 8.0, 0.26, "稼働中 — アプリが読み書きしている26枚", size=11.5, color=VIOLET,
      bold=True)
 live = [
     ("テナント基盤", 4, ["tenants", "tenant_keys", "app_settings", "outbox_jobs"]),
@@ -279,14 +281,18 @@ live = [
     ("顧客", 2, ["customers", "family_members"]),
     ("訪問の記録", 4, ["daily_reports", "accident_reports", "receipts", "attendance_days"]),
     ("割引クーポン", 3, ["coupons", "customer_coupons", "coupon_redemptions"]),
-    ("日報AIの文面", 1, ["prompt_templates"]),
+    ("日報AI(3軸+文面)", 10, ["prompt_templates", "report_age_bands", "report_keywords",
+                       "report_age_band_keywords", "report_education_levels",
+                       "report_stress_levels", "report_phrases",
+                       "customer_report_profiles", "report_ai_generations",
+                       "report_ai_generation_keywords"]),
 ]
 cx = ML
 for ttl, n, names in live:
     group_box(cx, 1.72, 1.35, ttl, n, names, VIOLET, VIOLET_L)
     cx += GW + GG
 
-text(s, ML, 3.24, 9.5, 0.26, "スキーマだけ先に用意 — 表と制約はあるが、実装・API・画面はこれから(27枚)",
+text(s, ML, 3.24, 9.5, 0.26, "スキーマだけ先に用意 — 表と制約はあるが、実装・API・画面はこれから(18枚)",
      size=11.5, color=ORANGE, bold=True)
 planned = [
     ("顧客カルテ", 2, ["customer_notes", "customer_note_photos"]),
@@ -296,15 +302,12 @@ planned = [
     ("訪問割当の最適化", 5, ["trait_definitions", "customer_traits", "staff_traits",
                       "staff_customer_compatibilities", "staff_customer_travel_estimates"]),
     ("移動手段と手当", 2, ["transport_allowance_rules", "travel_legs"]),
-    ("日報AIの表・記録", 9, ["report_age_bands", "report_keywords", "report_age_band_keywords",
-                      "report_education_levels", "report_stress_levels", "report_phrases",
-                      "customer_report_profiles", "report_ai_generations",
-                      "report_ai_generation_keywords"]),
 ]
+GWp = (CW - GG * 4) / 5  # 5領域に変わったので1列あたりの幅をここだけ計算し直す
 cx = ML
 for ttl, n, names in planned:
-    group_box(cx, 3.52, 2.42, ttl, n, names, ORANGE, ORANGE_L)
-    cx += GW + GG
+    group_box(cx, 3.52, 2.42, ttl, n, names, ORANGE, ORANGE_L, w=GWp)
+    cx += GWp + GG
 
 note(s, ML, 6.06, CW, 0.78, "例外は3つだけ",
      "① tenants だけRLSの対象外(ログイン前に法人を特定するため)  "
@@ -347,13 +350,15 @@ note(s, ML, 6.0, 6.0, 1.0, "「複合FK」とは(次章で図解します)",
      "データベース自身に確かめさせるための工夫です。",
      accent=ACCENT, fill=ACCENT_L, size=11)
 note(s, ML + 6.33, 6.0, 6.0, 1.0, "この17枚が「土台」です",
-     "提案書の差別化要因(予約・請求・カルテ)は、次の2ページの27枚としてスキーマだけ先に用意してあります。",
+     "提案書の差別化要因のうち、予約・請求・カルテ・訪問割当の最適化・移動手当(18枚)は"
+     "次ページでスキーマだけ先に用意してあります。日報AIの3軸(10枚)はその次のページで、"
+     "既に実装まで進んでいます。",
      accent=ORANGE, fill=ORANGE_L, size=11)
 
 # ══════════════════════════════════════════════════════════════
-# 9b. テーブル一覧② 先行整備の27枚のうち18枚
+# 9b. テーブル一覧② 先行整備の18枚
 # ══════════════════════════════════════════════════════════════
-s = sl_("テーブル一覧② — 先行整備の27枚(1/2)", "カルテ・予約・決済・最適化・手当の18枚",
+s = sl_("テーブル一覧② — 先行整備の18枚", "カルテ・予約・決済・最適化・手当の18枚",
         source="doc/db/new-domains.md 第1〜5章。実装・API・画面はこれから", accent=ORANGE)
 rows2 = [
     ["customer_notes", "カルテ", "カルテ・申し送り・鍵の位置・ガレージ・引継ぎ・注意点を区分で持つ1枚"],
@@ -383,15 +388,17 @@ table(s, ML, 1.22, CW, ["テーブル", "領域", "役割と、鍵になる制�
       aligns=[PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.LEFT])
 text(s, ML, 6.52, CW, 0.4,
      "この18枚も既存17枚と同じ規約(tenant_id + RLS + 複合外部キー + CHECK + updated_at トリガー)に載せてあります。"
-     "残りの9枚(日報AIのプロンプト調整)は次ページ。先に作った理由と迷った判断は第4章(P27・P28)で扱います。",
+     "この5領域はスキーマまで。次ページの日報AIの3軸は実装まで進んでいます。"
+     "先に作った理由と迷った判断は第4章(P27・P28)で扱います。",
      size=10.5, color=MUTED, line=1.3)
 
 # ══════════════════════════════════════════════════════════════
-# 9c. テーブル一覧③ 日報AIのプロンプト調整
+# 9c. テーブル一覧③ 稼働中 — 日報AIの3軸
 # ══════════════════════════════════════════════════════════════
-s = sl_("テーブル一覧③ — 先行整備の27枚(2/2)", "日報AIのプロンプト調整の9枚。文面は一覧①(稼働中)",
+s = sl_("テーブル一覧③ — 稼働中: 日報AIの3軸(10枚)",
+        "年齢帯・教育関心度★・ストレス度PSIの表と、生成記録。生成まで接続済み",
         source="doc/db/new-domains.md 第6章 / 区分値と値域は packages/shared/src/contracts/reportAi.ts",
-        accent=ORANGE)
+        accent=VIOLET)
 rows3 = [
     ["report_age_bands", "表", "子の年齢帯。月齢は半開区間 [from, to) でCHECK。帯どうしの重なり禁止は入口で担保"],
     ["report_keywords", "表", "教育キーワードと使ってよい条件(月齢・★の範囲・ストレス度の下限)。廃止は active=false"],
@@ -603,7 +610,7 @@ for r_i, row in enumerate(rows):
             size=10.5, align=PP_ALIGN.LEFT)
 note(s, ML, 6.05, CW, 0.85, "補足",
      "クーポンの2枚(customer_coupons / coupon_redemptions)も同じ形で customers・coupons・daily_reports を指しています。"
-     "先行整備の27枚も同じ規約に載せてあり、複合外部キーは全部で63本です。参照先には UNIQUE(tenant_id, id) を張ってあります。"
+     "先行整備の18枚・稼働中の日報AI3軸の10枚も同じ規約に載せてあり、複合外部キーは全部で63本です。参照先には UNIQUE(tenant_id, id) を張ってあります。"
      "ON DELETE は全て no action(親を消せない)にしており、廃棄はテナント単位の物理削除で行う方針です。",
      accent=ACCENT, fill=ACCENT_L, size=10.5)
 
@@ -802,7 +809,7 @@ for col_i, group in enumerate([left, right]):
 
 note(s, ML, 5.6, 6.0, 1.3, "この規約のおかげで楽になっていること",
      "新しい表を足すときに考えることが少ない(同じ形をコピーすればよい)。"
-     "RLSとupdated_atトリガーの張り忘れはCIが機械的に検出する。第4章の27枚も、この形にそのまま載せてあります。",
+     "RLSとupdated_atトリガーの張り忘れはCIが機械的に検出する。第4章の18枚・日報AIの10枚も、この形にそのまま載せてあります。",
      accent=GREEN, fill=GREEN_L)
 note(s, ML + 6.33, 5.6, 6.0, 1.3, "規約の副作用も出ている(第3章)",
      "「派生値を保存しない」は二重管理を防ぐ一方、月次集計を毎回全件計算することになります。"
@@ -1112,13 +1119,13 @@ note(s, ML, 5.65, CW, 1.2, "ご相談したいこと(相談⑥)",
 # 24. 第4章 divider
 # ══════════════════════════════════════════════════════════════
 sec_("第 4 章", "先行して用意したスキーマと、相談事項",
-     "実装より先にDBの形だけ固めた6領域。そこで迷った判断と、まとめての相談事項")
+     "実装より先にDBの形だけ固めた5領域。そこで迷った判断と、まとめての相談事項")
 
 # ══════════════════════════════════════════════════════════════
-# 25. 先行整備した6領域
+# 25. 先行整備した5領域
 # ══════════════════════════════════════════════════════════════
-s = sl_("実装より先に、DBの形だけ固めた6領域",
-        "27テーブル。リポジトリ実装・API・画面はまだ無い(日報AIの文面だけ先に稼働)",
+s = sl_("実装より先に、DBの形だけ固めた5領域",
+        "18テーブル。リポジトリ実装・API・画面はまだ無い(日報AIの3軸は実装済みでここには含めない)",
         source="doc/db/new-domains.md", accent=ORANGE)
 text(s, ML, 1.16, CW, 0.3,
      "あとから足すと既存データの移行が伴うため、運用前のいまのうちに表と制約だけ作ってあります。",
@@ -1147,18 +1154,9 @@ plans = [
                         "自動車・公共交通機関・自転車・徒歩を選べる",
                         "手段ごとに計算方法(距離比例/1移動定額/1日定額/実費精算)と単価を持つ",
                         "金額への換算ロジックはGAS版にも無く、新規追加"]),
-    ("日報AIの文面調整", TEAL, [["prompt_templates", "report_age_bands", "report_keywords",
-                          "report_age_band_keywords", "report_phrases",
-                          "report_education_levels", "report_stress_levels",
-                          "customer_report_profiles", "report_ai_generations",
-                          "report_ai_generation_keywords"],
-                         "文面は版を積む。生成記録が版を指すので消せない",
-                         "年齢帯 × 教育関心度★ × ストレス度の3軸で組み替える",
-                         "ストレス度は★より優先。安全弁は列で持ち、★は customers に置かない",
-                         "どの文面・どの語で作ったかを生成1回ごとに残す"]),
 ]
 GG2 = 0.16
-GW2 = (CW - GG2 * 5) / 6  # 6領域に増えたので1列あたりの幅を計算で出す(1.92in)
+GW2 = (CW - GG2 * 4) / 5  # 5領域なので1列あたりの幅を計算で出す
 cx = ML
 for ttl, col, items in plans:
     rect(s, cx, 1.62, GW2, 4.0, fill=WHITE, border=col, border_w=1.3)
@@ -1184,9 +1182,9 @@ note(s, ML + 6.33, 5.78, 6.0, 1.12, "ご相談したいこと(相談⑦)",
      accent=VIOLET, fill=VIOLET_L, size=10.5)
 
 # ══════════════════════════════════════════════════════════════
-# 26. 追加した6領域で迷った判断
+# 26. 追加した5領域で迷った判断
 # ══════════════════════════════════════════════════════════════
-s = sl_("追加した6領域で迷った判断", "どれも「こちらが正しい」と言い切れず、選んで実装しています",
+s = sl_("追加した5領域で迷った判断", "どれも「こちらが正しい」と言い切れず、選んで実装しています",
         source="doc/db/new-domains.md 各章「レビューで確認いただきたい点」")
 rows = [
     ["特性を項目マスタ+値テーブル(EAV)にした", "訪問最適化",
@@ -1209,32 +1207,30 @@ rows = [
     ["取込元キーの対をCHECKで縛った", "予約",
      "部分一意索引はNULL同士を別物として扱い、取込元が空の行は重複を防げないため",
      "同じ形の customers の索引にも同じCHECKを足すべきか"],
-    ["キーワードの候補をコードで絞り、AIに表を渡さない", "日報AI",
-     "月齢・★の範囲・ストレス度の下限の3条件を満たす語だけを提示する。決定性と検証のしやすさを優先した",
-     "AIの裁量(表全体から選ばせる)を狭める判断の是非と、候補上限(既定6語)の妥当性"],
 ]
-dom_colors = [VIOLET, GREEN, GREEN, PINK, ORANGE, ACCENT, TEAL]
+dom_colors = [VIOLET, GREEN, GREEN, PINK, ORANGE, ACCENT]
 table(s, ML, 1.22, CW, ["選んだ判断", "領域", "そうした理由", "ご意見をいただきたい点"], rows,
       col_w=[3.3, 1.1, 4.6, 3.33], size=9, hsize=10, row_h=0.55, header_h=0.30,
       first_bold=True, cell_colors={(i, 1): c for i, c in enumerate(dom_colors)},
       aligns=[PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.LEFT, PP_ALIGN.LEFT])
 note(s, ML, 6.02, CW, 0.8, "ご相談したいこと(相談⑧)",
-     "この7件について、より一般的な作り方があればご教示ください。"
+     "この6件について、より一般的な作り方があればご教示ください。"
      "とくにEAVは「項目が決まっていないから」という理由で選びましたが、後戻りしにくい選択だと考えています。",
      accent=VIOLET, fill=VIOLET_L, size=11)
 
 # ══════════════════════════════════════════════════════════════
 # 27. 相談事項まとめ
 # ══════════════════════════════════════════════════════════════
-s = sl_("ご相談したいこと(まとめ)", "優先度順。特に伺いたいのは ①②③⑩",
+s = sl_("ご相談したいこと(まとめ)", "優先度順。特に伺いたいのは ①②③⑨",
         source="doc/db/overview.md 第5章「レビュー観点」/ doc/db/new-domains.md 第7章 に対応")
 rows = [
     ["①", "customers 39列を分けるべきか", "20",
      "顧客マスタとして何列までが常識的か、分ける単位の基準。運用前の今が最も安く直せる"],
     ["②", "業務データ平文化の前提が妥当か", "15・21",
      "「保存時暗号化は本番基盤に任せる」という前提の置き方。本番未配備のまま進めてよいか"],
-    ["③", "予約の二重取りをどこで止めるか", "22",
-     "EXCLUDE制約が使えない(テスト環境に拡張が無い)。本番だけ張る / アプリで直列化 / 固定スロット / 運用で検知"],
+    ["③", "範囲の重なりをどこで止めるか(予約・単価・年齢帯)", "22・11",
+     "EXCLUDE制約が使えない(テスト環境に拡張が無い)ため3箇所とも入口(usecase)で担保している。"
+     "本番だけ張る / アプリで直列化 / 固定スロット / 運用で検知、のどれを採るべきか"],
     ["④", "勤怠のJSONをいつ分解するか", "23",
      "給与直結。実データ照合の前に分解すべきか、照合の基準を動かさないため後にすべきか"],
     ["⑤", "廃棄・返還の手順と、その他の負債の優先順位", "24",
@@ -1242,21 +1238,19 @@ rows = [
     ["⑥", "監査と鍵管理を本番相当にする時期", "25",
      "pgaudit等を入れる時期と粒度。Cloud KMS 前に本番データを溜め始めてよいか"],
     ["⑦", "実装より先にスキーマを置く進め方の是非", "27",
-     "要件が固まる前に作った27テーブルは、結局作り直しになるか"],
-    ["⑧", "追加6領域で迷った7つの判断", "28",
-     "EAV・請求書のvoid・Stripeの語彙・並び順・手当の粒度・取込元キー・候補の絞り込み"],
-    ["⑨", "日報AIの記録をどこまで残すか", "11・28",
-     "入力メモとAIの生出力を生成1回ごとに残すため日報本文より嵩む。保持期間を決めるか、保存分だけにするか"],
-    ["⑩", "見落としているPostgreSQLの落とし穴", "13・14",
+     "要件が固まる前に作った18テーブルは、結局作り直しになるか"],
+    ["⑧", "追加5領域で迷った6つの判断", "28",
+     "EAV・請求書のvoid・Stripeの語彙・並び順・手当の粒度・取込元キー"],
+    ["⑨", "見落としているPostgreSQLの落とし穴", "13・14",
      "複合外部キー + RLS の二重防御で塞いだつもりだが、他に仕様上の抜け道はないか"],
 ]
 table(s, ML, 1.26, CW, ["", "論点", "頁", "何を判断いただきたいか"], rows,
-      col_w=[0.45, 3.9, 0.75, 7.2], size=10, hsize=10.5, row_h=0.43, header_h=0.32,
-      cell_colors={(i, 0): (RED if i in (0, 1, 2, 9) else ACCENT) for i in range(10)},
+      col_w=[0.45, 3.9, 0.75, 7.2], size=10, hsize=10.5, row_h=0.48, header_h=0.32,
+      cell_colors={(i, 0): (RED if i in (0, 1, 2, 8) else ACCENT) for i in range(9)},
       aligns=[PP_ALIGN.CENTER, PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.LEFT])
 note(s, ML, 6.05, CW, 0.85, "いちばん困っていること",
-     "⑩のような「自分では気づきようがない落とし穴」が、他にもあるかどうかを知りたいです。"
-     "①〜⑨は選択肢が見えている判断ですが、⑩は見えていないものを指摘いただく必要があります。",
+     "⑨のような「自分では気づきようがない落とし穴」が、他にもあるかどうかを知りたいです。"
+     "①〜⑧は選択肢が見えている判断ですが、⑨は見えていないものを指摘いただく必要があります。",
      accent=ACCENT, fill=ACCENT_L)
 
 # ══════════════════════════════════════════════════════════════
@@ -1271,7 +1265,7 @@ card(s, ML, 1.28, 6.0, 2.6, "コード(こちらが正)", accent=ACCENT, items=[
     {"t": [("packages/shared/src/contracts/", {"font": MONO, "bold": True}),
            ("  区分値(CHECK制約の許可値)の定義。DDLはここから組み立てる", {})]},
     {"t": [("packages/core/src/ports/", {"font": MONO, "bold": True}),
-           ("  業務ロジックが外部に求める窓口の定義(30本)", {})]},
+           ("  業務ロジックが外部に求める窓口の定義(33本)", {})]},
 ], body_size=10.5)
 card(s, ML + 6.33, 1.28, 6.0, 2.6, "ドキュメント", accent=GREEN, items=[
     {"t": [("doc/db/overview.md", {"bold": True}),
@@ -1279,7 +1273,7 @@ card(s, ML + 6.33, 1.28, 6.0, 2.6, "ドキュメント", accent=GREEN, items=[
     {"t": [("doc/db/reference.md", {"bold": True}),
            ("  ER図と全44テーブルの全列一覧。スキーマから自動生成(pnpm db:docs)", {})]},
     {"t": [("doc/db/new-domains.md", {"bold": True}),
-           ("  第4章の27テーブルの設計理由と、未決の論点", {})]},
+           ("  先行整備5領域(18テーブル)・日報AI3軸(10テーブル)の設計理由と、未決の論点", {})]},
     {"t": [("doc/db/guidelines.md", {"bold": True}),
            ("  DBを触るときの決めごとと、実際に踏んだ落とし穴", {})]},
     {"t": [("doc/slides/architecture.pptx", {"bold": True}),

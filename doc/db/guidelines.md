@@ -259,6 +259,19 @@ Drizzle のスキーマでは表現できない。
 
 新しいPostgreSQL機能を使う前に、PGlite で動くかを先に確かめる。
 
+**指針**: 「範囲どうしの重なりを許さない」という不変条件は、同じ理由(`btree_gist` 不使用)で
+1行のCHECK制約に書けない場面がほかにもある(移動手当単価の有効期間、`report_age_bands` の
+月齢帯)。どれも入口(usecase)側で「既存 + 今回の変更後の姿」をまとめて検査する方針に揃えている。
+
+## §8.8 自然キーが無い表は、アプリ側でキーを作って読んでから振り分ける
+
+`report_phrases`(温かみ表現・避ける表現)は自由記述の `body` が主な内容で、DBの一意制約に
+使えるキーが無い(同じ表現の言い換えや、意図的な重複がありうるため `body` 自体も一意にできない)。
+そのため取込・一括保存は `ON CONFLICT` に頼らず、`(kind, body)` を運用上のキーとみなして
+既存行を先に読み、一致すれば更新・無ければ追加と**アプリ側で**振り分ける
+(`packages/db/src/repositories/reportAiConfigRepository.ts` の `upsertPhrasesByBody`)。
+DBの一意制約が無い分、同時実行での二重挿入は防げない(表の更新は管理画面からの単発操作が前提)。
+
 ---
 
 # §9 割引クーポン(`coupons` / `customer_coupons` / `coupon_redemptions`)の設計判断
