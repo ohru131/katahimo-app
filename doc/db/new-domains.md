@@ -430,9 +430,16 @@ drizzle の `sql` テンプレートに JavaScript の値を `${}` で直接埋�
 
 ## 実装の現状
 
-スキーマ・区分値・組み立ての純関数まで。リポジトリ実装・管理画面・生成API(`/daily/generate`)への
-接続・`ReportAiPort` の入出力拡張(`usedKeywords` の受け取り)はまだ無い。
-現行の生成は引き続きコード定数の文面(GAS版既定)で動く。
+GAS版相当のベースラインまで実装済み: `prompt_templates` のリポジトリ、テナントの版→既定文面の
+フォールバックで生成プロンプトを組み立てるユースケース(日報・事故報告・領収書OCR)、管理者API、
+設定モーダルの「AIプロンプト」画面(編集・版の履歴・既定に戻す)、入力欄の入力例/記載要領の配信
+(GAS版 `getUiConfig` 相当)。差し込みは GAS版と同じ `{anonymizedText}` `{timeInfo}` のみ。
+
+3軸(年齢帯・教育関心度・ストレス度)は、表(`report_*` / `customer_report_profiles`)と組み立ての純関数
+(`promptAssembly.ts`)まで。生成時に `{childContext}` `{keywordGuide}` `{toneGuide}` は空文字で
+埋めている。キーワード表・判定基準のリポジトリと管理画面、生成API(`/daily/generate`)への
+`customerId` / 対象児の受け渡し、`ReportAiPort` の出力への `usedKeywords` の追加、
+`report_ai_generations` への記録はまだ無い。
 
 法人が実際に使うキーワード表・判定基準・文面(社是や固有の言い回しを含む)は
 このリポジトリには置かず、テナントの管理画面(または取込)からDBに入れる。

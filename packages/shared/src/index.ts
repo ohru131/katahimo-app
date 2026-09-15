@@ -13,3 +13,4 @@ export * from './contracts/optimization';
 export * from './contracts/reportAi';
 export * from './contracts/reservations';
 export * from './contracts/transport';
+export * from './promptDefaults';
