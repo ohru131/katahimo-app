@@ -19,11 +19,13 @@ export const BUTTON_SECONDARY_CLASS =
 export const BUTTON_DANGER_CLASS =
   'px-3 py-1.5 text-xs font-bold rounded border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-60';
 
+/** 失敗の理由を赤字で出す。null のときは何も描かない。 */
 export function ErrorText({ children }: { children: string | null }) {
   if (!children) return null;
   return <p className="text-red-500 text-xs">{children}</p>;
 }
 
+/** 保存できた等の知らせを緑字で出す。null のときは何も描かない。 */
 export function NoticeText({ children }: { children: string | null }) {
   if (!children) return null;
   return <p className="text-green-600 text-xs">{children}</p>;

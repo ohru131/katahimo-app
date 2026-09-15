@@ -10,6 +10,7 @@ import { withTenant } from '../tenantScope';
 
 type ProfileRow = typeof customerReportProfiles.$inferSelect;
 
+/** 行を、ユースケースが受け取る家庭ごとの設定の形にする。 */
 function toRecord(row: ProfileRow): CustomerReportProfileRecord {
   return {
     tenantId: row.tenantId,
@@ -28,6 +29,7 @@ function toRecord(row: ProfileRow): CustomerReportProfileRecord {
 export class DrizzleCustomerReportProfileRepository implements CustomerReportProfileRepositoryPort {
   constructor(private readonly db: Database) {}
 
+  /** その顧客の★設定を読む。まだ付けていなければ null。 */
   async find(tenantId: string, customerId: string): Promise<CustomerReportProfileRecord | null> {
     return withTenant(this.db, tenantId, async (tx) => {
       const rows = await tx

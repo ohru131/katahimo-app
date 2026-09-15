@@ -23,6 +23,7 @@ interface FormState {
   allowTermNames: boolean;
 }
 
+/** その★の行(まだ無ければ既定値)を、入力欄の形に直す。 */
 function toForm(level: number, data: EducationLevelView | undefined): FormState {
   if (data) {
     return {
@@ -77,6 +78,7 @@ function EducationLevelForm({ level, data }: { level: number; data: EducationLev
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   });
 
+  /** 入力を検証して、この★の定義を保存する。 */
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     setNotice(null);

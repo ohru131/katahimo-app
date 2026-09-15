@@ -28,6 +28,7 @@ import type {
   ReportStressLevelRecord,
 } from '../ports/reportAiRepositories';
 import type { PromptTemplateRepositoryPort } from '../ports/repositories';
+import { UsecaseValidationError } from './errors';
 import { savePromptTemplate } from './promptTemplates';
 
 /**
@@ -55,36 +56,47 @@ const IMPORT_NOTE = '取込';
 // 入力の検証
 // ---------------------------------------------------------------------------
 
-/** zod の失敗を、画面にそのまま出せる日本語のエラーにする。 */
-function validationError(what: string, error: { issues: { path: (string | number)[]; message: string }[] }) {
+/**
+ * zod の失敗を、画面にそのまま出せる日本語のエラーにする。
+ * `UsecaseValidationError` にすることで、APIルートがこれだけを400にできる。
+ */
+function validationError(
+  what: string,
+  error: { issues: { path: (string | number)[]; message: string }[] },
+): UsecaseValidationError {
   const detail = error.issues.map((issue) => `${issue.path.join('.') || '値'}: ${issue.message}`).join(' / ');
-  return new Error(`${what}の入力が正しくありません(${detail})`);
+  return new UsecaseValidationError(`${what}の入力が正しくありません(${detail})`);
 }
 
 // ---------------------------------------------------------------------------
 // レコード → 画面に返す形
 // ---------------------------------------------------------------------------
 
+/** 年齢帯の行を画面に返す形にする(UUIDとテナントIDは画面が使わないので落とす)。 */
 function toAgeBandView(record: ReportAgeBandRecord): AgeBandView {
   const { id: _id, tenantId: _tenantId, ...view } = record;
   return view;
 }
 
+/** キーワードの行を画面に返す形にする。相性の良い年齢帯は対応表から引いたコードで持たせる。 */
 function toKeywordView(record: ReportKeywordRecord, ageBandCodes: string[]): KeywordView {
   const { id: _id, tenantId: _tenantId, ...view } = record;
   return { ...view, ageBandCodes };
 }
 
+/** 教育関心度★の定義の行を画面に返す形にする。 */
 function toEducationLevelView(record: ReportEducationLevelRecord): EducationLevelView {
   const { id: _id, tenantId: _tenantId, ...view } = record;
   return view;
 }
 
+/** ストレス度の定義の行を画面に返す形にする。 */
 function toStressLevelView(record: ReportStressLevelRecord): StressLevelView {
   const { id: _id, tenantId: _tenantId, ...view } = record;
   return view;
 }
 
+/** 表現の行を画面に返す形にする。 */
 function toPhraseView(record: ReportPhraseRecord): PhraseView {
   const { id: _id, tenantId: _tenantId, ...view } = record;
   return view;
@@ -183,7 +195,7 @@ function assertNoAgeBandOverlap(bands: readonly AgeBandRange[]): void {
     const current = sorted[i];
     if (!previous || !current) continue;
     if (current.ageFromMonths < previous.ageToMonths) {
-      throw new Error(
+      throw new UsecaseValidationError(
         `年齢帯「${previous.label}」(${previous.ageFromMonths}〜${previous.ageToMonths}ヶ月)と` +
           `「${current.label}」(${current.ageFromMonths}〜${current.ageToMonths}ヶ月)の月齢が重なっています。` +
           '上限の月齢は範囲に含まれないので、隣り合う帯は同じ値でつなげてください。',
@@ -238,7 +250,9 @@ function assertAgeBandCodesExist(
 ): void {
   const missing = [...new Set(codes)].filter((code) => !knownCodes.has(code));
   if (missing.length > 0) {
-    throw new Error(`${what}に指定された年齢帯コード ${missing.join(', ')} は登録されていません。`);
+    throw new UsecaseValidationError(
+      `${what}に指定された年齢帯コード ${missing.join(', ')} は登録されていません。`,
+    );
   }
 }
 
@@ -266,6 +280,7 @@ export async function saveKeyword(
 // レベル定義・表現
 // ---------------------------------------------------------------------------
 
+/** 教育関心度★の定義を1件 upsert する(level が識別子)。 */
 export async function saveEducationLevel(
   deps: ReportAiConfigDeps,
   tenantId: string,
@@ -276,6 +291,7 @@ export async function saveEducationLevel(
   return toEducationLevelView(await deps.reportAiConfig.upsertEducationLevel(tenantId, parsed.data));
 }
 
+/** ストレス度の定義を1件 upsert する(level が識別子)。 */
 export async function saveStressLevel(
   deps: ReportAiConfigDeps,
   tenantId: string,

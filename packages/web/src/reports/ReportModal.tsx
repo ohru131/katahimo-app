@@ -434,8 +434,9 @@ export function ReportModal({
   const [sendingVisitComplete, setSendingVisitComplete] = useState(false);
   const [visitCompleteMessage, setVisitCompleteMessage] = useState<string | null>(null);
 
-  /** GAS版changeDate()と同じ。未来日への変更は禁止する。 */
+  /** GAS版changeDate()と同じ。未来日への変更は禁止する。生成の材料が変わるので直近の生成は捨てる。 */
   const changeDate = (offsetDays: number) => {
+    clearDailyAiGeneration();
     setVisitDate((prev) => {
       const next = new Date(prev);
       next.setDate(next.getDate() + offsetDays);
@@ -505,6 +506,20 @@ export function ReportModal({
   const [aiGenerationId, setAiGenerationId] = useState<string | null>(null);
   const [escalationRequired, setEscalationRequired] = useState(false);
   const [usedKeywords, setUsedKeywords] = useState<string[]>([]);
+  /**
+   * 直近の生成結果を捨てる。生成の材料(メモ・訪問日・対象児・PSI)を1つでも変えたら呼ぶ。
+   *
+   * 【残したままにできない理由】
+   * aiGenerationIdは保存時にそのまま送られ、日報と生成の記録が結び付く。材料を変えた後も
+   * 古いIDが付いたままだと、記録を辿ったときに日報の内容と生成の前提(対象児の月齢・PSI)が
+   * 食い違う。対象児を変えた場合はサーバー側でも弾かれるが、そこに頼らず画面で外す。
+   * escalationRequired・usedKeywordsも同じ回の結果なので、一緒に消して表示を残さない。
+   */
+  const clearDailyAiGeneration = () => {
+    setAiGenerationId(null);
+    setEscalationRequired(false);
+    setUsedKeywords([]);
+  };
   const [generatingDaily, setGeneratingDaily] = useState(false);
   const [savingDaily, setSavingDaily] = useState(false);
   const [dailyMessage, setDailyMessage] = useState<string | null>(null);
@@ -559,7 +574,10 @@ export function ReportModal({
       setCopyMessage('コピーに失敗しました');
     }
   };
-  const dailyVoice = useVoiceInput((text) => setMemoText((prev) => (prev ? `${prev}\n${text}` : text)));
+  const dailyVoice = useVoiceInput((text) => {
+    clearDailyAiGeneration();
+    setMemoText((prev) => (prev ? `${prev}\n${text}` : text));
+  });
 
   // ── 事故報告/ヒヤリハット ──
   const [reportType, setReportType] = useState<'事故報告' | 'ヒヤリハット'>('事故報告');
@@ -609,6 +627,8 @@ export function ReportModal({
     if (!memoText.trim() || !customerId) return;
     setGeneratingDaily(true);
     setDailyError(null);
+    // 前回の結果をここで捨てる。失敗して抜けても古いIDが残らないようにするため。
+    clearDailyAiGeneration();
     try {
       const draft = await generateDailyReportDraft({
         text: memoText,
@@ -625,8 +645,6 @@ export function ReportModal({
       const failureCode = draft.warnings.find((w) => w === 'API Error' || w === 'API Key Missing');
       if (failureCode) {
         setWarnings([]);
-        setEscalationRequired(false);
-        setUsedKeywords([]);
         setDailyError(friendlyAiErrorMessage(failureCode));
         return;
       }
@@ -1109,7 +1127,10 @@ export function ReportModal({
                     <select
                       id="dailyFamilySelector"
                       value={targetFamilyMemberId ?? ''}
-                      onChange={(e) => setTargetFamilyMemberId(e.target.value || null)}
+                      onChange={(e) => {
+                        clearDailyAiGeneration();
+                        setTargetFamilyMemberId(e.target.value || null);
+                      }}
                       className="flex-1 border rounded-lg px-3 py-2 text-sm bg-gray-50"
                     >
                       <option value="">世帯全体・選ばない</option>
@@ -1499,7 +1520,10 @@ export function ReportModal({
                 <StarRating
                   type="stress"
                   value={stressLevel}
-                  onChange={setStressLevel}
+                  onChange={(next) => {
+                    clearDailyAiGeneration();
+                    setStressLevel(next);
+                  }}
                   onShowHint={() => setHintType('stress')}
                   levelLabel={psiLevelLabel}
                 />
@@ -1539,7 +1563,10 @@ export function ReportModal({
                 <textarea
                   id="memoText"
                   value={memoText}
-                  onChange={(e) => setMemoText(e.target.value)}
+                  onChange={(e) => {
+                    clearDailyAiGeneration();
+                    setMemoText(e.target.value);
+                  }}
                   rows={4}
                   placeholder={reportUiTexts.dailyMemoPlaceholder}
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"

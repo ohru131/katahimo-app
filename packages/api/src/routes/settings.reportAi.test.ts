@@ -33,6 +33,8 @@ interface TestContext {
   app: ReturnType<typeof createApp>;
   adminCookie: string;
   staffCookie: string;
+  /** 「DBが落ちた」ときの振る舞いを見るために、フェイクを差し替えられるようにしておく。 */
+  reportAiConfig: FakeReportAiConfigRepository;
 }
 
 async function setup(): Promise<TestContext> {
@@ -76,7 +78,12 @@ async function setup(): Promise<TestContext> {
   const [adminCookie, staffCookie] = cookies;
   if (!adminCookie || !staffCookie) throw new Error('テストの前提(ログイン)が崩れています');
 
-  return { app: createApp(container, { secureCookies: false }), adminCookie, staffCookie };
+  return {
+    app: createApp(container, { secureCookies: false }),
+    adminCookie,
+    staffCookie,
+    reportAiConfig: deps.reportAiConfig,
+  };
 }
 
 /** 管理者としてJSONを送る。 */
@@ -311,6 +318,22 @@ describe('PUT /api/settings/admin/report-ai/phrases', () => {
     const res = await call(ctx, 'PUT', '/phrases', { phrases: [{ kind: 'unknown', body: 'x' }] });
     expect(res.status).toBe(400);
     expect((await res.json()) as { code: string }).toMatchObject({ code: 'validation_failed' });
+  });
+
+  it('避ける表現にストレス度の範囲を付ければ400(全日報に効くので範囲を持てない)', async () => {
+    const res = await call(ctx, 'PUT', '/phrases', {
+      phrases: [{ kind: 'avoid', body: '問題児', stressLevelMin: 1, stressLevelMax: 3 }],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { message: string }).toMatchObject({ code: 'validation_failed' });
+  });
+
+  it('検証エラー以外(保存先の失敗)は400にせず500にする', async () => {
+    ctx.reportAiConfig.replacePhrases = () => Promise.reject(new Error('DBに繋がりません'));
+    const res = await call(ctx, 'PUT', '/phrases', {
+      phrases: [{ kind: 'encourage', body: '今日もお疲れさまでした' }],
+    });
+    expect(res.status).toBe(500);
   });
 });
 

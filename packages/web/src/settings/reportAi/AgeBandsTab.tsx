@@ -33,6 +33,7 @@ const EMPTY_FORM: FormState = {
   sortOrder: '0',
 };
 
+/** サーバーから来た1行を、入力欄の文字列の形に直す。 */
 function toForm(band: AgeBandView): FormState {
   return {
     code: band.code,
@@ -52,6 +53,7 @@ function toForm(band: AgeBandView): FormState {
  */
 export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
   const queryClient = useQueryClient();
+  /** 保存後に設定一式を引き直す(他のタブの表示も新しい内容に揃える)。 */
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['report-ai-admin'] });
 
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
@@ -100,6 +102,7 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
     onError: (e) => setFormError(e instanceof Error ? e.message : String(e)),
   });
 
+  /** 新規追加のフォームを開く(空の入力に戻す)。 */
   const openNew = () => {
     setCreatingNew(true);
     setSelectedCode(null);
@@ -108,6 +111,7 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
     setFormError(null);
   };
 
+  /** 一覧で選んだ年齢帯を編集する。中身は useEffect が選択中の行から流し込む。 */
   const openEdit = (code: string) => {
     setCreatingNew(false);
     setSelectedCode(code);
@@ -115,12 +119,14 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
     setFormError(null);
   };
 
+  /** フォームを閉じる(編集中の入力は破棄する)。 */
   const closeForm = () => {
     setCreatingNew(false);
     setSelectedCode(null);
     setDirty(false);
   };
 
+  /** 入力を検証して保存する。数値の欄は文字列で持っているので、ここで数に直して確かめる。 */
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     const ageFromMonths = Number(form.ageFromMonths);

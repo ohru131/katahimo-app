@@ -25,6 +25,7 @@ import type {
 import type { UnitOfWorkPort } from '../ports/unitOfWork';
 import type { DailyReportCouponView } from './coupons';
 import { buildDailyReportCouponViews, resolveCouponRedemptionSnapshots } from './coupons';
+import { UsecaseValidationError } from './errors';
 
 export interface ReportDeps {
   dailyReports: DailyReportRepositoryPort;
@@ -46,6 +47,10 @@ export interface ReportDeps {
   unitOfWork: UnitOfWorkPort;
 }
 
+/**
+ * 通知文に出すスタッフ名・顧客名を、IDから引き直す。
+ * 画面から送られてきた名前は信用せず、必ずここで解決する(CLAUDE.mdのセキュリティパターン)。
+ */
 async function resolveNames(
   deps: ReportDeps,
   tenantId: string,
@@ -56,8 +61,8 @@ async function resolveNames(
     deps.staff.findById(tenantId, staffId),
     deps.customers.findById(tenantId, customerId),
   ]);
-  if (!staffRecord) throw new Error('スタッフが見つかりません');
-  if (!customerRecord) throw new Error('顧客が見つかりません');
+  if (!staffRecord) throw new UsecaseValidationError('スタッフが見つかりません');
+  if (!customerRecord) throw new UsecaseValidationError('顧客が見つかりません');
   return { staffName: staffRecord.name, customerName: customerRecord.name };
 }
 
@@ -261,6 +266,11 @@ export async function saveDailyReport(
 /**
  * 日報が指す対象児・AI生成の記録が、同じテナントの同じ顧客のものかを確かめる。
  * どちらも未指定(null)ならそのまま null を返す。
+ *
+ * 【生成の対象児と日報の対象児が一致することまで見る理由】
+ * 生成は対象児の月齢で年齢帯・キーワードを選ぶので、別の子で作った文面をこの日報に
+ * 結び付けると、記録(report_ai_generations)を辿ったときに「この文面がどの子の月齢から
+ * 生まれたか」が日報と食い違う。顧客が同じでも、子が違えば別の生成として扱う。
  */
 async function resolveDailyReportReferences(
   deps: ReportDeps,
@@ -270,13 +280,16 @@ async function resolveDailyReportReferences(
   if (input.targetFamilyMemberId) {
     const members = await deps.familyMembers.listByCustomerId(tenantId, input.customerId);
     if (!members.some((m) => m.id === input.targetFamilyMemberId)) {
-      throw new Error('対象児が見つかりません');
+      throw new UsecaseValidationError('対象児が見つかりません');
     }
   }
   if (input.aiGenerationId) {
     const generation = await deps.reportAiGenerations.findById(tenantId, input.aiGenerationId);
     if (!generation || generation.customerId !== input.customerId) {
-      throw new Error('AI生成の記録が見つかりません');
+      throw new UsecaseValidationError('AI生成の記録が見つかりません');
+    }
+    if (generation.targetFamilyMemberId !== input.targetFamilyMemberId) {
+      throw new UsecaseValidationError('AI生成の記録が対象児と一致しません');
     }
   }
   return { targetFamilyMemberId: input.targetFamilyMemberId, aiGenerationId: input.aiGenerationId };

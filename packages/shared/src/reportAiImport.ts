@@ -93,16 +93,51 @@ export function parseBooleanCell(value: ImportCellValue): boolean | null {
   if (typeof value === 'number') return value === 0 ? false : value === 1 ? true : null;
   const text = normalizeHeader(value);
   if (!text) return null;
-  if (['○', '◯', '〇', '◎', '✓', '✔', 'はい', '可', '有', 'あり', 'yes', 'y', 'true', '1'].includes(text)) {
-    return true;
-  }
-  if (
-    ['×', '✕', '✗', 'x', '✘', 'いいえ', '不可', '無', 'なし', 'no', 'n', 'false', '0', '-'].includes(text)
-  ) {
-    return false;
-  }
+  // 否定形を先に見る。「使用不可」は「使用可」を含む形なので、肯定側から見ると取り違える。
+  if (FALSE_CELLS.includes(text)) return false;
+  if (TRUE_CELLS.includes(text)) return true;
   return null;
 }
+
+/** 「使う・有効」と読む表記。normalizeHeader を通した形で持つ。 */
+const TRUE_CELLS: readonly string[] = [
+  '○',
+  '◯',
+  '〇',
+  '◎',
+  '✓',
+  '✔',
+  'はい',
+  '可',
+  '有',
+  'あり',
+  '使用可',
+  '利用可',
+  'yes',
+  'y',
+  'true',
+  '1',
+];
+
+/** 「使わない・無効」と読む表記。 */
+const FALSE_CELLS: readonly string[] = [
+  '×',
+  '✕',
+  '✗',
+  'x',
+  '✘',
+  'いいえ',
+  '不可',
+  '無',
+  'なし',
+  '使用不可',
+  '利用不可',
+  'no',
+  'n',
+  'false',
+  '0',
+  '-',
+];
 
 /**
  * 「★3」「3」「★★★」のいずれの書き方でもレベル(1〜5)にする。範囲外・判定不能は null。
@@ -139,23 +174,40 @@ export interface AgeMonthsRange {
 const YEAR_UNIT_RE = /(歳|才|歳児|year|y)\s*$/;
 const MONTH_UNIT_RE = /(ヶ月|ケ月|箇月|か月|カ月|ヵ月|月|month|months|m)\s*$/;
 
+/** 年齢表記の単位。`none` は「1〜2歳」の「1」のように、単位が書かれていない側。 */
+type AgeUnit = 'year' | 'month' | 'none';
+
+interface AgePart {
+  /** 書かれている単位で解釈した月齢。単位が無ければ数字そのもの。 */
+  months: number;
+  unit: AgeUnit;
+  /** 表記にあった数字。単位を相手側から引き継ぐときに、月齢を数え直すために使う。 */
+  value: number;
+}
+
 /** 「1歳6ヶ月」のような複合表記も含めて、片側1つぶんの月齢を読む。 */
-function parseAgePart(part: string): { months: number; unit: 'year' | 'month' | 'none' } | null {
+function parseAgePart(part: string): AgePart | null {
   const text = part.replace(/(以上|以降|未満|より前|〜|~)/g, '').trim();
   if (!text) return null;
   const compound = /(\d+)\s*(?:歳|才)\s*(\d+)\s*(?:ヶ月|ケ月|箇月|か月|カ月|ヵ月|月)/.exec(text);
   if (compound) {
-    return {
-      months: Number.parseInt(compound[1] ?? '0', 10) * 12 + Number.parseInt(compound[2] ?? '0', 10),
-      unit: 'month',
-    };
+    const months = Number.parseInt(compound[1] ?? '0', 10) * 12 + Number.parseInt(compound[2] ?? '0', 10);
+    return { months, unit: 'month', value: months };
   }
   const digits = /\d+/.exec(text);
   if (!digits) return null;
   const value = Number.parseInt(digits[0], 10);
-  if (YEAR_UNIT_RE.test(text)) return { months: value * 12, unit: 'year' };
-  if (MONTH_UNIT_RE.test(text)) return { months: value, unit: 'month' };
-  return { months: value, unit: 'none' };
+  if (YEAR_UNIT_RE.test(text)) return { months: value * 12, unit: 'year', value };
+  if (MONTH_UNIT_RE.test(text)) return { months: value, unit: 'month', value };
+  return { months: value, unit: 'none', value };
+}
+
+/**
+ * 単位の無い側に相手の単位を当てはめた月齢。「1〜2歳」の「1」は1歳(12ヶ月)であって
+ * 1ヶ月ではない、という読み方をどちらの側でもできるようにする。
+ */
+function monthsWithUnit(part: AgePart, unit: AgeUnit): number {
+  return part.unit === 'none' && unit === 'year' ? part.value * 12 : part.months;
 }
 
 /**
@@ -183,14 +235,17 @@ export function parseAgeRangeText(value: ImportCellValue): AgeMonthsRange | null
     const left = parseAgePart(parts[0] ?? '');
     const right = parseAgePart(parts[1] ?? '');
     if (!left || !right) return null;
+    // 単位はどちら向きにも引き継ぐ(「1-2歳」の左、「1歳-2」の右のどちらも歳で読む)。
+    const leftUnit = left.unit === 'none' ? right.unit : left.unit;
     const rightUnit = right.unit === 'none' ? left.unit : right.unit;
+    const from = monthsWithUnit(left, leftUnit);
     // 右側が年で書かれていれば「その年の終わりまで」、月なら「その月の手前まで」。
     const to = /(以上|以降)/.test(parts[1] ?? '')
       ? AGE_MONTHS_MAX
       : rightUnit === 'year'
-        ? right.months + 12
-        : right.months;
-    return clampRange(left.months, to);
+        ? monthsWithUnit(right, rightUnit) + 12
+        : monthsWithUnit(right, rightUnit);
+    return clampRange(from, to);
   }
 
   const only = parseAgePart(parts[0] ?? text);
@@ -235,10 +290,18 @@ export const GAS_PROMPT_KEY_MAP: Readonly<Record<string, PromptTemplateKey>> = {
   hiyari_hint: 'hiyari_hint',
 };
 
+/**
+ * 別名表を、突き合わせに使う正規化後のキーで引けるようにしたもの。
+ * `normalizeHeader` はアンダースコアを落とすので、`daily_report` のような本アプリのキーは
+ * 表に書いたままでは引けない(表の側も同じ関数を通しておく)。
+ */
+const PROMPT_KEY_LOOKUP: ReadonlyMap<string, PromptTemplateKey> = new Map(
+  Object.entries(GAS_PROMPT_KEY_MAP).map(([alias, key]) => [normalizeHeader(alias), key]),
+);
+
 /** GASのキー(表記ゆれ込み)を本アプリのキーに直す。対応が無ければ null。 */
 export function resolvePromptTemplateKey(value: ImportCellValue): PromptTemplateKey | null {
-  const normalized = normalizeHeader(value);
-  return GAS_PROMPT_KEY_MAP[normalized] ?? null;
+  return PROMPT_KEY_LOOKUP.get(normalizeHeader(value)) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +470,7 @@ interface RowReader {
   has(field: string): boolean;
 }
 
+/** 1行と「列名 → 列番号」から読み取り口を作る。別名表に無い列を引いたら空として返す。 */
 function createRowReader(row: readonly ImportCellValue[], columns: Map<string, number>): RowReader {
   const at = (field: string): ImportCellValue => {
     const index = columns.get(field);
@@ -591,12 +655,19 @@ function appendRow(kind: SheetKind, reader: RowReader, payload: ReportAiImportPa
           : null;
       if (!phraseKind) return `種別「${reader.text('kind')}」を判定できませんでした。`;
       const placementText = normalizeHeader(reader.raw('placement'));
+      // 避ける表現は全ての日報に効くので範囲を持たない(表に範囲が書かれていても 1〜5 で入れる。
+      // contracts/reportAiAdmin.ts の phraseInputSchema も avoid に全範囲を要求する)。
+      const isAvoid = phraseKind === 'avoid';
       const parsed = parseRow(phraseInputSchema, {
         kind: phraseKind,
         body: reader.text('body'),
         intent: reader.text('intent'),
-        stressLevelMin: parseStarLevel(reader.raw('stressLevelMin')) ?? REPORT_LEVEL_MIN,
-        stressLevelMax: parseStarLevel(reader.raw('stressLevelMax')) ?? REPORT_LEVEL_MAX,
+        stressLevelMin: isAvoid
+          ? REPORT_LEVEL_MIN
+          : (parseStarLevel(reader.raw('stressLevelMin')) ?? REPORT_LEVEL_MIN),
+        stressLevelMax: isAvoid
+          ? REPORT_LEVEL_MAX
+          : (parseStarLevel(reader.raw('stressLevelMax')) ?? REPORT_LEVEL_MAX),
         placement: /締|closing|結び/.test(placementText) ? 'closing' : 'any',
         sortOrder: reader.integer('sortOrder') ?? 0,
         active: reader.boolean('active') ?? true,

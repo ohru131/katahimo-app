@@ -17,6 +17,7 @@ import type {
   FamilyMemberRepositoryPort,
   PromptTemplateRepositoryPort,
 } from '../ports/repositories';
+import { UsecaseValidationError } from './errors';
 import { resolvePromptTemplate } from './promptTemplates';
 
 export interface ReportAiDeps {
@@ -137,7 +138,7 @@ export async function generateDailyReportDraft(
     ? (familyMembers.find((m) => m.id === targetFamilyMemberId) ?? null)
     : null;
   if (targetFamilyMemberId && !targetMember) {
-    throw new Error('対象児が見つかりません');
+    throw new UsecaseValidationError('対象児が見つかりません');
   }
 
   // 月齢は「訪問日時点」で数える。保存済みの日報を編集して作り直す場合に、今日の日付で

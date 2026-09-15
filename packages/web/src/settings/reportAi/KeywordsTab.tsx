@@ -58,6 +58,7 @@ const EMPTY_FORM: FormState = {
   ageBandCodes: [],
 };
 
+/** サーバーから来た1行を、入力欄の文字列の形に直す。 */
 function toForm(keyword: KeywordView): FormState {
   return {
     code: keyword.code,
@@ -87,6 +88,7 @@ function toForm(keyword: KeywordView): FormState {
  */
 export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; ageBands: AgeBandView[] }) {
   const queryClient = useQueryClient();
+  /** 保存後に設定一式を引き直す(他のタブの表示も新しい内容に揃える)。 */
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['report-ai-admin'] });
 
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
@@ -125,6 +127,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
     onError: (e) => setFormError(e instanceof Error ? e.message : String(e)),
   });
 
+  /** 新規追加のフォームを開く(空の入力に戻す)。 */
   const openNew = () => {
     setCreatingNew(true);
     setSelectedCode(null);
@@ -133,6 +136,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
     setFormError(null);
   };
 
+  /** 一覧で選んだキーワードを編集する。中身は useEffect が選択中の行から流し込む。 */
   const openEdit = (code: string) => {
     setCreatingNew(false);
     setSelectedCode(code);
@@ -140,12 +144,14 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
     setFormError(null);
   };
 
+  /** フォームを閉じる(編集中の入力は破棄する)。 */
   const closeForm = () => {
     setCreatingNew(false);
     setSelectedCode(null);
     setDirty(false);
   };
 
+  /** 相性の良い年齢帯の選び外しを切り替える。 */
   const toggleAgeBandCode = (code: string) => {
     editForm((f) => ({
       ...f,
@@ -155,6 +161,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
     }));
   };
 
+  /** 入力を検証して保存する。数値の欄は文字列で持っているので、ここで数に直して確かめる。 */
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     const ageFromMonths = Number(form.ageFromMonths);
@@ -232,12 +239,21 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             {sorted.map((keyword) => (
               <tr
                 key={keyword.code}
-                onClick={() => openEdit(keyword.code)}
-                className={`cursor-pointer border-b last:border-b-0 ${
+                className={`border-b last:border-b-0 ${
                   selectedCode === keyword.code ? 'bg-blue-50' : 'hover:bg-gray-50'
                 } ${keyword.active ? '' : 'text-gray-400'}`}
               >
-                <td className="p-1 whitespace-nowrap">{keyword.code}</td>
+                {/* 行を開く口は本物のボタン1つにする(年齢帯の一覧と同じ作り)。行全体の
+                    onClickだとキーボードでたどれず、読み上げでも押せる要素に見えない。 */}
+                <td className="p-1 whitespace-nowrap">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(keyword.code)}
+                    className="underline underline-offset-2 hover:text-blue-600"
+                  >
+                    {keyword.code}
+                  </button>
+                </td>
                 <td className="p-1 whitespace-nowrap">{keyword.category}</td>
                 <td className="p-1 font-bold whitespace-nowrap">{keyword.name}</td>
                 <td className="p-1 whitespace-nowrap">

@@ -308,7 +308,7 @@ sequenceDiagram
 | `report_age_bands` | 子の年齢帯(月齢の範囲と、その時期の行動語) | ○ | `(tenant_id, code)`・`(tenant_id, id)`にUNIQUE。月齢は半開区間`[age_from_months, age_to_months)`(CHECK)。帯どうしの重なり禁止は入口で担保。第2.6節 |
 | `report_keywords` | 教育キーワードと、使ってよい条件(月齢・★の範囲・ストレス度の下限) | ○ | `(tenant_id, code)`・`(tenant_id, id)`にUNIQUE。廃止は`active=false`(生成記録が参照するため行は消さない)。第2.6節 |
 | `report_age_band_keywords` | 年齢帯と相性の良いキーワードの対応 | ○ | 主キー`(tenant_id, age_band_id, keyword_id)`。双方への複合FK。第2.6節 |
-| `report_phrases` | 温かみ表現(`encourage`)と全日報で避ける表現(`avoid`) | ○ | `kind`/`placement`はCHECK制約。適用するストレス度の範囲を持つ。第2.6節 |
+| `report_phrases` | 温かみ表現(`encourage`)と全日報で避ける表現(`avoid`) | ○ | `kind`/`placement`はCHECK制約。適用するストレス度の範囲を持つ(`avoid`は常に1〜5)。第2.6節 |
 | `customer_report_profiles` | 家庭ごとの日報の書き方の設定(教育関心度★) | ○ | 主キー`(tenant_id, customer_id)`。`customers`の列にしないのはCSV取込の上書きで消えないようにするため。第2.6節 |
 | `report_ai_generations` | AI生成1回の記録(モデル・使った版・送ったプロンプト全文・★/ストレス度・入力・生の出力) | ○ | 使った版は`prompt_template_id`(既定文面ならNULL)、実際に送った全文は`prompt_text`(既定文面はコードのリリースで変わるため、版IDだけでは復元できない)。`(tenant_id, id)`と`(tenant_id, customer_id, id)`にUNIQUE(後者は`daily_reports.ai_generation_id`からの複合FKの参照先)。`output_json`と`error_message`はちょうど一方だけ非NULL(CHECK)。`updated_at`を持たない事実の記録。日報から参照されない行(下書き)は既定365日でワーカーが削除、参照されている行は残す。第2.6節 |
 | `report_ai_generation_keywords` | 生成1回で提示した候補(`candidate`)とAIが使った語(`used`) | ○ | 主キー`(tenant_id, generation_id, keyword_id, role)`。`role`はCHECK制約。第2.6節 |

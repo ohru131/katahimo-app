@@ -5,6 +5,7 @@ import {
   getCustomerHistory,
   getReportAiLevelsForStaff,
   getReportUiTexts,
+  isUsecaseValidationError,
   saveAccidentReport,
   saveDailyReport,
   sendVisitCompleteNotification,
@@ -138,8 +139,10 @@ export function createReportRoutes(container: Container) {
       return c.json({ draft });
     } catch (e) {
       // 生成そのものの失敗は warnings に詰めて返る(GAS版と同じ)。ここに来るのは
-      // 対象児の取り違えなど、入力が通ってはいけない場合だけ。
-      return c.json({ code: 'validation_failed', message: e instanceof Error ? e.message : String(e) }, 400);
+      // 対象児の取り違えなど、入力が通ってはいけない場合だけ。それ以外(DBの不調など)は
+      // 投げ直して500にする(障害を「入力が悪い」という顔で返さないため)。
+      if (!isUsecaseValidationError(e)) throw e;
+      return c.json({ code: 'validation_failed', message: e.message }, 400);
     }
   });
 
@@ -225,7 +228,9 @@ export function createReportRoutes(container: Container) {
       });
       return c.json({ success: true, report });
     } catch (e) {
-      return c.json({ success: false, message: e instanceof Error ? e.message : String(e) }, 400);
+      // 対象児・AI生成の記録・クーポンの取り違えだけを400にする。それ以外は投げ直して500。
+      if (!isUsecaseValidationError(e)) throw e;
+      return c.json({ success: false, message: e.message }, 400);
     }
   });
 

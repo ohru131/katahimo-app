@@ -14,6 +14,7 @@ import type {
   FamilyMemberRepositoryPort,
   NewCouponInput,
 } from '../ports/repositories';
+import { UsecaseValidationError } from './errors';
 
 export interface CouponDeps {
   coupons: CouponRepositoryPort;
@@ -716,10 +717,11 @@ export async function resolveCouponRedemptionSnapshots(
   return Promise.all(
     uniqueIds.map(async (couponId): Promise<CouponRedemptionSnapshot> => {
       const coupon = await deps.coupons.findById(tenantId, couponId);
-      if (!coupon) throw new Error(`クーポンが見つかりません(id=${couponId})`);
+      if (!coupon) throw new UsecaseValidationError(`クーポンが見つかりません(id=${couponId})`);
 
       const eligibility = evaluateCouponEligibility(coupon, context);
-      if (!eligibility.usable) throw new Error(unusableMessage(coupon.name, eligibility.reason));
+      if (!eligibility.usable)
+        throw new UsecaseValidationError(unusableMessage(coupon.name, eligibility.reason));
 
       return {
         couponId: coupon.id,

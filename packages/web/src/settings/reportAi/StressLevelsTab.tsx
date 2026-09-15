@@ -20,6 +20,7 @@ interface FormState {
   escalationRequired: boolean;
 }
 
+/** そのストレス度の行(まだ無ければ既定値)を、入力欄の形に直す。 */
 function toForm(level: number, data: StressLevelView | undefined): FormState {
   if (data) {
     return {
@@ -76,6 +77,7 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   });
 
+  /** 入力を検証して、このストレス度の定義を保存する。 */
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     setNotice(null);

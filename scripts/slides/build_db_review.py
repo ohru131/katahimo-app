@@ -264,6 +264,18 @@ GG = 0.16
 GW = (CW - GG * 5) / 6  # 1列あたり1.92in。6列に増えたので幅を計算で出す
 
 
+# 一覧の箱の高さを、中に並べる表名の行数から決めるための寸法。
+# 表名は7pt・行間1.5で積むので、1行 = 7pt × 1.2(標準の行送り) × 1.5。
+# 0.53in は見出し帯(0.38)と上下の余白のぶん。行数を数えずに決め打ちの高さにすると、
+# 表が増えたときに文字が箱から溢れて次の節に重なる。
+NAME_LINE_H = 7 * 1.2 * 1.5 / 72
+BOX_CHROME_H = 0.53
+
+
+def group_box_height(groups):
+    return BOX_CHROME_H + max(len(names) for _, _, names in groups) * NAME_LINE_H
+
+
 def group_box(x, y, h, title, n, names, col, fl, w=None):
     bw = GW if w is None else w
     rect(s, x, y, bw, h, fill=WHITE, border=col, border_w=1.2)
@@ -287,12 +299,15 @@ live = [
                        "customer_report_profiles", "report_ai_generations",
                        "report_ai_generation_keywords"]),
 ]
+# 箱の高さは、いちばん行数の多いまとまり(日報AIの10枚)が収まる高さに揃える。
+LIVE_H = group_box_height(live)
 cx = ML
 for ttl, n, names in live:
-    group_box(cx, 1.72, 1.35, ttl, n, names, VIOLET, VIOLET_L)
+    group_box(cx, 1.72, LIVE_H, ttl, n, names, VIOLET, VIOLET_L)
     cx += GW + GG
 
-text(s, ML, 3.24, 9.5, 0.26, "スキーマだけ先に用意 — 表と制約はあるが、実装・API・画面はこれから(18枚)",
+PLANNED_TITLE_Y = 1.72 + LIVE_H + 0.16
+text(s, ML, PLANNED_TITLE_Y, 9.5, 0.26, "スキーマだけ先に用意 — 表と制約はあるが、実装・API・画面はこれから(18枚)",
      size=11.5, color=ORANGE, bold=True)
 planned = [
     ("顧客カルテ", 2, ["customer_notes", "customer_note_photos"]),
@@ -304,9 +319,10 @@ planned = [
     ("移動手段と手当", 2, ["transport_allowance_rules", "travel_legs"]),
 ]
 GWp = (CW - GG * 4) / 5  # 5領域に変わったので1列あたりの幅をここだけ計算し直す
+PLANNED_H = group_box_height(planned)
 cx = ML
 for ttl, n, names in planned:
-    group_box(cx, 3.52, 2.42, ttl, n, names, ORANGE, ORANGE_L, w=GWp)
+    group_box(cx, PLANNED_TITLE_Y + 0.28, PLANNED_H, ttl, n, names, ORANGE, ORANGE_L, w=GWp)
     cx += GWp + GG
 
 note(s, ML, 6.06, CW, 0.78, "例外は3つだけ",

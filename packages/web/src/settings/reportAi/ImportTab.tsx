@@ -54,6 +54,7 @@ export function ImportTab() {
     },
   });
 
+  /** 選ばれたファイルを読み、シートの内容をプレビューに出す(この時点では送信しない)。 */
   const handleFile = async (file: File) => {
     setReadError(null);
     setResult(null);

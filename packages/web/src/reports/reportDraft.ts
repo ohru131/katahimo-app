@@ -99,6 +99,7 @@ function isEmpty(draft: ReportDraft): boolean {
   );
 }
 
+/** 書きかけの控えを端末に保存する。全部空なら控えは持たない(次に開いたとき復元を促さない)。 */
 export function saveReportDraft(draft: ReportDraft): void {
   try {
     if (isEmpty(draft)) {
@@ -111,6 +112,7 @@ export function saveReportDraft(draft: ReportDraft): void {
   }
 }
 
+/** 控えを読む。持ち主が違う・期限切れ・壊れている控えは、その場で捨てて null を返す。 */
 export function loadReportDraft(owner: ReportDraftOwner): ReportDraft | null {
   try {
     const raw = localStorage.getItem(draftKey(owner));
@@ -145,6 +147,7 @@ export function loadReportDraft(owner: ReportDraftOwner): ReportDraft | null {
   }
 }
 
+/** 控えを消す(保存が確定したとき・復元を断られたとき)。 */
 export function clearReportDraft(owner: ReportDraftOwner): void {
   try {
     localStorage.removeItem(draftKey(owner));

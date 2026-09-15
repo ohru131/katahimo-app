@@ -32,6 +32,7 @@ type EducationLevelRow = typeof reportEducationLevels.$inferSelect;
 type StressLevelRow = typeof reportStressLevels.$inferSelect;
 type PhraseRow = typeof reportPhrases.$inferSelect;
 
+/** 年齢帯の行を、ユースケースが受け取る形にする。 */
 function toAgeBand(row: AgeBandRow): ReportAgeBandRecord {
   return {
     id: row.id,
@@ -47,6 +48,7 @@ function toAgeBand(row: AgeBandRow): ReportAgeBandRecord {
   };
 }
 
+/** キーワードの行を、ユースケースが受け取る形にする。 */
 function toKeyword(row: KeywordRow): ReportKeywordRecord {
   return {
     id: row.id,
@@ -70,6 +72,7 @@ function toKeyword(row: KeywordRow): ReportKeywordRecord {
   };
 }
 
+/** 教育関心度★の定義の行を、ユースケースが受け取る形にする。 */
 function toEducationLevel(row: EducationLevelRow): ReportEducationLevelRecord {
   return {
     id: row.id,
@@ -83,6 +86,7 @@ function toEducationLevel(row: EducationLevelRow): ReportEducationLevelRecord {
   };
 }
 
+/** ストレス度の定義の行を、ユースケースが受け取る形にする。 */
 function toStressLevel(row: StressLevelRow): ReportStressLevelRecord {
   return {
     id: row.id,
@@ -128,6 +132,7 @@ function ageBandValues(tenantId: string, input: ReportAgeBandInput) {
   };
 }
 
+/** キーワードの入力を、insert / onConflictDoUpdate の両方で使う列の値にする。 */
 function keywordValues(tenantId: string, input: ReportKeywordInput) {
   return {
     tenantId,
@@ -150,6 +155,7 @@ function keywordValues(tenantId: string, input: ReportKeywordInput) {
   };
 }
 
+/** 表現の入力を、insert / onConflictDoUpdate の両方で使う列の値にする。 */
 function phraseValues(tenantId: string, input: ReportPhraseInput) {
   return {
     tenantId,
@@ -246,6 +252,7 @@ export class DrizzleReportAiConfigRepository implements ReportAiConfigRepository
     });
   }
 
+  /** 年齢帯を (tenant_id, code) で upsert する。月齢の重なりの検証はユースケース側で済ませてある。 */
   async upsertAgeBand(tenantId: string, input: ReportAgeBandInput): Promise<ReportAgeBandRecord> {
     return withTenant(this.db, tenantId, async (tx) => {
       const values = ageBandValues(tenantId, input);
@@ -286,6 +293,7 @@ export class DrizzleReportAiConfigRepository implements ReportAiConfigRepository
     });
   }
 
+  /** キーワードを (tenant_id, code) で upsert し、相性の良い年齢帯の対応行を入れ替える。 */
   async upsertKeyword(tenantId: string, input: ReportKeywordInput): Promise<ReportKeywordRecord> {
     return withTenant(this.db, tenantId, async (tx) => {
       const values = keywordValues(tenantId, input);
@@ -333,6 +341,7 @@ export class DrizzleReportAiConfigRepository implements ReportAiConfigRepository
     });
   }
 
+  /** ストレス度の定義を (tenant_id, level) で upsert する。 */
   async upsertStressLevel(tenantId: string, input: ReportStressLevelInput): Promise<ReportStressLevelRecord> {
     return withTenant(this.db, tenantId, async (tx) => {
       const values = {

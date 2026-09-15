@@ -3,6 +3,7 @@ export * from './auth';
 export * from './calendarSync';
 export * from './coupons';
 export * from './customers';
+export * from './errors';
 export * from './mirrorWorker';
 export * from './passwordReset';
 export * from './promptTemplates';

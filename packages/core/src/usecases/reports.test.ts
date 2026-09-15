@@ -546,13 +546,16 @@ describe('saveDailyReport の対象児・AI生成の記録', () => {
     return member.id;
   }
 
-  /** その顧客のAI生成を1件作る。 */
-  async function addGeneration(ofCustomerId: string): Promise<string> {
+  /** その顧客のAI生成を1件作る(対象児を指定しなければ「世帯全体」の生成)。 */
+  async function addGeneration(
+    ofCustomerId: string,
+    forFamilyMemberId: string | null = null,
+  ): Promise<string> {
     const record = await reportAiGenerations.create({
       tenantId,
       staffId,
       customerId: ofCustomerId,
-      targetFamilyMemberId: null,
+      targetFamilyMemberId: forFamilyMemberId,
       promptTemplateId: null,
       promptText: 'prompt',
       model: 'test-model',
@@ -579,7 +582,7 @@ describe('saveDailyReport の対象児・AI生成の記録', () => {
 
   it('同じ顧客の子・生成なら保存し、履歴にも出す', async () => {
     const memberId = await addChild(customerId);
-    const generationId = await addGeneration(customerId);
+    const generationId = await addGeneration(customerId, memberId);
 
     const saved = await saveDailyReport(deps, tenantId, {
       ...baseInput,
@@ -625,6 +628,34 @@ describe('saveDailyReport の対象児・AI生成の記録', () => {
     await expect(
       saveDailyReport(deps, tenantId, { ...baseInput, staffId, customerId, aiGenerationId: 'missing' }),
     ).rejects.toThrow('AI生成の記録が見つかりません');
+    expect(await dailyReports.listByCustomer(tenantId, customerId, null, 10)).toEqual([]);
+  });
+
+  it('同じ顧客でも、生成の対象児と日報の対象児が違えば弾く', async () => {
+    const memberId = await addChild(customerId);
+    const otherMemberId = await addChild(customerId);
+    const generationId = await addGeneration(customerId, otherMemberId);
+
+    await expect(
+      saveDailyReport(deps, tenantId, {
+        ...baseInput,
+        staffId,
+        customerId,
+        targetFamilyMemberId: memberId,
+        aiGenerationId: generationId,
+      }),
+    ).rejects.toThrow('AI生成の記録が対象児と一致しません');
+
+    // 世帯全体の日報に、特定の子で作った生成を付けるのも同じ理由で弾く。
+    await expect(
+      saveDailyReport(deps, tenantId, {
+        ...baseInput,
+        staffId,
+        customerId,
+        targetFamilyMemberId: null,
+        aiGenerationId: generationId,
+      }),
+    ).rejects.toThrow('AI生成の記録が対象児と一致しません');
     expect(await dailyReports.listByCustomer(tenantId, customerId, null, 10)).toEqual([]);
   });
 });

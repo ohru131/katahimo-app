@@ -20,6 +20,7 @@ import {
 
 /** 保存前の画面上だけのキー。DBの行を指すものではないので、削除・並べ替えの識別にだけ使う。 */
 let nextRowKey = 0;
+/** 画面上の行を見分けるための連番を1つ払い出す。 */
 function newRowKey(): number {
   nextRowKey += 1;
   return nextRowKey;
@@ -29,10 +30,22 @@ interface PhraseRow extends PhraseInput {
   rowKey: number;
 }
 
+/**
+ * 保存に出す1行にする(画面だけのrowKeyを落とす)。避ける表現はストレス度の範囲を持たない
+ * ため、値が入っていても全範囲に戻す。この画面には avoid の範囲の入力欄が無いので、
+ * 取込などで範囲の付いた行が来ていたときに、見えないまま送り返してしまわないようにする。
+ */
+function toPhraseInput({ rowKey: _rowKey, ...rest }: PhraseRow): PhraseInput {
+  if (rest.kind !== 'avoid') return rest;
+  return { ...rest, stressLevelMin: REPORT_LEVEL_MIN, stressLevelMax: REPORT_LEVEL_MAX };
+}
+
+/** サーバーから来た一覧を、画面で編集する行(rowKey付き)にする。 */
 function toRows(phrases: PhraseView[]): PhraseRow[] {
   return phrases.map((p) => ({ ...p, rowKey: newRowKey() }));
 }
 
+/** 空の1行を足す。ストレス度の範囲は全範囲から始める。 */
 function newRow(kind: ReportPhraseKind): PhraseRow {
   return {
     rowKey: newRowKey(),
@@ -169,18 +182,21 @@ export function PhrasesTab({ phrases }: { phrases: PhraseView[] }) {
     setRows(toRows(phrases));
   }, [phrases]);
 
+  /** 1行を差し替える(編集中の印を立てて、再取得で上書きされないようにする)。 */
   const updateRow = (rowKey: number, next: PhraseRow) => {
     setDirty(true);
     setNotice(null);
     setRows((rs) => rs.map((r) => (r.rowKey === rowKey ? next : r)));
   };
 
+  /** 1行を一覧から外す(実際に消えるのは保存したとき)。 */
   const removeRow = (rowKey: number) => {
     setDirty(true);
     setNotice(null);
     setRows((rs) => rs.filter((r) => r.rowKey !== rowKey));
   };
 
+  /** その種類の空行を末尾に足す。 */
   const addRow = (kind: ReportPhraseKind) => {
     setDirty(true);
     setNotice(null);
@@ -188,7 +204,7 @@ export function PhrasesTab({ phrases }: { phrases: PhraseView[] }) {
   };
 
   const saveMutation = useMutation({
-    mutationFn: () => replacePhrases(rows.map(({ rowKey: _rowKey, ...rest }) => rest)),
+    mutationFn: () => replacePhrases(rows.map(toPhraseInput)),
     onSuccess: (saved) => {
       setError(null);
       setNotice('保存しました。');
@@ -199,13 +215,14 @@ export function PhrasesTab({ phrases }: { phrases: PhraseView[] }) {
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   });
 
+  /** 画面の一覧をそのままテナントの一式として保存する(全件入れ替え)。 */
   const handleSave = () => {
     const emptyBody = rows.find((r) => r.body.trim() === '');
     if (emptyBody) {
       setError('表現が空の行があります。入力するか削除してください。');
       return;
     }
-    const invalidRange = rows.find((r) => r.stressLevelMin > r.stressLevelMax);
+    const invalidRange = rows.find((r) => r.kind === 'encourage' && r.stressLevelMin > r.stressLevelMax);
     if (invalidRange) {
       setError('対象PSIの上限は下限以上にしてください。');
       return;

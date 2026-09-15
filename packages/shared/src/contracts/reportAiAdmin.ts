@@ -220,7 +220,10 @@ export const phraseInputSchema = z
     body: z.string().trim().min(1, '表現を入力してください').max(500, '表現が長すぎます'),
     /** 込めるメッセージ、または避ける理由。 */
     intent: optionalTextSchema,
-    /** 適用するストレス度の範囲(両端を含む)。avoid は 1〜5(全範囲)のままにする。 */
+    /**
+     * 適用するストレス度の範囲(両端を含む)。encourage だけが範囲を持ち、
+     * avoid は必ず 1〜5(全範囲)にする。
+     */
     stressLevelMin: reportLevelSchema.default(REPORT_LEVEL_MIN),
     stressLevelMax: reportLevelSchema.default(REPORT_LEVEL_MAX),
     placement: reportPhrasePlacementSchema.default('any'),
@@ -233,6 +236,21 @@ export const phraseInputSchema = z
         code: z.ZodIssueCode.custom,
         path: ['stressLevelMax'],
         message: 'ストレス度の上限は下限以上にしてください。',
+      });
+    }
+    // 【avoid に範囲を持たせない理由】
+    // 避ける表現は「どの家庭にも使わない言葉」で、生成時もPSI未評価の回まで含めて全部を
+    // 渡している(packages/core/src/domain/reports/promptAssembly.ts の selectPhrases)。
+    // 範囲を狭めた行を作れてしまうと、画面の見た目(範囲の入力欄が無い)と実際の扱いが
+    // 食い違い、「1〜3に絞ったのに全部の日報で禁止されている」という読み違いを生む。
+    if (
+      value.kind === 'avoid' &&
+      (value.stressLevelMin !== REPORT_LEVEL_MIN || value.stressLevelMax !== REPORT_LEVEL_MAX)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['stressLevelMin'],
+        message: `避ける表現は全ての日報に効くため、ストレス度の範囲は${REPORT_LEVEL_MIN}〜${REPORT_LEVEL_MAX}にしてください。`,
       });
     }
   });

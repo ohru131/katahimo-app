@@ -3,6 +3,7 @@ import {
   getAdminSettings,
   getReportAiConfigForAdmin,
   importReportAiConfig,
+  isUsecaseValidationError,
   listPromptTemplatesForAdmin,
   listPromptTemplateVersions,
   replacePhrases,
@@ -91,12 +92,16 @@ function parseCodeParam(value: string | undefined): string | null {
 }
 
 /**
- * ユースケースが投げた検証エラー(年齢帯の重なり・未登録の年齢帯コード等)を400で返す。
+ * ユースケースが投げた検証エラー(年齢帯の重なり・未登録の年齢帯コード等)を400の本文にする。
  * メッセージは管理者がそのまま読める日本語なので、加工せずに渡す
  * (routes/reports.ts の保存系と同じ形)。
+ *
+ * 検証エラー以外(DBの不調・実装のバグ)はここで投げ直し、Hono既定の500にする。
+ * 全部を400にまとめると、障害まで「入力が悪い」という顔で返って画面にも監視にも出てこない。
  */
 function toUsecaseErrorResponse(e: unknown) {
-  return { success: false as const, message: e instanceof Error ? e.message : String(e) };
+  if (!isUsecaseValidationError(e)) throw e;
+  return { success: false as const, message: e.message };
 }
 
 /** 管理者設定(Gemini APIキー・ミラー送信先・プロンプト文面等)のルートをまとめる。 */

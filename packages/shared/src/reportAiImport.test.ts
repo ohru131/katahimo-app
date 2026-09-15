@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AGE_MONTHS_MAX } from './contracts/reportAi';
+import { AGE_MONTHS_MAX, PROMPT_TEMPLATE_KEYS } from './contracts/reportAi';
 import {
   type ImportSheet,
   parseAgeRangeText,
@@ -21,6 +21,13 @@ describe('parseAgeRangeText', () => {
     expect(parseAgeRangeText('1歳')).toEqual({ ageFromMonths: 12, ageToMonths: 24 });
     expect(parseAgeRangeText('1歳〜2歳')).toEqual({ ageFromMonths: 12, ageToMonths: 36 });
     expect(parseAgeRangeText('3歳以上')).toEqual({ ageFromMonths: 36, ageToMonths: AGE_MONTHS_MAX });
+  });
+
+  it('片側にしか単位が無ければ、もう一方の単位で読む', () => {
+    expect(parseAgeRangeText('1-2歳')).toEqual({ ageFromMonths: 12, ageToMonths: 36 });
+    expect(parseAgeRangeText('1歳-2')).toEqual({ ageFromMonths: 12, ageToMonths: 36 });
+    expect(parseAgeRangeText('0-6ヶ月')).toEqual({ ageFromMonths: 0, ageToMonths: 6 });
+    expect(parseAgeRangeText('6ヶ月-12')).toEqual({ ageFromMonths: 6, ageToMonths: 12 });
   });
 
   it('全角・表記ゆれも同じに読む', () => {
@@ -53,6 +60,13 @@ describe('parseStarLevel / parseBooleanCell', () => {
     expect(parseBooleanCell('いいえ')).toBe(false);
     expect(parseBooleanCell('ときどき')).toBeNull();
   });
+
+  it('「使用可/使用不可」「利用可/利用不可」も読む(否定形を肯定形と取り違えない)', () => {
+    expect(parseBooleanCell('使用可')).toBe(true);
+    expect(parseBooleanCell('利用可')).toBe(true);
+    expect(parseBooleanCell('使用不可')).toBe(false);
+    expect(parseBooleanCell('利用不可')).toBe(false);
+  });
 });
 
 describe('resolvePromptTemplateKey', () => {
@@ -64,6 +78,12 @@ describe('resolvePromptTemplateKey', () => {
     expect(resolvePromptTemplateKey('HintAccident')).toBe('accident_hint');
     expect(resolvePromptTemplateKey('PlaceholderHiyari')).toBe('hiyari_hint');
     expect(resolvePromptTemplateKey('Unknown')).toBeNull();
+  });
+
+  it('本アプリのキーはそのまま解決できる(全キー)', () => {
+    for (const key of PROMPT_TEMPLATE_KEYS) {
+      expect(resolvePromptTemplateKey(key)).toBe(key);
+    }
   });
 });
 
@@ -242,6 +262,25 @@ describe('parseReportAiImportSheets', () => {
     // 対応先の無いキーは捨てるが、捨てたことは必ず伝える。
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('UnknownKey');
+  });
+
+  it('避ける表現は、表にストレス度の範囲が書かれていても全範囲で取り込む', () => {
+    const { payload, warnings } = parseReportAiImportSheets({
+      sheets: [
+        {
+          name: '表現集',
+          rows: [
+            ['種別', '表現', '意図', 'ストレス度(から)', 'ストレス度(まで)'],
+            ['避ける表現', '〜すべきです', '断定が強い', 2, 3],
+          ],
+        },
+      ],
+    });
+
+    // 避ける表現は全ての日報に効くので、範囲の列は読まない(落とさずに1〜5で入れる)。
+    expect(payload.phrases).toHaveLength(1);
+    expect(payload.phrases[0]).toMatchObject({ kind: 'avoid', stressLevelMin: 1, stressLevelMax: 5 });
+    expect(warnings).toEqual([]);
   });
 
   it('種類を判定できないシートは warnings に出して無視する', () => {

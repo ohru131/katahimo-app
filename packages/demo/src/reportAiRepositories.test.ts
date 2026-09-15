@@ -94,6 +94,8 @@ describe('日報AIのリポジトリ(PGlite)', () => {
   let config: DrizzleReportAiConfigRepository;
   let profiles: DrizzleCustomerReportProfileRepository;
   let generations: DrizzleReportAiGenerationRepository;
+  /** バッチの大きさを変えたリポジトリを組み立て直すために持っておく。 */
+  let db: Database;
   let tenantId: string;
   let otherTenantId: string;
   let staffId: string;
@@ -137,7 +139,7 @@ describe('日報AIのリポジトリ(PGlite)', () => {
     );
     familyMemberId = familyMember?.id ?? '';
 
-    const db = drizzle(client, { schema, casing: 'snake_case' }) as unknown as Database;
+    db = drizzle(client, { schema, casing: 'snake_case' }) as unknown as Database;
     config = new DrizzleReportAiConfigRepository(db);
     profiles = new DrizzleCustomerReportProfileRepository(db);
     generations = new DrizzleReportAiGenerationRepository(db);
@@ -362,6 +364,48 @@ describe('日報AIのリポジトリ(PGlite)', () => {
     const { rows } = await client.query<{ count: string }>(
       'SELECT count(*)::text AS count FROM report_ai_generation_keywords WHERE generation_id = $1;',
       [draft.id],
+    );
+    expect(rows[0]?.count).toBe('0');
+  });
+
+  it('保持期間の削除は、上限を超える件数でも繰り返して全部消す', async () => {
+    const keywordId = (await config.loadAll(tenantId)).keywords[0]?.id ?? '';
+    const base = {
+      tenantId,
+      staffId,
+      customerId,
+      targetFamilyMemberId: null,
+      promptTemplateId: null,
+      promptText: 'プロンプト',
+      model: 'gemini-2.5-flash',
+      childAgeMonths: null,
+      educationLevel: null,
+      effectiveEducationLevel: null,
+      stressLevel: null,
+      escalationRequired: false,
+      inputText: 'メモ',
+      timeInfo: '',
+      outputJson: null,
+      errorMessage: 'APIエラー',
+      candidateKeywordIds: [keywordId],
+      usedKeywordIds: [],
+    };
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++) ids.push((await generations.create(base)).id);
+    await client.query(
+      "UPDATE report_ai_generations SET created_at = now() - interval '400 days' WHERE id = ANY($1);",
+      [ids],
+    );
+
+    // 1回で消し切れない件数にして、バッチを跨いでも数え落としが無いことを見る。
+    const batched = new DrizzleReportAiGenerationRepository(db, 2);
+    const cutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    expect(await batched.purgeUnreferencedOlderThan(tenantId, cutoff)).toBe(5);
+    for (const id of ids) expect(await generations.findById(tenantId, id)).toBeNull();
+
+    const { rows } = await client.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM report_ai_generation_keywords WHERE generation_id = ANY($1);',
+      [ids],
     );
     expect(rows[0]?.count).toBe('0');
   });
