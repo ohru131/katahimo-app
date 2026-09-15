@@ -53,6 +53,16 @@ describe('parseStarLevel / parseBooleanCell', () => {
     expect(parseStarLevel('')).toBeNull();
   });
 
+  it('小数・負の数は整数の1〜5でなければnullにする', () => {
+    expect(parseStarLevel(1.5)).toBeNull();
+    expect(parseStarLevel('1.5')).toBeNull();
+    expect(parseStarLevel('-3')).toBeNull();
+    expect(parseStarLevel(3)).toBe(3);
+    expect(parseStarLevel('3')).toBe(3);
+    expect(parseStarLevel('★3')).toBe(3);
+    expect(parseStarLevel('★★★')).toBe(3);
+  });
+
   it('○/×・はい/いいえを真偽値にする', () => {
     expect(parseBooleanCell('○')).toBe(true);
     expect(parseBooleanCell('はい')).toBe(true);

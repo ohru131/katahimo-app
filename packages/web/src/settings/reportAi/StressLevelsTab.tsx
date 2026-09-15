@@ -108,7 +108,8 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
         onChange={(e) => editForm((f) => ({ ...f, label: e.target.value }))}
         placeholder="呼称"
         aria-label={`PSI${level} 呼称`}
-        className={INPUT_CLASS}
+        disabled={saveMutation.isPending}
+        className={`${INPUT_CLASS} disabled:bg-gray-100`}
       />
       <textarea
         value={form.criteria}
@@ -116,7 +117,8 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
         rows={2}
         placeholder="判定基準(日報入力画面にも表示される)"
         aria-label={`PSI${level} 判定基準`}
-        className={TEXTAREA_CLASS}
+        disabled={saveMutation.isPending}
+        className={`${TEXTAREA_CLASS} disabled:bg-gray-100`}
       />
       <textarea
         value={form.promptInstruction}
@@ -124,7 +126,8 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
         rows={2}
         placeholder="AIへの指示文"
         aria-label={`PSI${level} AIへの指示文`}
-        className={TEXTAREA_CLASS}
+        disabled={saveMutation.isPending}
+        className={`${TEXTAREA_CLASS} disabled:bg-gray-100`}
       />
       <div className="flex gap-4 items-center flex-wrap">
         <div className="flex gap-2 items-center">
@@ -138,7 +141,8 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
             max={0}
             value={form.educationLevelShift}
             onChange={(e) => editForm((f) => ({ ...f, educationLevelShift: e.target.value }))}
-            className={`${INPUT_CLASS} w-20`}
+            disabled={saveMutation.isPending}
+            className={`${INPUT_CLASS} w-20 disabled:bg-gray-100`}
           />
         </div>
         <label className="flex items-center gap-1 text-xs text-gray-700">
@@ -146,6 +150,7 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
             type="checkbox"
             checked={form.keywordsEnabled}
             onChange={(e) => editForm((f) => ({ ...f, keywordsEnabled: e.target.checked }))}
+            disabled={saveMutation.isPending}
           />
           教育語を使う
         </label>
@@ -154,6 +159,7 @@ function StressLevelForm({ level, data }: { level: number; data: StressLevelView
             type="checkbox"
             checked={form.escalationRequired}
             onChange={(e) => editForm((f) => ({ ...f, escalationRequired: e.target.checked }))}
+            disabled={saveMutation.isPending}
           />
           管理者連絡を要する
         </label>

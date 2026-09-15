@@ -145,14 +145,15 @@ const FALSE_CELLS: readonly string[] = [
  */
 export function parseStarLevel(value: ImportCellValue): number | null {
   if (typeof value === 'number') {
-    const n = Math.trunc(value);
-    return n >= REPORT_LEVEL_MIN && n <= REPORT_LEVEL_MAX ? n : null;
+    if (!Number.isInteger(value)) return null;
+    return value >= REPORT_LEVEL_MIN && value <= REPORT_LEVEL_MAX ? value : null;
   }
   const text = cellText(value).normalize('NFKC');
   if (!text) return null;
-  const digits = /\d+/.exec(text);
-  if (digits) {
-    const n = Number.parseInt(digits[0], 10);
+  const signedNumber = /[+-]?\d+(?:\.\d+)?/.exec(text);
+  if (signedNumber) {
+    const n = Number.parseFloat(signedNumber[0]);
+    if (!Number.isInteger(n)) return null;
     return n >= REPORT_LEVEL_MIN && n <= REPORT_LEVEL_MAX ? n : null;
   }
   const stars = text.match(/[★☆✩✪⭐]/g);

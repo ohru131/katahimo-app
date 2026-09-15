@@ -102,6 +102,10 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
     onError: (e) => setFormError(e instanceof Error ? e.message : String(e)),
   });
 
+  /** 保存・削除のどちらかが進行中かどうか。進行中はローカル状態の変更を止める
+   * (サーバーの応答でフォーム・選択が丸ごと入れ替わるため)。 */
+  const busy = saveMutation.isPending || deleteMutation.isPending;
+
   /** 新規追加のフォームを開く(空の入力に戻す)。 */
   const openNew = () => {
     setCreatingNew(true);
@@ -170,7 +174,7 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
         <p className="text-[10px] text-gray-400">
           月齢の上限は{AGE_MONTHS_MAX}ヶ月まで。「対象月齢(まで)」は範囲に含みません。
         </p>
-        <button type="button" onClick={openNew} className={BUTTON_PRIMARY_CLASS}>
+        <button type="button" onClick={openNew} disabled={busy} className={BUTTON_PRIMARY_CLASS}>
           + 新規追加
         </button>
       </div>
@@ -181,7 +185,8 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
             <button
               type="button"
               onClick={() => openEdit(band.code)}
-              className={`w-full text-left p-2 rounded border text-xs ${
+              disabled={busy}
+              className={`w-full text-left p-2 rounded border text-xs disabled:opacity-50 ${
                 selectedCode === band.code ? 'bg-blue-50 border-blue-200' : 'border-gray-200 hover:bg-gray-50'
               }`}
             >
@@ -202,7 +207,12 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
             <h4 className="text-xs font-bold text-gray-600">
               {creatingNew ? '年齢帯を追加' : `編集: ${selected?.label}`}
             </h4>
-            <button type="button" onClick={closeForm} className="text-xs text-gray-400 hover:text-gray-600">
+            <button
+              type="button"
+              onClick={closeForm}
+              disabled={busy}
+              className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
+            >
               閉じる
             </button>
           </div>
@@ -210,7 +220,7 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
             <input
               value={form.code}
               onChange={(e) => editForm((f) => ({ ...f, code: e.target.value }))}
-              disabled={!creatingNew}
+              disabled={!creatingNew || busy}
               placeholder="コード(例 y1)"
               aria-label="コード"
               className={`${INPUT_CLASS} flex-1 min-w-0 disabled:bg-gray-100`}
@@ -220,7 +230,8 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
               onChange={(e) => editForm((f) => ({ ...f, label: e.target.value }))}
               placeholder="表示名(例 1歳)"
               aria-label="表示名"
-              className={`${INPUT_CLASS} flex-1 min-w-0`}
+              disabled={busy}
+              className={`${INPUT_CLASS} flex-1 min-w-0 disabled:bg-gray-100`}
             />
           </div>
           <div className="flex gap-2 items-center">
@@ -232,7 +243,8 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
               value={form.ageFromMonths}
               onChange={(e) => editForm((f) => ({ ...f, ageFromMonths: e.target.value }))}
               aria-label="対象月齢(から)"
-              className={`${INPUT_CLASS} flex-1 min-w-0`}
+              disabled={busy}
+              className={`${INPUT_CLASS} flex-1 min-w-0 disabled:bg-gray-100`}
             />
             <span className="text-gray-400 text-[10px] shrink-0">〜(含まない)</span>
             <input
@@ -242,7 +254,8 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
               value={form.ageToMonths}
               onChange={(e) => editForm((f) => ({ ...f, ageToMonths: e.target.value }))}
               aria-label="対象月齢(まで、含まない)"
-              className={`${INPUT_CLASS} flex-1 min-w-0`}
+              disabled={busy}
+              className={`${INPUT_CLASS} flex-1 min-w-0 disabled:bg-gray-100`}
             />
           </div>
           <textarea
@@ -251,7 +264,8 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
             rows={2}
             placeholder="よく描く行動・言葉"
             aria-label="よく描く行動・言葉"
-            className={TEXTAREA_CLASS}
+            disabled={busy}
+            className={`${TEXTAREA_CLASS} disabled:bg-gray-100`}
           />
           <textarea
             value={form.developmentTopics}
@@ -259,7 +273,8 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
             rows={2}
             placeholder="発達の主なトピック"
             aria-label="発達の主なトピック"
-            className={TEXTAREA_CLASS}
+            disabled={busy}
+            className={`${TEXTAREA_CLASS} disabled:bg-gray-100`}
           />
           <textarea
             value={form.sceneExamples}
@@ -267,7 +282,8 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
             rows={2}
             placeholder="場面例"
             aria-label="場面例"
-            className={TEXTAREA_CLASS}
+            disabled={busy}
+            className={`${TEXTAREA_CLASS} disabled:bg-gray-100`}
           />
           <div className="flex gap-2 items-center">
             <label className="text-xs text-gray-500 shrink-0" htmlFor="ageBandSortOrder">
@@ -279,20 +295,21 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
               min={0}
               value={form.sortOrder}
               onChange={(e) => editForm((f) => ({ ...f, sortOrder: e.target.value }))}
-              className={`${INPUT_CLASS} w-24`}
+              disabled={busy}
+              className={`${INPUT_CLASS} w-24 disabled:bg-gray-100`}
             />
           </div>
 
           <ErrorText>{formError}</ErrorText>
 
           <div className="flex flex-wrap gap-2 pt-1">
-            <button type="submit" disabled={saveMutation.isPending} className={BUTTON_PRIMARY_CLASS}>
+            <button type="submit" disabled={busy} className={BUTTON_PRIMARY_CLASS}>
               {saveMutation.isPending ? '保存中…' : '保存'}
             </button>
             {!creatingNew && selected && (
               <button
                 type="button"
-                disabled={deleteMutation.isPending}
+                disabled={busy}
                 onClick={() => {
                   if (
                     window.confirm(
@@ -307,7 +324,7 @@ export function AgeBandsTab({ ageBands }: { ageBands: AgeBandView[] }) {
                 {deleteMutation.isPending ? '削除中…' : '削除'}
               </button>
             )}
-            <button type="button" onClick={closeForm} className={BUTTON_SECONDARY_CLASS}>
+            <button type="button" onClick={closeForm} disabled={busy} className={BUTTON_SECONDARY_CLASS}>
               キャンセル
             </button>
           </div>

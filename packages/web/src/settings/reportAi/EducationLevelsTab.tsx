@@ -108,7 +108,8 @@ function EducationLevelForm({ level, data }: { level: number; data: EducationLev
         onChange={(e) => editForm((f) => ({ ...f, label: e.target.value }))}
         placeholder="呼称"
         aria-label={`★${level} 呼称`}
-        className={INPUT_CLASS}
+        disabled={saveMutation.isPending}
+        className={`${INPUT_CLASS} disabled:bg-gray-100`}
       />
       <textarea
         value={form.description}
@@ -116,7 +117,8 @@ function EducationLevelForm({ level, data }: { level: number; data: EducationLev
         rows={2}
         placeholder="想定する家庭像"
         aria-label={`★${level} 想定する家庭像`}
-        className={TEXTAREA_CLASS}
+        disabled={saveMutation.isPending}
+        className={`${TEXTAREA_CLASS} disabled:bg-gray-100`}
       />
       <textarea
         value={form.promptInstruction}
@@ -124,7 +126,8 @@ function EducationLevelForm({ level, data }: { level: number; data: EducationLev
         rows={2}
         placeholder="AIへの指示文({keywordGuide}に差し込まれる)"
         aria-label={`★${level} AIへの指示文`}
-        className={TEXTAREA_CLASS}
+        disabled={saveMutation.isPending}
+        className={`${TEXTAREA_CLASS} disabled:bg-gray-100`}
       />
       <div className="flex gap-4 items-center flex-wrap">
         <div className="flex gap-2 items-center">
@@ -138,7 +141,8 @@ function EducationLevelForm({ level, data }: { level: number; data: EducationLev
             max={MAX_KEYWORDS_PER_REPORT_LIMIT}
             value={form.maxKeywords}
             onChange={(e) => editForm((f) => ({ ...f, maxKeywords: e.target.value }))}
-            className={`${INPUT_CLASS} w-20`}
+            disabled={saveMutation.isPending}
+            className={`${INPUT_CLASS} w-20 disabled:bg-gray-100`}
           />
         </div>
         <label className="flex items-center gap-1 text-xs text-gray-700">
@@ -146,6 +150,7 @@ function EducationLevelForm({ level, data }: { level: number; data: EducationLev
             type="checkbox"
             checked={form.allowTermNames}
             onChange={(e) => editForm((f) => ({ ...f, allowTermNames: e.target.checked }))}
+            disabled={saveMutation.isPending}
           />
           用語名をそのまま出す
         </label>

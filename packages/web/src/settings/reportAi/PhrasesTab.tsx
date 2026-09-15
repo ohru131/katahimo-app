@@ -70,10 +70,13 @@ function PhraseRowEditor({
   row,
   onChange,
   onRemove,
+  disabled,
 }: {
   row: PhraseRow;
   onChange: (next: PhraseRow) => void;
   onRemove: () => void;
+  /** 保存中は編集・削除を止める(保存の応答でこの行が丸ごと入れ替わるため)。 */
+  disabled: boolean;
 }) {
   return (
     <div className="space-y-1 bg-white rounded border border-gray-200 p-2">
@@ -83,12 +86,14 @@ function PhraseRowEditor({
           onChange={(e) => onChange({ ...row, body: e.target.value })}
           placeholder="表現"
           aria-label="表現"
-          className={`${INPUT_CLASS} flex-1 min-w-0`}
+          disabled={disabled}
+          className={`${INPUT_CLASS} flex-1 min-w-0 disabled:bg-gray-100`}
         />
         <button
           type="button"
           onClick={onRemove}
-          className="shrink-0 px-2 py-1 text-xs text-red-500 hover:bg-red-50 rounded"
+          disabled={disabled}
+          className="shrink-0 px-2 py-1 text-xs text-red-500 hover:bg-red-50 rounded disabled:opacity-50"
         >
           削除
         </button>
@@ -98,7 +103,8 @@ function PhraseRowEditor({
         onChange={(e) => onChange({ ...row, intent: e.target.value })}
         placeholder={row.kind === 'encourage' ? '込めるメッセージ' : '避ける理由'}
         aria-label={row.kind === 'encourage' ? '込めるメッセージ' : '避ける理由'}
-        className={INPUT_CLASS}
+        disabled={disabled}
+        className={`${INPUT_CLASS} disabled:bg-gray-100`}
       />
       <div className="flex gap-2 items-center flex-wrap">
         {row.kind === 'encourage' && (
@@ -109,7 +115,8 @@ function PhraseRowEditor({
                 value={row.stressLevelMin}
                 onChange={(e) => onChange({ ...row, stressLevelMin: Number(e.target.value) })}
                 aria-label="対象PSI(下限)"
-                className={`${INPUT_CLASS} w-16 bg-white`}
+                disabled={disabled}
+                className={`${INPUT_CLASS} w-16 bg-white disabled:bg-gray-100`}
               >
                 {REPORT_LEVELS.map((lv) => (
                   <option key={lv} value={lv}>
@@ -122,7 +129,8 @@ function PhraseRowEditor({
                 value={row.stressLevelMax}
                 onChange={(e) => onChange({ ...row, stressLevelMax: Number(e.target.value) })}
                 aria-label="対象PSI(上限)"
-                className={`${INPUT_CLASS} w-16 bg-white`}
+                disabled={disabled}
+                className={`${INPUT_CLASS} w-16 bg-white disabled:bg-gray-100`}
               >
                 {REPORT_LEVELS.map((lv) => (
                   <option key={lv} value={lv}>
@@ -142,7 +150,8 @@ function PhraseRowEditor({
                 id={`phrase-placement-${row.rowKey}`}
                 value={row.placement}
                 onChange={(e) => onChange({ ...row, placement: e.target.value as ReportPhrasePlacement })}
-                className={`${INPUT_CLASS} w-24 bg-white`}
+                disabled={disabled}
+                className={`${INPUT_CLASS} w-24 bg-white disabled:bg-gray-100`}
               >
                 <option value="any">どこでも</option>
                 <option value="closing">締めの一文</option>
@@ -155,6 +164,7 @@ function PhraseRowEditor({
             type="checkbox"
             checked={row.active}
             onChange={(e) => onChange({ ...row, active: e.target.checked })}
+            disabled={disabled}
           />
           有効
         </label>
@@ -240,7 +250,8 @@ export function PhrasesTab({ phrases }: { phrases: PhraseView[] }) {
             <button
               type="button"
               onClick={() => addRow(kind)}
-              className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100"
+              disabled={saveMutation.isPending}
+              className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-50"
             >
               + 追加
             </button>
@@ -254,6 +265,7 @@ export function PhrasesTab({ phrases }: { phrases: PhraseView[] }) {
                   row={row}
                   onChange={(next) => updateRow(row.rowKey, next)}
                   onRemove={() => removeRow(row.rowKey)}
+                  disabled={saveMutation.isPending}
                 />
               ))}
             {rows.filter((r) => r.kind === kind).length === 0 && (
@@ -278,6 +290,7 @@ export function PhrasesTab({ phrases }: { phrases: PhraseView[] }) {
         {dirty && (
           <button
             type="button"
+            disabled={saveMutation.isPending}
             onClick={() => {
               setRows(toRows(phrases));
               setDirty(false);

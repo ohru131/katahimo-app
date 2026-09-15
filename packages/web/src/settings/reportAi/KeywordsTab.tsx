@@ -217,7 +217,12 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
         <p className="text-[10px] text-gray-400">
           削除は無く、使わなくなった語は「有効」を外して廃止します(過去の生成記録が参照するため)。
         </p>
-        <button type="button" onClick={openNew} className={BUTTON_PRIMARY_CLASS}>
+        <button
+          type="button"
+          onClick={openNew}
+          disabled={saveMutation.isPending}
+          className={BUTTON_PRIMARY_CLASS}
+        >
           + 新規追加
         </button>
       </div>
@@ -249,7 +254,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
                   <button
                     type="button"
                     onClick={() => openEdit(keyword.code)}
-                    className="underline underline-offset-2 hover:text-blue-600"
+                    disabled={saveMutation.isPending}
+                    className="underline underline-offset-2 hover:text-blue-600 disabled:opacity-50"
                   >
                     {keyword.code}
                   </button>
@@ -279,7 +285,12 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             <h4 className="text-xs font-bold text-gray-600">
               {creatingNew ? 'キーワードを追加' : `編集: ${selected?.name}`}
             </h4>
-            <button type="button" onClick={closeForm} className="text-xs text-gray-400 hover:text-gray-600">
+            <button
+              type="button"
+              onClick={closeForm}
+              disabled={saveMutation.isPending}
+              className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
+            >
               閉じる
             </button>
           </div>
@@ -288,7 +299,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             <input
               value={form.code}
               onChange={(e) => editForm((f) => ({ ...f, code: e.target.value }))}
-              disabled={!creatingNew}
+              disabled={!creatingNew || saveMutation.isPending}
               placeholder="コード(例 K01)"
               aria-label="コード"
               className={`${INPUT_CLASS} flex-1 min-w-0 disabled:bg-gray-100`}
@@ -298,7 +309,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               onChange={(e) => editForm((f) => ({ ...f, name: e.target.value }))}
               placeholder="キーワード(用語名)"
               aria-label="キーワード"
-              className={`${INPUT_CLASS} flex-1 min-w-0`}
+              disabled={saveMutation.isPending}
+              className={`${INPUT_CLASS} flex-1 min-w-0 disabled:bg-gray-100`}
             />
           </div>
           <div className="flex gap-2">
@@ -307,14 +319,16 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               onChange={(e) => editForm((f) => ({ ...f, category: e.target.value }))}
               placeholder="分類"
               aria-label="分類"
-              className={`${INPUT_CLASS} flex-1 min-w-0`}
+              disabled={saveMutation.isPending}
+              className={`${INPUT_CLASS} flex-1 min-w-0 disabled:bg-gray-100`}
             />
             <input
               value={form.subConcept}
               onChange={(e) => editForm((f) => ({ ...f, subConcept: e.target.value }))}
               placeholder="副題・別名"
               aria-label="副題・別名"
-              className={`${INPUT_CLASS} flex-1 min-w-0`}
+              disabled={saveMutation.isPending}
+              className={`${INPUT_CLASS} flex-1 min-w-0 disabled:bg-gray-100`}
             />
           </div>
 
@@ -327,7 +341,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               value={form.ageFromMonths}
               onChange={(e) => editForm((f) => ({ ...f, ageFromMonths: e.target.value }))}
               aria-label="対象月齢(から)"
-              className={`${INPUT_CLASS} flex-1 min-w-0`}
+              disabled={saveMutation.isPending}
+              className={`${INPUT_CLASS} flex-1 min-w-0 disabled:bg-gray-100`}
             />
             <span className="text-gray-400 text-[10px] shrink-0">〜(含まない)</span>
             <input
@@ -337,7 +352,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               value={form.ageToMonths}
               onChange={(e) => editForm((f) => ({ ...f, ageToMonths: e.target.value }))}
               aria-label="対象月齢(まで、含まない)"
-              className={`${INPUT_CLASS} flex-1 min-w-0`}
+              disabled={saveMutation.isPending}
+              className={`${INPUT_CLASS} flex-1 min-w-0 disabled:bg-gray-100`}
             />
           </div>
 
@@ -347,7 +363,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               value={form.educationLevelMin}
               onChange={(e) => editForm((f) => ({ ...f, educationLevelMin: e.target.value }))}
               aria-label="教育関心度★(下限)"
-              className={`${INPUT_CLASS} flex-1 min-w-0 bg-white`}
+              disabled={saveMutation.isPending}
+              className={`${INPUT_CLASS} flex-1 min-w-0 bg-white disabled:bg-gray-100`}
             >
               {REPORT_LEVELS.map((lv) => (
                 <option key={lv} value={lv}>
@@ -360,7 +377,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               value={form.educationLevelMax}
               onChange={(e) => editForm((f) => ({ ...f, educationLevelMax: e.target.value }))}
               aria-label="教育関心度★(上限)"
-              className={`${INPUT_CLASS} flex-1 min-w-0 bg-white`}
+              disabled={saveMutation.isPending}
+              className={`${INPUT_CLASS} flex-1 min-w-0 bg-white disabled:bg-gray-100`}
             >
               {REPORT_LEVELS.map((lv) => (
                 <option key={lv} value={lv}>
@@ -378,7 +396,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
               id="keywordStressLevelMin"
               value={form.stressLevelMin}
               onChange={(e) => editForm((f) => ({ ...f, stressLevelMin: e.target.value }))}
-              className={`${INPUT_CLASS} flex-1 min-w-0 bg-white`}
+              disabled={saveMutation.isPending}
+              className={`${INPUT_CLASS} flex-1 min-w-0 bg-white disabled:bg-gray-100`}
             >
               {REPORT_LEVELS.map((lv) => (
                 <option key={lv} value={lv}>
@@ -393,7 +412,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             onChange={(e) => editForm((f) => ({ ...f, tone: e.target.value }))}
             placeholder="語調・トーン"
             aria-label="語調・トーン"
-            className={INPUT_CLASS}
+            disabled={saveMutation.isPending}
+            className={`${INPUT_CLASS} disabled:bg-gray-100`}
           />
           <textarea
             value={form.parentExplanation}
@@ -401,7 +421,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             rows={2}
             placeholder="親向けのやさしい言い換え"
             aria-label="親向けのやさしい言い換え"
-            className={TEXTAREA_CLASS}
+            disabled={saveMutation.isPending}
+            className={`${TEXTAREA_CLASS} disabled:bg-gray-100`}
           />
           <textarea
             value={form.phraseExamples}
@@ -409,7 +430,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             rows={2}
             placeholder="言い回しの例"
             aria-label="言い回しの例"
-            className={TEXTAREA_CLASS}
+            disabled={saveMutation.isPending}
+            className={`${TEXTAREA_CLASS} disabled:bg-gray-100`}
           />
           <textarea
             value={form.usageScene}
@@ -417,7 +439,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             rows={2}
             placeholder="使いどころ"
             aria-label="使いどころ"
-            className={TEXTAREA_CLASS}
+            disabled={saveMutation.isPending}
+            className={`${TEXTAREA_CLASS} disabled:bg-gray-100`}
           />
           <textarea
             value={form.ngExample}
@@ -425,7 +448,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             rows={2}
             placeholder="避ける言い方(NG例)"
             aria-label="避ける言い方(NG例)"
-            className={TEXTAREA_CLASS}
+            disabled={saveMutation.isPending}
+            className={`${TEXTAREA_CLASS} disabled:bg-gray-100`}
           />
 
           <div>
@@ -440,6 +464,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
                     type="checkbox"
                     checked={form.ageBandCodes.includes(band.code)}
                     onChange={() => toggleAgeBandCode(band.code)}
+                    disabled={saveMutation.isPending}
                   />
                   {band.label}
                 </label>
@@ -461,7 +486,8 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
                 min={0}
                 value={form.sortOrder}
                 onChange={(e) => editForm((f) => ({ ...f, sortOrder: e.target.value }))}
-                className={`${INPUT_CLASS} w-24`}
+                disabled={saveMutation.isPending}
+                className={`${INPUT_CLASS} w-24 disabled:bg-gray-100`}
               />
             </div>
             <label className="flex items-center gap-1 text-xs text-gray-700">
@@ -469,6 +495,7 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
                 type="checkbox"
                 checked={form.active}
                 onChange={(e) => editForm((f) => ({ ...f, active: e.target.checked }))}
+                disabled={saveMutation.isPending}
               />
               有効
             </label>
@@ -483,7 +510,12 @@ export function KeywordsTab({ keywords, ageBands }: { keywords: KeywordView[]; a
             <button type="submit" disabled={saveMutation.isPending} className={BUTTON_PRIMARY_CLASS}>
               {saveMutation.isPending ? '保存中…' : '保存'}
             </button>
-            <button type="button" onClick={closeForm} className={BUTTON_SECONDARY_CLASS}>
+            <button
+              type="button"
+              onClick={closeForm}
+              disabled={saveMutation.isPending}
+              className={BUTTON_SECONDARY_CLASS}
+            >
               キャンセル
             </button>
           </div>
