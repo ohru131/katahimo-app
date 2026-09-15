@@ -68,6 +68,10 @@ export interface ReportDraft {
   customerText: string;
   stressLevel: number | null;
   esRating: number | null;
+  /** 対象児(familyMembers)。世帯全体・選ばない場合はnull。 */
+  targetFamilyMemberId: string | null;
+  /** 直近のAI生成のreport_ai_generations行ID。生成後に入力を変えれば再生成で更新、手書きのみならnull。 */
+  aiGenerationId: string | null;
   accident: ReportDraftAccident;
   savedAt: number;
 }
@@ -82,6 +86,7 @@ function isEmpty(draft: ReportDraft): boolean {
     !draft.customerText.trim() &&
     draft.stressLevel === null &&
     draft.esRating === null &&
+    draft.targetFamilyMemberId === null &&
     !a.targetName.trim() &&
     !a.occurrenceTime.trim() &&
     !a.location.trim() &&
@@ -124,7 +129,13 @@ export function loadReportDraft(owner: ReportDraftOwner): ReportDraft | null {
       clearReportDraft(owner);
       return null;
     }
-    return draft;
+    // これらの項目が無い古い控え(3軸対応前に保存されたもの)も読めるよう、
+    // undefinedはnullに補う。
+    return {
+      ...draft,
+      targetFamilyMemberId: draft.targetFamilyMemberId ?? null,
+      aiGenerationId: draft.aiGenerationId ?? null,
+    };
   } catch {
     clearReportDraft(owner);
     return null;

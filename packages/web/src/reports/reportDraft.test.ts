@@ -41,6 +41,8 @@ function draftOf(patch: Partial<ReportDraft> = {}): ReportDraft {
     customerText: '',
     stressLevel: null,
     esRating: null,
+    targetFamilyMemberId: null,
+    aiGenerationId: null,
     accident: {
       reportType: '事故報告',
       targetName: '',
@@ -88,6 +90,28 @@ describe('日報・事故報告の書きかけの控え', () => {
   it('評価だけを付けた状態も「入力あり」として扱う', () => {
     saveReportDraft(draftOf({ stressLevel: 3 }));
     expect(loadReportDraft(OWNER)?.stressLevel).toBe(3);
+  });
+
+  it('対象児を選んだだけの状態も「入力あり」として扱う', () => {
+    saveReportDraft(draftOf({ targetFamilyMemberId: 'member-1' }));
+    expect(loadReportDraft(OWNER)?.targetFamilyMemberId).toBe('member-1');
+  });
+
+  it('AI生成のgenerationIdを含めて控え、そのまま読み戻せる', () => {
+    saveReportDraft(draftOf({ memoText: 'あ', aiGenerationId: 'gen-1' }));
+    expect(loadReportDraft(OWNER)?.aiGenerationId).toBe('gen-1');
+  });
+
+  it('3軸対応前(targetFamilyMemberId/aiGenerationIdが無い)の古い控えも読める', () => {
+    const key = `katahimo_report_draft_v1:${OWNER.tenantId}:${OWNER.staffId}`;
+    const legacy = draftOf({ memoText: 'あ' }) as Partial<ReportDraft>;
+    legacy.targetFamilyMemberId = undefined;
+    legacy.aiGenerationId = undefined;
+    localStorage.setItem(key, JSON.stringify(legacy));
+    const loaded = loadReportDraft(OWNER);
+    expect(loaded?.memoText).toBe('あ');
+    expect(loaded?.targetFamilyMemberId).toBeNull();
+    expect(loaded?.aiGenerationId).toBeNull();
   });
 
   it('3日より古い控えは、別の訪問の書きかけとみなして捨てる', () => {

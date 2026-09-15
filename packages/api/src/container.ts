@@ -7,6 +7,7 @@ import type {
   CouponRepositoryPort,
   CryptoPort,
   CustomerCouponRepositoryPort,
+  CustomerReportProfileRepositoryPort,
   CustomerRepositoryPort,
   DailyReportRepositoryPort,
   FamilyMemberRepositoryPort,
@@ -17,6 +18,8 @@ import type {
   PasswordResetCodeRepositoryPort,
   PromptTemplateRepositoryPort,
   ReceiptRepositoryPort,
+  ReportAiConfigRepositoryPort,
+  ReportAiGenerationRepositoryPort,
   ReportAiPort,
   ReportAiPortFactory,
   SchedulePort,
@@ -66,6 +69,15 @@ export interface Container {
    * @katahimo/shared の DEFAULT_PROMPT_TEMPLATES へフォールバックする。
    */
   promptTemplates: PromptTemplateRepositoryPort;
+  /**
+   * 日報AIの3軸(年齢帯・教育関心度★・ストレス度)の設定6表。管理画面での編集・取込と、
+   * 生成時の読み出しの両方がここを通る(doc/db/new-domains.md 第6章)。
+   */
+  reportAiConfig: ReportAiConfigRepositoryPort;
+  /** 家庭ごとの教育関心度★とメモ(customer_report_profiles)。 */
+  customerReportProfiles: CustomerReportProfileRepositoryPort;
+  /** AI生成1回の記録(モデル名・使った文面の版・候補語)。日報から参照される。 */
+  reportAiGenerations: ReportAiGenerationRepositoryPort;
   /**
    * app_settingsの資格情報(Gemini APIキー・Google Chat Webhook URL)の暗号化/復号にだけ使う。
    * 顧客・日報等の業務データは平文列なので、ここを通らない(packages/core/src/ports/crypto.ts)。

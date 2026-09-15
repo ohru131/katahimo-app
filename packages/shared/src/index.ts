@@ -11,6 +11,8 @@ export * from './contracts/customerNotes';
 export * from './contracts/customers';
 export * from './contracts/optimization';
 export * from './contracts/reportAi';
+export * from './contracts/reportAiAdmin';
 export * from './contracts/reservations';
 export * from './contracts/transport';
 export * from './promptDefaults';
+export * from './reportAiImport';

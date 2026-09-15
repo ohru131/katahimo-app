@@ -8,6 +8,7 @@ export * from './maps';
 export * from './mirror';
 export * from './mirrorSender';
 export * from './notifier';
+export * from './reportAiRepositories';
 export * from './repositories';
 export * from './schedule';
 export * from './storage';

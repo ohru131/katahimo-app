@@ -1,4 +1,5 @@
 import type { MirrorWorkerDeps } from '@katahimo/core';
+import type { ReportAiGenerationRepositoryPort } from '@katahimo/core/ports';
 import type { Database } from '@katahimo/db';
 import {
   DrizzleAccidentReportRepository,
@@ -7,6 +8,7 @@ import {
   DrizzleDailyReportRepository,
   DrizzleOutboxRepository,
   DrizzleReceiptRepository,
+  DrizzleReportAiGenerationRepository,
   DrizzleStaffRepository,
   DrizzleTenantRepository,
 } from '@katahimo/db/repositories';
@@ -19,6 +21,11 @@ import type { WorkerEnv } from './env';
 
 export interface WorkerContainer extends MirrorWorkerDeps {
   tenants: DrizzleTenantRepository;
+  /**
+   * AI生成の記録。ワーカーは日次で「どの日報からも参照されていない古い下書き」を消すためだけに使う
+   * (doc/db/new-domains.md 第6章。保存された日報が参照する行は残す)。
+   */
+  reportAiGenerations: ReportAiGenerationRepositoryPort;
 }
 
 export function createWorkerContainer(env: WorkerEnv, db: Database): WorkerContainer {
@@ -49,6 +56,7 @@ export function createWorkerContainer(env: WorkerEnv, db: Database): WorkerConta
     attendanceDays: new DrizzleAttendanceDayRepository(db),
     staff: new DrizzleStaffRepository(db),
     customers: new DrizzleCustomerRepository(db),
+    reportAiGenerations: new DrizzleReportAiGenerationRepository(db),
     storage: new LocalFileStoragePort(env.LOCAL_RECEIPT_STORAGE_DIR),
     sender: gasBridgeOptions ? new GasBridgeMirrorSenderPort(gasBridgeOptions) : new NoopMirrorSenderPort(),
   };

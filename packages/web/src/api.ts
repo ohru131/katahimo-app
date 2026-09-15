@@ -11,6 +11,7 @@ import type {
   FamilyAllergyStatus,
   FamilyMemberAllergyUpdateRequest,
   PromptTemplateKey,
+  ReportAiLevelChoicesView,
 } from '@katahimo/shared';
 
 export type {
@@ -436,6 +437,15 @@ export async function fetchReportUiTexts(): Promise<ReportUiTextsView> {
   return parseJsonOrThrow<ReportUiTextsView>(res);
 }
 
+/**
+ * 教育関心度★・ストレス度(PSI)のテナント設定を取得する(顧客詳細の★設定と、
+ * 日報入力画面のPSI判定基準表示に使う)。行が無いレベルは含まれない。
+ */
+export async function fetchReportAiConfig(): Promise<ReportAiLevelChoicesView> {
+  const res = await fetch('/api/reports/ai-config', { credentials: 'include' });
+  return parseJsonOrThrow<ReportAiLevelChoicesView>(res);
+}
+
 export async function searchCustomersByFamilyName(familyName: string): Promise<CustomerView[]> {
   const res = await fetch(`/api/customers?familyName=${encodeURIComponent(familyName)}`, {
     credentials: 'include',
@@ -845,6 +855,16 @@ export interface DailyReportDraft {
   warnings: string[];
   internal: string;
   customer: string;
+  /** 生成に使った教育キーワードのコード(例: 'K01')。使わなかった場合は空配列。 */
+  usedKeywords: string[];
+  /** report_ai_generationsの行ID。記録に失敗した場合はnull。保存時にaiGenerationIdとして送る。 */
+  generationId: string | null;
+  /** trueの場合、保護者・お子様の安全に懸念があるため管理者への連絡を要する。 */
+  escalationRequired: boolean;
+  /** 対象児の月齢(生成時点)。対象児未選択・生年月日不明ならnull。 */
+  childAgeMonths: number | null;
+  /** ストレス度による下げ幅を反映した後の教育関心度★。判定できなければnull。 */
+  effectiveEducationLevel: number | null;
 }
 
 export interface AccidentReportDraft {
@@ -862,16 +882,25 @@ export interface AccidentReportDraftError {
   error: string;
 }
 
+export interface GenerateDailyReportDraftInput {
+  text: string;
+  start?: string;
+  end?: string;
+  customerId: string;
+  /** 対象児(familyMembers)。未選択(世帯全体)はnull/省略。 */
+  familyMemberId?: string | null;
+  /** PSI評価。未評価はnull/省略(教育キーワードを使わない安全側の生成になる)。 */
+  stressLevel?: number | null;
+}
+
 export async function generateDailyReportDraft(
-  text: string,
-  start?: string,
-  end?: string,
+  input: GenerateDailyReportDraftInput,
 ): Promise<DailyReportDraft> {
   const res = await fetch('/api/reports/daily/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ text, start, end }),
+    body: JSON.stringify(input),
   });
   const body = await parseJsonOrThrow<{ draft: DailyReportDraft }>(res);
   return body.draft;
@@ -905,6 +934,10 @@ export interface SaveDailyReportInput {
   esRating: number | null;
   /** 適用する割引クーポンのID配列(doc/db/guidelines.md §9)。省略/空配列は「クーポン無し」。 */
   couponIds?: string[];
+  /** 対象児(familyMembers)。世帯全体・選ばない場合はnull。 */
+  targetFamilyMemberId: string | null;
+  /** AI生成に使ったreport_ai_generationsの行ID。生成せず手書きした場合はnull。 */
+  aiGenerationId: string | null;
 }
 
 export interface DailyReportView {
@@ -916,6 +949,8 @@ export interface DailyReportView {
   esRating: number | null;
   /** この日報に適用された割引クーポン(doc/db/guidelines.md §9)。 */
   coupons: DailyReportCouponView[];
+  targetFamilyMemberId: string | null;
+  aiGenerationId: string | null;
 }
 
 /** 「訪問完了」通知のみを送信する(DB書き込みなし)。GAS版sendVisitComplete相当。 */

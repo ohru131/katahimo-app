@@ -8,6 +8,7 @@ export * from './passwordReset';
 export * from './promptTemplates';
 export * from './receipts';
 export * from './reportAi';
+export * from './reportAiConfig';
 export * from './reports';
 export * from './schedule';
 export * from './settings';
