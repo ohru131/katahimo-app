@@ -36,6 +36,9 @@ function timeRange(start?: string, end?: string): string {
  * 本番のNoopReportAiPortは「APIキーが未設定です」と返すだけで、公開デモとしては
  * 何も見えない。ここでは入力メモを実際に使った定型文を返し、画面遷移と編集フローを
  * 一通り体験できるようにする。AIが書いたように見せかけないよう、必ず断り書きを含める。
+ *
+ * 組み立て済みのプロンプト(input.prompt)は使わず、メモ本体(input.text)だけを素材にする。
+ * 文面をそのまま出しても定型応答としては読めないため。
  */
 export class CannedReportAiPort implements ReportAiPort {
   async generateDailyReport(input: GenerateDailyReportInput): Promise<DailyReportDraft> {
@@ -74,7 +77,7 @@ export class CannedReportAiPort implements ReportAiPort {
     };
   }
 
-  async extractReceiptAmount(_base64Image: string): Promise<ReceiptOcrResult> {
+  async extractReceiptAmount(): Promise<ReceiptOcrResult> {
     await delay(FAKE_LATENCY_MS);
     // 読み取れなかった扱いにして手入力へ誘導する。もっともらしい金額を捏造すると、
     // デモを見た人が「OCRの精度がこの程度」と誤解しかねない。

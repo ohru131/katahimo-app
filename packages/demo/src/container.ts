@@ -10,6 +10,7 @@ import {
   DrizzleDailyReportRepository,
   DrizzleFamilyMemberRepository,
   DrizzlePasswordResetCodeRepository,
+  DrizzlePromptTemplateRepository,
   DrizzleReceiptRepository,
   DrizzleSessionRepository,
   DrizzleStaffRepository,
@@ -99,6 +100,7 @@ export function createDemoContainer(deps: DemoContainerDeps): DemoContainer {
     customerCoupons: new DrizzleCustomerCouponRepository(deps.db),
     // 訪問者が入力したAPIキー/Webhook URLはメモリに留め、IndexedDBには書かない。
     appSettings: new DemoAppSettingsRepository(new DrizzleAppSettingsRepository(deps.db)),
+    promptTemplates: new DrizzlePromptTemplateRepository(deps.db),
     crypto,
     passwordHasher: demoPasswordHasher,
     storage: new BrowserStoragePort(),

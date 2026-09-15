@@ -49,7 +49,7 @@ import { tenants } from './tenants';
  * 決定的になるため、後から「この家庭にこの語を出したのは正しかったか」を検証できる。
  *
  * 【区分値・値域】@katahimo/shared の contracts/reportAi.ts。DBのCHECKはそこから組み立てる。
- * 【既定値】テナントの行が無いキーは packages/integrations の prompts.ts(GAS版の既定文面)へ
+ * 【既定値】テナントの行が無いキーは @katahimo/shared の DEFAULT_PROMPT_TEMPLATES(GAS版の既定文面)へ
  * フォールバックする(GAS版 getPrompt の「シートに無ければ既定」と同じ挙動)。
  */
 

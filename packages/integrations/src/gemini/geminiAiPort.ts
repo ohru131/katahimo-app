@@ -2,12 +2,12 @@ import type {
   AccidentReportDraft,
   AccidentReportDraftError,
   DailyReportDraft,
+  ExtractReceiptAmountInput,
   GenerateAccidentReportInput,
   GenerateDailyReportInput,
   ReceiptOcrResult,
   ReportAiPort,
 } from '@katahimo/core/ports';
-import { GENERATE_ACCIDENT_REPORT_PROMPT, GENERATE_DAILY_REPORT_PROMPT } from './prompts';
 
 const DEFAULT_MODEL_REPORT = 'gemini-2.5-flash';
 const DEFAULT_MODEL_OCR = 'gemini-2.5-flash-lite';
@@ -142,12 +142,6 @@ export class GeminiAiPort implements ReportAiPort {
   constructor(private readonly options: GeminiAiPortOptions) {}
 
   async generateDailyReport(input: GenerateDailyReportInput): Promise<DailyReportDraft> {
-    const timeInfo = input.start && input.end ? `${input.start}〜${input.end}` : '時間指定なし';
-    const prompt = GENERATE_DAILY_REPORT_PROMPT.replace('{anonymizedText}', input.text).replace(
-      '{timeInfo}',
-      timeInfo,
-    );
-
     const schema = {
       type: 'OBJECT',
       properties: {
@@ -160,7 +154,7 @@ export class GeminiAiPort implements ReportAiPort {
 
     const result = await callGemini(
       this.options.apiKey,
-      [{ text: prompt }],
+      [{ text: input.prompt }],
       { responseMimeType: 'application/json', responseSchema: schema },
       this.options.reportModel || DEFAULT_MODEL_REPORT,
     );
@@ -175,13 +169,6 @@ export class GeminiAiPort implements ReportAiPort {
   async generateAccidentReport(
     input: GenerateAccidentReportInput,
   ): Promise<AccidentReportDraft | AccidentReportDraftError> {
-    const timeInfo =
-      input.start && input.end ? `${input.start}〜${input.end}` : input.start || '時間指定なし';
-    const prompt = GENERATE_ACCIDENT_REPORT_PROMPT.replace('{anonymizedText}', input.text).replace(
-      '{timeInfo}',
-      timeInfo,
-    );
-
     const schema = {
       type: 'OBJECT',
       properties: {
@@ -208,7 +195,7 @@ export class GeminiAiPort implements ReportAiPort {
 
     const result = await callGemini(
       this.options.apiKey,
-      [{ text: prompt }],
+      [{ text: input.prompt }],
       { responseMimeType: 'application/json', responseSchema: schema },
       this.options.reportModel || DEFAULT_MODEL_REPORT,
     );
@@ -217,26 +204,11 @@ export class GeminiAiPort implements ReportAiPort {
     return result.value as AccidentReportDraft;
   }
 
-  async extractReceiptAmount(base64Image: string): Promise<ReceiptOcrResult> {
-    const prompt = `
-    Analyze the image of this receipt.
-    Identify the following information:
-    1. Total Amount (Total, 合計, 支払い金額)
-    2. Store Name or Parking Name (店舗名や駐車場名など、発行元の名称)
-    3. Date and Time of transaction (取引日時や精算日時).
-       - Look for keywords like "取引日時", "精算時刻", "発行日時", "20XX年XX月XX日".
-       - Format as "yyyy/MM/dd HH:mm".
-       - If time is not found but date is, use "yyyy/MM/dd 00:00".
-       - If not found at all, return "".
-
-    Return the result in JSON format: {"amount": number, "storeName": "string", "receiptDate": "string"}
-    Do NOT include currency symbols or commas in the amount.
-    `;
-
-    const rawBase64 = base64Image.split(',')[1] ?? '';
+  async extractReceiptAmount(input: ExtractReceiptAmountInput): Promise<ReceiptOcrResult> {
+    const rawBase64 = input.base64Image.split(',')[1] ?? '';
     const result = await callGemini(
       this.options.apiKey,
-      [{ text: prompt }, { inline_data: { mime_type: 'image/jpeg', data: rawBase64 } }],
+      [{ text: input.prompt }, { inline_data: { mime_type: 'image/jpeg', data: rawBase64 } }],
       null,
       this.options.ocrModel || DEFAULT_MODEL_OCR,
     );

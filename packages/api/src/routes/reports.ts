@@ -2,6 +2,7 @@ import {
   generateAccidentReportDraft,
   generateDailyReportDraft,
   getCustomerHistory,
+  getReportUiTexts,
   saveAccidentReport,
   saveDailyReport,
   sendVisitCompleteNotification,
@@ -35,6 +36,18 @@ export function isValidRating(value: unknown): value is number {
 
 export function createReportRoutes(container: Container) {
   const app = new Hono();
+
+  /**
+   * 入力欄のプレースホルダー・記載要領。GAS版 Main.js getUiConfig に対応する。
+   * テナントが管理画面で文面を編集していればその版、していなければ既定文面が返る。
+   */
+  app.get('/ui-texts', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    const texts = await getReportUiTexts(container, session.tenantId);
+    return c.json(texts);
+  });
 
   /** 保育日報の下書きをAI生成する(GAS版generateReportWithWarnings相当)。 */
   app.post('/daily/generate', async (c) => {

@@ -16,6 +16,13 @@
  */
 
 export interface GenerateDailyReportInput {
+  /**
+   * 差し込み済みのプロンプト全文。文面の出どころ(テナントが編集した prompt_templates か既定文面か)と
+   * 差し込みは usecases 側が決める(usecases/reportAi.ts)。アダプタが文面を持つと、テナントが
+   * 管理画面で編集した文面が使われないままになるため、ここでは受け取るだけにする。
+   */
+  prompt: string;
+  /** スタッフが入力したメモ本体。prompt にも差し込み済みで、公開デモの定型応答(packages/demo)が素材として使う。 */
   text: string;
   start?: string;
   end?: string;
@@ -28,6 +35,9 @@ export interface DailyReportDraft {
 }
 
 export interface GenerateAccidentReportInput {
+  /** 差し込み済みのプロンプト全文(GenerateDailyReportInput.prompt と同じ扱い)。 */
+  prompt: string;
+  /** スタッフが入力したメモ本体。 */
   text: string;
   start?: string;
   end?: string;
@@ -48,6 +58,13 @@ export interface AccidentReportDraftError {
   error: string;
 }
 
+export interface ExtractReceiptAmountInput {
+  /** 読み取りの指示文(prompt_templates の receipt_ocr か既定文面)。 */
+  prompt: string;
+  /** data URL 形式の画像。 */
+  base64Image: string;
+}
+
 export interface ReceiptOcrResult {
   amount: string | number;
   storeName: string;
@@ -66,7 +83,7 @@ export interface ReportAiPort {
   generateAccidentReport(
     input: GenerateAccidentReportInput,
   ): Promise<AccidentReportDraft | AccidentReportDraftError>;
-  extractReceiptAmount(base64Image: string): Promise<ReceiptOcrResult>;
+  extractReceiptAmount(input: ExtractReceiptAmountInput): Promise<ReceiptOcrResult>;
 }
 
 export interface ReportAiPortOptions {

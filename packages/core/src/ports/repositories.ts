@@ -10,6 +10,7 @@ import type {
   CouponEligibilityKind,
   CouponUsageLimitKind,
   FamilyAllergyStatus,
+  PromptTemplateKey,
 } from '@katahimo/shared';
 import type { AttendanceRowData } from '../domain/attendance/types';
 import type { LoginThrottlePolicy } from '../domain/auth/loginThrottle';
@@ -27,6 +28,7 @@ export type {
   CouponEligibilityKind,
   CouponUsageLimitKind,
   FamilyAllergyStatus,
+  PromptTemplateKey,
 } from '@katahimo/shared';
 
 /**
@@ -914,6 +916,44 @@ export type AppSettingsPatchInput = Partial<Omit<AppSettingsRecord, 'tenantId'>>
 export interface AppSettingsRepositoryPort {
   find(tenantId: string): Promise<AppSettingsRecord | null>;
   upsert(tenantId: string, patch: AppSettingsPatchInput): Promise<AppSettingsRecord>;
+}
+
+/**
+ * プロンプト文面の1版(`prompt_templates` の1行)。GAS版は「ＡＩプロンプト」シートの
+ * Key / Prompt Template の2列をその場で書き換えていたが、本アプリは版を積む
+ * (packages/db/src/schema/reportAi.ts のヘッダー参照)。有効な版は (tenantId, key) ごとの
+ * 最大 version で、古い版は「どの文面で生成した日報か」を辿るために残す。
+ */
+export interface PromptTemplateRecord {
+  id: string;
+  tenantId: string;
+  key: PromptTemplateKey;
+  version: number;
+  body: string;
+  note: string;
+  /** 取込・移行スクリプトが作った版は null。 */
+  createdByStaffId: string | null;
+  createdAt: Date;
+}
+
+export interface NewPromptTemplateInput {
+  key: PromptTemplateKey;
+  body: string;
+  note: string;
+  createdByStaffId: string | null;
+}
+
+export interface PromptTemplateRepositoryPort {
+  /** キーごとの最新版だけを返す。テナントが1版も積んでいないキーは含まれない(既定文面へのフォールバックは呼び出し側)。 */
+  findLatestAll(tenantId: string): Promise<PromptTemplateRecord[]>;
+  findLatest(tenantId: string, key: PromptTemplateKey): Promise<PromptTemplateRecord | null>;
+  /** 版の履歴を新しい順に返す。 */
+  listVersions(tenantId: string, key: PromptTemplateKey): Promise<PromptTemplateRecord[]>;
+  /**
+   * 新しい版を積む。version は (tenantId, key) の最大版+1 を書き込みと同じトランザクションで
+   * 採番する(先に読んでから書くと、同時編集で同じ版番号を2つ作りにいく)。
+   */
+  append(tenantId: string, input: NewPromptTemplateInput): Promise<PromptTemplateRecord>;
 }
 
 /**
