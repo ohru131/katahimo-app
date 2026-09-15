@@ -1,4 +1,9 @@
-import { PROMPT_TEMPLATE_KEY_LABELS, PROMPT_TEMPLATE_KEYS, type PromptTemplateKey } from '@katahimo/shared';
+import {
+  PROMPT_TEMPLATE_BODY_MAX_LENGTH,
+  PROMPT_TEMPLATE_KEY_LABELS,
+  PROMPT_TEMPLATE_KEYS,
+  type PromptTemplateKey,
+} from '@katahimo/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import type { PromptTemplateVersionView } from '../api';
@@ -21,6 +26,7 @@ const PLACEHOLDER_DESCRIPTIONS: Record<string, string> = {
   toneGuide: '3軸の差し込み(未接続、将来用)',
 };
 
+/** ISO日時文字列を'YYYY/MM/DD HH:mm'形式の表示用文字列にする。パースできなければそのまま返す。 */
 function formatDateTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -80,6 +86,7 @@ export function PromptTemplateAdminModal({ onClose }: { onClose: () => void }) {
     enabled: showHistory,
   });
 
+  /** 保存・既定戻しの後に、関連するキャッシュ(一覧・選択中キーの履歴・日報UI文言)を作り直す。 */
   const invalidateAfterChange = () => {
     queryClient.invalidateQueries({ queryKey: ['prompt-templates-admin'] });
     queryClient.invalidateQueries({ queryKey: ['prompt-template-versions', selectedKey] });
@@ -111,7 +118,30 @@ export function PromptTemplateAdminModal({ onClose }: { onClose: () => void }) {
   const bodyUnchanged = selected !== null && body === selected.body;
   const saveDisabled = !selected || busy || bodyUnchanged || body.trim() === '';
   const resetDisabled = !selected || busy || selected.isDefault;
+  // 保存前の未反映な変更があるかどうか。他のキーへの切り替え・モーダルを閉じる操作の
+  // どちらも、これが真なら確認を挟んで誤って破棄しないようにする。
+  const isDirty = selected !== null && body !== selected.body;
 
+  /** 未保存の変更があるときだけ確認ダイアログを出す。破棄してよい(または変更なし)ならtrue。 */
+  const confirmDiscardIfDirty = (): boolean => {
+    if (!isDirty) return true;
+    return window.confirm('編集中の文面を破棄しますか?');
+  };
+
+  /** キー一覧から別の文面へ切り替える。未保存の変更があれば確認してから切り替える。 */
+  const handleSelectKey = (key: PromptTemplateKey) => {
+    if (key === selectedKey) return;
+    if (!confirmDiscardIfDirty()) return;
+    setSelectedKey(key);
+  };
+
+  /** モーダルを閉じる。未保存の変更があれば確認してから閉じる(ヘッダー・フッターの両方から呼ぶ)。 */
+  const handleRequestClose = () => {
+    if (!confirmDiscardIfDirty()) return;
+    onClose();
+  };
+
+  /** 選択中キーの文面を既定に戻す。確認ダイアログで承諾されたときだけ実行する。 */
   const handleReset = () => {
     if (!selected || selected.isDefault) return;
     if (
@@ -125,8 +155,10 @@ export function PromptTemplateAdminModal({ onClose }: { onClose: () => void }) {
     resetMutation.mutate();
   };
 
+  /** 履歴の1件を編集欄に読み込む。変更メモは版ごとに書き直すものなので、古いメモは残さず空にする。 */
   const loadVersionIntoEditor = (version: PromptTemplateVersionView) => {
     setBody(version.body);
+    setNote('');
     setFormError(null);
     setNotice(
       `v${version.version}(${formatDateTime(version.createdAt)})の文面を読み込みました。保存するまで反映されません。`,
@@ -145,7 +177,7 @@ export function PromptTemplateAdminModal({ onClose }: { onClose: () => void }) {
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="p-2 hover:bg-gray-200 rounded-full text-gray-500 shrink-0"
           >
             &times;
@@ -168,7 +200,7 @@ export function PromptTemplateAdminModal({ onClose }: { onClose: () => void }) {
                 <button
                   key={key}
                   type="button"
-                  onClick={() => setSelectedKey(key)}
+                  onClick={() => handleSelectKey(key)}
                   className={`w-full text-left p-2 rounded-lg border text-xs flex items-center justify-between gap-2 ${
                     key === selectedKey
                       ? 'bg-blue-50 border-blue-200 text-blue-800'
@@ -240,14 +272,21 @@ export function PromptTemplateAdminModal({ onClose }: { onClose: () => void }) {
                 )}
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-600 mb-1" htmlFor="promptTemplateBody">
-                    文面
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-gray-600" htmlFor="promptTemplateBody">
+                      文面
+                    </label>
+                    <span className="text-[10px] text-gray-400">
+                      {body.length.toLocaleString('ja-JP')} /{' '}
+                      {PROMPT_TEMPLATE_BODY_MAX_LENGTH.toLocaleString('ja-JP')} 文字
+                    </span>
+                  </div>
                   <textarea
                     id="promptTemplateBody"
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
                     rows={14}
+                    maxLength={PROMPT_TEMPLATE_BODY_MAX_LENGTH}
                     className="w-full border border-gray-300 rounded-lg p-2 text-xs font-mono resize-y min-h-[240px] bg-gray-50"
                   />
                 </div>
@@ -360,7 +399,7 @@ export function PromptTemplateAdminModal({ onClose }: { onClose: () => void }) {
         <div className="p-4 border-t bg-gray-50 rounded-b-xl text-right">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="px-4 py-2 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700"
           >
             閉じる

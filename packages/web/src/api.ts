@@ -430,6 +430,7 @@ export interface ReportUiTextsView {
   hiyariHint: string;
 }
 
+/** 日報・事故報告の入力欄プレースホルダー/記載要領(UI文言)をサーバーから取得する。 */
 export async function fetchReportUiTexts(): Promise<ReportUiTextsView> {
   const res = await fetch('/api/reports/ui-texts', { credentials: 'include' });
   return parseJsonOrThrow<ReportUiTextsView>(res);

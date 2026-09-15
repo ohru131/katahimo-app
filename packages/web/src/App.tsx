@@ -160,7 +160,9 @@ export function App() {
   const handleLogout = async () => {
     await logout();
     setStaff(null);
-    queryClient.removeQueries({ queryKey: ['me'] });
+    // テナントごとにキャッシュされた値(AIプロンプト管理・日報UI文言など)が次のログイン
+    // (別テナントの可能性がある)に持ち越されないよう、キャッシュを丸ごと空にする。
+    queryClient.clear();
   };
 
   if (!staff) {
