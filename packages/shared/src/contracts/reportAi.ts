@@ -72,6 +72,13 @@ export const PROMPT_PLACEHOLDERS = [
 export type PromptPlaceholder = (typeof PROMPT_PLACEHOLDERS)[number];
 
 /**
+ * プロンプト文面1本の長さの上限(文字数。`prompt_templates.body`)。
+ * 文面はそのままAIへ送るため、上限が無いと誤操作で貼り付けた巨大なテキストが
+ * 毎回の生成でトークンを浪費する。GAS版の運用文面は数千字なので、余裕を見て2万字。
+ */
+export const PROMPT_TEMPLATE_BODY_MAX_LENGTH = 20000;
+
+/**
  * 家庭の教育関心度(★)と保護者のストレス度(PSI)の値域。どちらも1〜5。
  *
  * ストレス度は `daily_reports.risk_rating`(GAS版から引き継いだPSI評価。1〜5)と同じ尺度で、

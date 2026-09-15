@@ -28,7 +28,7 @@ drizzleがDDLを起こすときと同じ解釈を通しているので、`packag
 | 列 | 571 |
 | 外部キー | 106 |
 | インデックス | 57 |
-| CHECK制約 | 136 |
+| CHECK制約 | 137 |
 | RLSポリシー | 43 |
 
 ---
@@ -1892,6 +1892,7 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 - `prompt_templates_key_check` — `"prompt_templates"."key" IN ('daily_report', 'daily_report_stance', 'accident_report', 'receipt_ocr', 'daily_memo_placeholder', 'accident_memo_placeholder', 'accident_hint', 'hiyari_hint')`
 - `prompt_templates_version_check` — `"prompt_templates"."version" >= 1`
 - `prompt_templates_body_not_blank` — `NULLIF(btrim("prompt_templates"."body"), '') IS NOT NULL`
+- `prompt_templates_body_length_check` — `char_length("prompt_templates"."body") <= 20000`
 
 
 ### `report_education_levels`

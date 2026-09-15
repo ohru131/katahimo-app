@@ -1,5 +1,5 @@
 {
-  "id": "ea0ba828-e1de-48fe-a829-5c34ce868282",
+  "id": "c3b42fbf-eb12-4319-b301-f72c13be6018",
   "prevId": "115f1465-9186-4b34-ac0e-e340ab370c9a",
   "version": "7",
   "dialect": "postgresql",
@@ -5495,6 +5495,10 @@
         "prompt_templates_body_not_blank": {
           "name": "prompt_templates_body_not_blank",
           "value": "NULLIF(btrim(\"prompt_templates\".\"body\"), '') IS NOT NULL"
+        },
+        "prompt_templates_body_length_check": {
+          "name": "prompt_templates_body_length_check",
+          "value": "char_length(\"prompt_templates\".\"body\") <= 20000"
         }
       },
       "isRLSEnabled": true

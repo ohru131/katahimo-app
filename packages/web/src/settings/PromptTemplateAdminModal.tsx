@@ -209,6 +209,14 @@ export function PromptTemplateAdminModal({ onClose }: { onClose: () => void }) {
                   )}
                 </div>
 
+                {selected.key === 'daily_report_stance' && (
+                  <p className="rounded bg-amber-50 border border-amber-200 px-2 py-1.5 text-xs text-amber-800">
+                    この文面は、保護者向け文面を年齢帯・教育関心度・ストレス度で組み替える差し込み(
+                    <code>{'{toneGuide}'}</code>)に入る予定のもの。差し込みが生成に接続されるまで、
+                    ここで保存した文面は生成結果に影響しない。
+                  </p>
+                )}
+
                 {selected.placeholders.length > 0 && (
                   <div>
                     <p className="text-xs font-bold text-gray-600 mb-1">使える差し込み変数</p>

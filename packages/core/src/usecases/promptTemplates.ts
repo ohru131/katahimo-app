@@ -1,6 +1,7 @@
 import {
   DEFAULT_PROMPT_TEMPLATES,
   PROMPT_PLACEHOLDERS,
+  PROMPT_TEMPLATE_BODY_MAX_LENGTH,
   PROMPT_TEMPLATE_KEY_LABELS,
   PROMPT_TEMPLATE_KEYS,
   type PromptTemplateKey,
@@ -151,6 +152,7 @@ export interface SavePromptTemplateInput {
  * 【保存前に弾くもの】
  * - 未知のキー(DBのCHECK制約違反=23514で初めて気付く形にしない。doc/db/guidelines.md §1.6)
  * - 空白だけの文面(prompt_templates_body_not_blank と同じ判定。指示ゼロでAIに書かせることになる)
+ * - 上限(PROMPT_TEMPLATE_BODY_MAX_LENGTH)を超える文面(prompt_templates_body_length_check と同じ判定)
  * - 日報・事故報告で {anonymizedText} が消えている文面(スタッフのメモがAIに届かなくなる)
  * - いま有効な文面と同一の内容(版だけが増えて履歴が読みにくくなる)
  */
@@ -166,6 +168,12 @@ export async function savePromptTemplate(
   const key = input.key;
   if (typeof input.body !== 'string' || !input.body.trim()) {
     return { ok: false, message: '文面を入力してください。' };
+  }
+  if (input.body.length > PROMPT_TEMPLATE_BODY_MAX_LENGTH) {
+    return {
+      ok: false,
+      message: `文面は${PROMPT_TEMPLATE_BODY_MAX_LENGTH.toLocaleString('ja-JP')}文字以内にしてください。`,
+    };
   }
   if (KEYS_REQUIRING_INPUT_TEXT.includes(key) && !input.body.includes(REQUIRED_PLACEHOLDER)) {
     return {

@@ -3,6 +3,7 @@ import {
   EDUCATION_LEVEL_SHIFT_MIN,
   GENERATION_KEYWORD_ROLES,
   MAX_KEYWORDS_PER_REPORT_LIMIT,
+  PROMPT_TEMPLATE_BODY_MAX_LENGTH,
   PROMPT_TEMPLATE_KEYS,
   REPORT_LEVEL_MAX,
   REPORT_LEVEL_MIN,
@@ -95,6 +96,11 @@ export const promptTemplates = pgTable(
     check('prompt_templates_version_check', sql`${t.version} >= 1`),
     // 空の文面を有効版にしてしまうと、AIに指示ゼロで生成させることになる。空白だけも弾く。
     check('prompt_templates_body_not_blank', sql`NULLIF(btrim(${t.body}), '') IS NOT NULL`),
+    // 文面はそのままAIへ送る。上限が無いと貼り付けミスの巨大な文面が毎回の生成に載る。
+    check(
+      'prompt_templates_body_length_check',
+      sql`char_length(${t.body}) <= ${sqlNumber(PROMPT_TEMPLATE_BODY_MAX_LENGTH)}`,
+    ),
   ],
 ).enableRLS();
 

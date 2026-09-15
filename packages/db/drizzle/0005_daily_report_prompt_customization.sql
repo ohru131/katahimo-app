@@ -43,7 +43,8 @@ CREATE TABLE "prompt_templates" (
 	CONSTRAINT "prompt_templates_tenant_id_uk" UNIQUE("tenant_id","id"),
 	CONSTRAINT "prompt_templates_key_check" CHECK ("prompt_templates"."key" IN ('daily_report', 'daily_report_stance', 'accident_report', 'receipt_ocr', 'daily_memo_placeholder', 'accident_memo_placeholder', 'accident_hint', 'hiyari_hint')),
 	CONSTRAINT "prompt_templates_version_check" CHECK ("prompt_templates"."version" >= 1),
-	CONSTRAINT "prompt_templates_body_not_blank" CHECK (NULLIF(btrim("prompt_templates"."body"), '') IS NOT NULL)
+	CONSTRAINT "prompt_templates_body_not_blank" CHECK (NULLIF(btrim("prompt_templates"."body"), '') IS NOT NULL),
+	CONSTRAINT "prompt_templates_body_length_check" CHECK (char_length("prompt_templates"."body") <= 20000)
 );
 --> statement-breakpoint
 ALTER TABLE "prompt_templates" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint

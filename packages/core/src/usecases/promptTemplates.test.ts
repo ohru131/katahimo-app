@@ -1,4 +1,4 @@
-import { DEFAULT_PROMPT_TEMPLATES } from '@katahimo/shared';
+import { DEFAULT_PROMPT_TEMPLATES, PROMPT_TEMPLATE_BODY_MAX_LENGTH } from '@katahimo/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { PromptTemplateDeps } from './promptTemplates';
 import {
@@ -104,6 +104,16 @@ describe('プロンプト文面の保存(版を積む)', () => {
       body: '  \n ',
     });
     expect(result).toEqual({ ok: false, message: '文面を入力してください。' });
+    expect(await listPromptTemplateVersions(deps, tenantId, 'accident_hint')).toHaveLength(0);
+  });
+
+  it('上限を超える文面は保存しない(DBのCHECK制約と同じ判定を入口で行う)', async () => {
+    const result = await savePromptTemplate(deps, tenantId, staffId, {
+      key: 'accident_hint',
+      body: 'あ'.repeat(PROMPT_TEMPLATE_BODY_MAX_LENGTH + 1),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain('文字以内');
     expect(await listPromptTemplateVersions(deps, tenantId, 'accident_hint')).toHaveLength(0);
   });
 
