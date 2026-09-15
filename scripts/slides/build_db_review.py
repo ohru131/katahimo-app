@@ -42,7 +42,7 @@ title_slide(
     prs,
     "DATABASE DESIGN REVIEW",
     "katahimo-app\nデータベース構造レビュー資料",
-    "訪問保育(ベビーシッター法人)向け業務SaaS — PostgreSQL / 34テーブル",
+    "訪問保育(ベビーシッター法人)向け業務SaaS — PostgreSQL / 44テーブル",
     "現状の構成 ・ 設計上の問題点 ・ ご相談したいこと\n"
     "実装は packages/db/src/schema/*.ts が正 / 本番未配備・運用開始前",
 )
@@ -67,12 +67,12 @@ card(s, ML + 8.3, 1.25, 4.03, 2.35, "この資料の作り", accent=GREEN, items
     {"t": [("赤い枠", {"color": RED, "bold": True}), ("は自覚している弱点。隠さず並べる", {})]},
 ], body_size=11.5)
 
-text(s, ML, 3.9, CW, 0.3, "資料の構成(全29ページ)", size=13, color=INK, bold=True)
+text(s, ML, 3.9, CW, 0.3, "資料の構成(全30ページ)", size=13, color=INK, bold=True)
 chs = [
     ("第1章", "まず用語から", "表・主キー・外部キー・\nトランザクション・RLS", ACCENT, ACCENT_L, "P4–5"),
-    ("第2章", "現状の構成", "34テーブルの全体像と、\nテナント分離・データ保護", GREEN, GREEN_L, "P6–17"),
-    ("第3章", "設計上の問題点", "customers 39列の肥大化ほか\n6件を自己申告", RED, RED_L, "P18–24"),
-    ("第4章", "相談事項", "先行して用意したスキーマと、\n判断いただきたい論点", VIOLET, VIOLET_L, "P25–29"),
+    ("第2章", "現状の構成", "44テーブルの全体像と、\nテナント分離・データ保護", GREEN, GREEN_L, "P6–18"),
+    ("第3章", "設計上の問題点", "customers 39列の肥大化ほか\n6件を自己申告", RED, RED_L, "P19–25"),
+    ("第4章", "相談事項", "先行して用意したスキーマと、\n判断いただきたい論点", VIOLET, VIOLET_L, "P26–30"),
 ]
 cx = ML
 for no, ttl, body, col, fl, pg in chs:
@@ -103,7 +103,7 @@ s = sl_("用語① テーブル・行・列・キー", "データベースは「
         source="実物は packages/db/src/schema/customers.ts, dailyReports.ts")
 bullets(s, ML, 1.25, 5.9, 4.6, [
     {"t": [("テーブル(表)", {"bold": True, "color": ACCENT, "size": 13}),
-           ("  … Excelの1シートに相当。このシステムには34枚ある", {"size": 12})]},
+           ("  … Excelの1シートに相当。このシステムには44枚ある", {"size": 12})]},
     {"t": [("行(レコード)", {"bold": True, "color": ACCENT, "size": 13}),
            ("  … 1件のデータ。「顧客1人」「日報1本」", {"size": 12})]},
     {"t": [("列(カラム)", {"bold": True, "color": ACCENT, "size": 13}),
@@ -202,7 +202,7 @@ note(s, DX, 4.95, 4.3, 1.15, "なぜ重要か",
 # 6. 第2章 divider
 # ══════════════════════════════════════════════════════════════
 sec_("第 2 章", "現状の構成",
-     "34テーブルの全体像と、テナント分離・データ保護・トランザクションの考え方")
+     "44テーブルの全体像と、テナント分離・データ保護・トランザクションの考え方")
 
 # ══════════════════════════════════════════════════════════════
 # 7. 何を記録しているのか(業務の流れ)
@@ -238,10 +238,10 @@ card(s, ML, 4.15, 6.0, 1.35, "記録は「後から書き換えない」デー�
     {"t": "日報・事故報告・領収書・勤怠は、その日の事実を積み上げる性質。削除は行わず、"
           "顧客の退会も deactivated_at を立てるだけ(ソフトデリート)"},
 ], body_size=11.5)
-card(s, ML + 6.2, 4.15, 6.13, 1.35, "この①〜④の外側に、まだ実装の無い5領域がある", accent=ORANGE, items=[
-    {"t": "予約 / 請求・決済 / 顧客カルテ / 訪問割当の最適化 / 移動手段別の手当。"
-          "表と制約だけ先に用意してあり、この資料の第4章で扱う"},
-], body_size=11.5)
+card(s, ML + 6.2, 4.15, 6.13, 1.35, "この①〜④の外側に、先に形だけ固めた6領域がある", accent=ORANGE, items=[
+    {"t": "予約 / 請求・決済 / 顧客カルテ / 訪問割当の最適化 / 移動手段別の手当 / 日報AIのプロンプト調整。"
+          "表と制約を先に用意してあり、この資料の第4章で扱う(文面の版管理だけは稼働中)"},
+], body_size=11)
 note(s, ML, 5.72, CW, 1.1, "設計の出発点",
      "現行のGoogle Apps Script版は、データがすべてスプレッドシートとDriveにあり、1法人・1Googleアカウントに強く依存しています。"
      "これを複数法人(テナント)が同居できる形に作り替えるのが今回の目的です。したがって「他社のデータが混ざらないこと」が"
@@ -249,29 +249,29 @@ note(s, ML, 5.72, CW, 1.1, "設計の出発点",
      accent=ACCENT, fill=ACCENT_L)
 
 # ══════════════════════════════════════════════════════════════
-# 8. 全体像 34テーブル
+# 8. 全体像 44テーブル
 # ══════════════════════════════════════════════════════════════
-s = sl_("全体像 — 34テーブル", "業務ドメインごとに10のまとまり。tenants以外の33枚はすべて同じ形を守る",
+s = sl_("全体像 — 44テーブル", "業務ドメインごとに12のまとまり。tenants以外の43枚はすべて同じ形を守る",
         source="packages/db/src/schema/*.ts / ドメイン別のER図は doc/db/reference.md 第1章(自動生成)")
 
-chip_row(s, ML, 1.12, [("全テーブルが tenant_id を持つ", ACCENT, ACCENT_L),
+chip_row(s, ML, 1.10, [("全テーブルが tenant_id を持つ", ACCENT, ACCENT_L),
                        ("紫 = 稼働中", VIOLET, VIOLET_L),
                        ("橙 = スキーマのみ", ORANGE, ORANGE_L),
                        ("関係の矢印は doc/db/reference.md のER図", MUTED, CARD)], size=9.5)
 
-GW, GG = 2.34, 0.16
+GG = 0.16
+GW = (CW - GG * 5) / 6  # 1列あたり1.92in。6列に増えたので幅を計算で出す
 
 
-def group_box(x, y, title, n, names, col, fl):
-    h = 1.75
+def group_box(x, y, h, title, n, names, col, fl):
     rect(s, x, y, GW, h, fill=WHITE, border=col, border_w=1.2)
-    fill_text(rect(s, x, y, GW, 0.4, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE),
-              f"{title} ({n})", size=10.5, color=WHITE, bold=True)
-    text(s, x + 0.12, y + 0.48, GW - 0.24, h - 0.56, "\n".join(names), size=8, color=INK,
+    fill_text(rect(s, x, y, GW, 0.38, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE),
+              f"{title} ({n})", size=10, color=WHITE, bold=True)
+    text(s, x + 0.09, y + 0.45, GW - 0.18, h - 0.53, "\n".join(names), size=7, color=INK,
          font=MONO, line=1.5)
 
 
-text(s, ML, 1.5, 6.0, 0.26, "稼働中 — アプリが読み書きしている16枚", size=11.5, color=VIOLET,
+text(s, ML, 1.44, 8.0, 0.26, "稼働中 — アプリが読み書きしている17枚", size=11.5, color=VIOLET,
      bold=True)
 live = [
     ("テナント基盤", 4, ["tenants", "tenant_keys", "app_settings", "outbox_jobs"]),
@@ -279,43 +279,49 @@ live = [
     ("顧客", 2, ["customers", "family_members"]),
     ("訪問の記録", 4, ["daily_reports", "accident_reports", "receipts", "attendance_days"]),
     ("割引クーポン", 3, ["coupons", "customer_coupons", "coupon_redemptions"]),
+    ("日報AIの文面", 1, ["prompt_templates"]),
 ]
 cx = ML
 for ttl, n, names in live:
-    group_box(cx, 1.8, ttl, n, names, VIOLET, VIOLET_L)
+    group_box(cx, 1.72, 1.35, ttl, n, names, VIOLET, VIOLET_L)
     cx += GW + GG
 
-text(s, ML, 3.78, 8.5, 0.26, "スキーマだけ先に用意 — 表と制約はあるが、実装・API・画面はこれから(18枚)",
+text(s, ML, 3.24, 9.5, 0.26, "スキーマだけ先に用意 — 表と制約はあるが、実装・API・画面はこれから(27枚)",
      size=11.5, color=ORANGE, bold=True)
 planned = [
     ("顧客カルテ", 2, ["customer_notes", "customer_note_photos"]),
     ("予約", 4, ["service_menus", "reservations", "reservation_assignments", "staff_availabilities"]),
     ("請求・決済", 5, ["customer_payment_profiles", "invoices", "invoice_lines", "payments",
-                   "stripe_webhook_events"]),
+                  "stripe_webhook_events"]),
     ("訪問割当の最適化", 5, ["trait_definitions", "customer_traits", "staff_traits",
                       "staff_customer_compatibilities", "staff_customer_travel_estimates"]),
     ("移動手段と手当", 2, ["transport_allowance_rules", "travel_legs"]),
+    ("日報AIの表・記録", 9, ["report_age_bands", "report_keywords", "report_age_band_keywords",
+                      "report_education_levels", "report_stress_levels", "report_phrases",
+                      "customer_report_profiles", "report_ai_generations",
+                      "report_ai_generation_keywords"]),
 ]
 cx = ML
 for ttl, n, names in planned:
-    group_box(cx, 4.08, ttl, n, names, ORANGE, ORANGE_L)
+    group_box(cx, 3.52, 2.42, ttl, n, names, ORANGE, ORANGE_L)
     cx += GW + GG
 
-note(s, ML, 6.02, CW, 0.78, "例外は3つだけ",
+note(s, ML, 6.06, CW, 0.78, "例外は3つだけ",
      "① tenants だけRLSの対象外(ログイン前に法人を特定するため)  "
      "② receipts.customer_id だけ空を許す(顧客に紐付かない経費)  "
      "③ sessions.token_hash だけ法人を越えて一意",
      accent=AMBER, fill=AMBER_L, size=10.5, lsize=10)
 
 # ══════════════════════════════════════════════════════════════
-# 9. テーブル一覧① 稼働中の16枚
+# 9. テーブル一覧① 稼働中の17枚
 # ══════════════════════════════════════════════════════════════
-s = sl_("テーブル一覧① — 稼働中の16枚", "アプリが実際に読み書きしている表と、鍵になる制約",
+s = sl_("テーブル一覧① — 稼働中の17枚", "アプリが実際に読み書きしている表と、鍵になる制約",
         source="RLS = 行レベルセキュリティ(そのテナントの行しか見えなくするDB側の仕組み)")
 rows = [
     ["tenants", "法人(テナント)マスタ", "slug で一意。ログイン前に法人を特定する", "対象外"],
     ["tenant_keys", "テナントごとの暗号鍵(ラップ済み)", "PK=(tenant_id, dek_version) 世代が並存", "○"],
     ["app_settings", "テナント単位の管理者設定", "1テナント1行。資格情報3列だけ暗号化 + 領収書の締め日", "○"],
+    ["prompt_templates", "AI生成のプロンプト文面。版を積む", "UNIQUE(tenant_id, key, version)。無い版は既定文面へ", "○"],
     ["outbox_jobs", "スプレッドシート書き戻しの待ち行列", "UNIQUE(tenant_id, idempotency_key)", "○"],
     ["staff", "スタッフ。認証情報も兼ねる", "UNIQUE(tenant_id, email) / (tenant_id, id)", "○"],
     ["sessions", "ログインセッション", "生トークンは保存せずSHA-256のみ", "○"],
@@ -332,23 +338,23 @@ rows = [
 ]
 cc = {(0, 3): MUTED}
 table(s, ML, 1.25, CW, ["テーブル", "役割", "鍵になる制約・特徴", "RLS"], rows,
-      # 16行に増えたので行高を詰める(0.29のままだと下の注記(y=6.0)に食い込む)。
-      col_w=[2.2, 3.9, 5.4, 0.75], size=10, hsize=10.5, row_h=0.27, header_h=0.33,
+      # 17行に増えたので行高を詰める(0.29のままだと下の注記(y=6.0)に食い込む)。
+      col_w=[2.2, 3.9, 5.4, 0.75], size=10, hsize=10.5, row_h=0.25, header_h=0.31,
       first_bold=True, cell_colors=cc,
       aligns=[PP_ALIGN.LEFT, PP_ALIGN.LEFT, PP_ALIGN.LEFT, PP_ALIGN.CENTER])
 note(s, ML, 6.0, 6.0, 1.0, "「複合FK」とは(次章で図解します)",
      "外部キーを (tenant_id, customer_id) の2列セットにしたもの。「そのIDが本当に同じ法人の行か」を"
      "データベース自身に確かめさせるための工夫です。",
      accent=ACCENT, fill=ACCENT_L, size=11)
-note(s, ML + 6.33, 6.0, 6.0, 1.0, "この16枚が「土台」です",
-     "提案書の差別化要因(予約・請求・カルテ)は、次ページの18枚としてスキーマだけ先に用意してあります。",
+note(s, ML + 6.33, 6.0, 6.0, 1.0, "この17枚が「土台」です",
+     "提案書の差別化要因(予約・請求・カルテ)は、次の2ページの27枚としてスキーマだけ先に用意してあります。",
      accent=ORANGE, fill=ORANGE_L, size=11)
 
 # ══════════════════════════════════════════════════════════════
-# 9b. テーブル一覧② 先行整備の18枚
+# 9b. テーブル一覧② 先行整備の27枚のうち18枚
 # ══════════════════════════════════════════════════════════════
-s = sl_("テーブル一覧② — スキーマだけ先に用意した18枚", "実装・API・画面はこれから",
-        source="doc/db/new-domains.md", accent=ORANGE)
+s = sl_("テーブル一覧② — 先行整備の27枚(1/2)", "カルテ・予約・決済・最適化・手当の18枚",
+        source="doc/db/new-domains.md 第1〜5章。実装・API・画面はこれから", accent=ORANGE)
 rows2 = [
     ["customer_notes", "カルテ", "カルテ・申し送り・鍵の位置・ガレージ・引継ぎ・注意点を区分で持つ1枚"],
     ["customer_note_photos", "カルテ", "上の子。写真は実体を持たず保存キーのみ。1枚10MBまでをCHECKで制限"],
@@ -376,9 +382,52 @@ table(s, ML, 1.22, CW, ["テーブル", "領域", "役割と、鍵になる制�
       first_bold=True, cell_colors=cc2,
       aligns=[PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.LEFT])
 text(s, ML, 6.52, CW, 0.4,
-     "この18枚も既存16枚と同じ規約(tenant_id + RLS + 複合外部キー + CHECK + updated_at トリガー)に載せてあります。"
-     "先に作った理由と、そこで迷った判断は第4章(P26・P27)で扱います。",
+     "この18枚も既存17枚と同じ規約(tenant_id + RLS + 複合外部キー + CHECK + updated_at トリガー)に載せてあります。"
+     "残りの9枚(日報AIのプロンプト調整)は次ページ。先に作った理由と迷った判断は第4章(P27・P28)で扱います。",
      size=10.5, color=MUTED, line=1.3)
+
+# ══════════════════════════════════════════════════════════════
+# 9c. テーブル一覧③ 日報AIのプロンプト調整
+# ══════════════════════════════════════════════════════════════
+s = sl_("テーブル一覧③ — 先行整備の27枚(2/2)", "日報AIのプロンプト調整の9枚。文面は一覧①(稼働中)",
+        source="doc/db/new-domains.md 第6章 / 区分値と値域は packages/shared/src/contracts/reportAi.ts",
+        accent=ORANGE)
+rows3 = [
+    ["report_age_bands", "表", "子の年齢帯。月齢は半開区間 [from, to) でCHECK。帯どうしの重なり禁止は入口で担保"],
+    ["report_keywords", "表", "教育キーワードと使ってよい条件(月齢・★の範囲・ストレス度の下限)。廃止は active=false"],
+    ["report_age_band_keywords", "表", "年齢帯と相性の良い語の対応(多対多)。PK=(tenant_id, age_band_id, keyword_id)"],
+    ["report_phrases", "表", "温かみ表現(encourage)と全日報で避ける表現(avoid)。適用するストレス度の範囲を持つ"],
+    ["report_education_levels", "基準", "教育関心度★(1〜5)ごとの教育語の使い方。上限語数(0〜3)と専門語の可否"],
+    ["report_stress_levels", "基準", "ストレス度(1〜5)ごとの安全弁。★の引き下げ幅・教育語の可否・連絡要否の3列"],
+    ["customer_report_profiles", "設定", "家庭ごとの★。PK=(tenant_id, customer_id)。customers の列にはしない"],
+    ["report_ai_generations", "記録", "AI生成1回。モデル・使った版・★/ストレス度・入力・生の出力。updated_atを持たない"],
+    ["report_ai_generation_keywords", "記録", "その生成で提示した候補(candidate)とAIが実際に使った語(used)"],
+]
+kindcol = {"表": ACCENT, "基準": GREEN, "設定": PINK, "記録": VIOLET}
+cc3 = {(i, 1): kindcol[r[1]] for i, r in enumerate(rows3)}
+table(s, ML, 1.25, CW, ["テーブル", "区分", "役割と、鍵になる制約"], rows3,
+      col_w=[3.3, 1.1, 7.85], size=10, hsize=10.5, row_h=0.33, header_h=0.31,
+      first_bold=True, cell_colors=cc3,
+      aligns=[PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.LEFT])
+
+text(s, ML, 4.62, CW, 0.28, "保護者向けの文面を組み替える3つの軸", size=12, color=INK, bold=True)
+axes = [
+    ("① 子の年齢帯", ACCENT, "生年月日と訪問日から月齢を都度計算し、report_age_bands の帯に当てる"),
+    ("② 家庭の教育関心度★(1〜5)", GREEN, "高いほど教育語を使う。家庭ごとに管理者・担当者が付ける"),
+    ("③ 保護者のストレス度(1〜5)", RED, "低いほど負担が大きい。訪問ごとにスタッフが評価(既存の risk_rating)"),
+]
+AW = (CW - 0.32) / 3
+cx = ML
+for ttl, col, body in axes:
+    rect(s, cx, 4.92, AW, 1.06, fill=WHITE, border=col, border_w=1.2)
+    text(s, cx + 0.16, 5.01, AW - 0.32, 0.26, ttl, size=11, color=col, bold=True)
+    text(s, cx + 0.16, 5.30, AW - 0.32, 0.60, body, size=10, color=INK, line=1.3)
+    cx += AW + 0.16
+note(s, ML, 6.06, CW, 0.86, "ストレス度は★より優先する(安全弁を文面ではなく列で持つ)",
+     "負担の大きい家庭では教育語を止めてねぎらいに切り替えます。「★を何段下げるか」「教育語を使ってよいか」"
+     "「管理者連絡を要するか」は report_stress_levels の3列に持たせ、コードが機械的に適用します"
+     "(文面の一節として書くと、文面の編集で安全弁が外れるため)。",
+     accent=RED, fill=RED_L, size=10.5)
 
 # ══════════════════════════════════════════════════════════════
 # 10. マルチテナント方式の比較
@@ -478,7 +527,7 @@ text(s, ML, y2 + 1.88, 6.0, 0.5,
      size=10.5, color=MUTED, line=1.3)
 
 card(s, ML + 6.33, 2.95, 6.0, 1.45, "効いていることをCIで毎回確かめている", accent=GREEN, items=[
-    {"t": "静的検査:全34テーブル分のSQLに ENABLE と FORCE、ポリシーの条件が揃っているかを機械的に検査。"
+    {"t": "静的検査:全44テーブル分のSQLに ENABLE と FORCE、ポリシーの条件が揃っているかを機械的に検査。"
           "新しい表を足して書き忘れると落ちる"},
     {"t": "実DB検証:権限を落としたロールを作り、実際に他社の行が見えないことを確認"},
 ], body_size=10.5)
@@ -541,8 +590,8 @@ text(s, ML + 6.58, 3.62, 5.55, 1.2,
      size=11, color=INK, line=1.32)
 
 text(s, ML, 4.72, CW, 0.3,
-     [("この形を適用した参照(全50本)", {"size": 12, "bold": True, "color": INK}),
-      ("   下は稼働中の16枚にあるもの", {"size": 10.5, "color": MUTED})])
+     [("この形を適用した参照(全63本)", {"size": 12, "bold": True, "color": INK}),
+      ("   下は稼働中の17枚にあるもの", {"size": 10.5, "color": MUTED})])
 rows = [["daily_reports → staff / customers / reservations",
          "accident_reports → staff / customers",
          "receipts → staff / customers(顧客は空可)"],
@@ -554,7 +603,7 @@ for r_i, row in enumerate(rows):
             size=10.5, align=PP_ALIGN.LEFT)
 note(s, ML, 6.05, CW, 0.85, "補足",
      "クーポンの2枚(customer_coupons / coupon_redemptions)も同じ形で customers・coupons・daily_reports を指しています。"
-     "先行整備の18枚も同じ規約に載せてあり、複合外部キーは全部で50本です。参照先には UNIQUE(tenant_id, id) を張ってあります。"
+     "先行整備の27枚も同じ規約に載せてあり、複合外部キーは全部で63本です。参照先には UNIQUE(tenant_id, id) を張ってあります。"
      "ON DELETE は全て no action(親を消せない)にしており、廃棄はテナント単位の物理削除で行う方針です。",
      accent=ACCENT, fill=ACCENT_L, size=10.5)
 
@@ -725,7 +774,7 @@ note(s, ML, 5.9, CW, 1.0, "なぜ「Outbox」という形にするのか",
 # ══════════════════════════════════════════════════════════════
 # 16. スキーマ共通ルール
 # ══════════════════════════════════════════════════════════════
-s = sl_("34テーブルで守っている共通ルール", "表ごとに判断がぶれないよう、形を決めてある",
+s = sl_("44テーブルで守っている共通ルール", "表ごとに判断がぶれないよう、形を決めてある",
         source="doc/db/overview.md / packages/db/src/schema/*.ts のコメントに理由を記載")
 left = [
     ("主キーは必ず uuid のランダム値", "連番にしない。件数が外から推測できず、採番の集中点も作らない"),
@@ -753,7 +802,7 @@ for col_i, group in enumerate([left, right]):
 
 note(s, ML, 5.6, 6.0, 1.3, "この規約のおかげで楽になっていること",
      "新しい表を足すときに考えることが少ない(同じ形をコピーすればよい)。"
-     "RLSとupdated_atトリガーの張り忘れはCIが機械的に検出する。第4章の18枚も、この形にそのまま載せてあります。",
+     "RLSとupdated_atトリガーの張り忘れはCIが機械的に検出する。第4章の27枚も、この形にそのまま載せてあります。",
      accent=GREEN, fill=GREEN_L)
 note(s, ML + 6.33, 5.6, 6.0, 1.3, "規約の副作用も出ている(第3章)",
      "「派生値を保存しない」は二重管理を防ぐ一方、月次集計を毎回全件計算することになります。"
@@ -989,7 +1038,7 @@ note(s, ML, 6.22, CW, 0.66, "ご相談したいこと(相談④)",
 # 22. 問題⑤ 小さな設計負債
 # ══════════════════════════════════════════════════════════════
 s = sl_("問題⑤ 小さな設計負債", "気づいているが、まだ手を付けていないもの",
-        source="doc/db/overview.md 3.4節 / doc/db/new-domains.md §6 / README「実装状況」", accent=RED)
+        source="doc/db/overview.md 3.4節 / doc/db/new-domains.md 第7章 / README「実装状況」", accent=RED)
 rows = [
     ["ON DELETE がすべて no action", "親(顧客・スタッフ)を消せない。廃棄はテナント単位の物理削除で行う方針",
      "契約上の返還・廃棄義務(秘密保持契約 第7条)に対する具体的な手順とバックアップ保持期間が未整備", "高"],
@@ -1063,12 +1112,13 @@ note(s, ML, 5.65, CW, 1.2, "ご相談したいこと(相談⑥)",
 # 24. 第4章 divider
 # ══════════════════════════════════════════════════════════════
 sec_("第 4 章", "先行して用意したスキーマと、相談事項",
-     "実装より先にDBの形だけ固めた5領域。そこで迷った判断と、まとめての相談事項")
+     "実装より先にDBの形だけ固めた6領域。そこで迷った判断と、まとめての相談事項")
 
 # ══════════════════════════════════════════════════════════════
-# 25. 先行整備した5領域
+# 25. 先行整備した6領域
 # ══════════════════════════════════════════════════════════════
-s = sl_("実装より先に、DBの形だけ固めた5領域", "18テーブル。リポジトリ実装・API・画面はまだ無い",
+s = sl_("実装より先に、DBの形だけ固めた6領域",
+        "27テーブル。リポジトリ実装・API・画面はまだ無い(日報AIの文面だけ先に稼働)",
         source="doc/db/new-domains.md", accent=ORANGE)
 text(s, ML, 1.16, CW, 0.3,
      "あとから足すと既存データの移行が伴うため、運用前のいまのうちに表と制約だけ作ってあります。",
@@ -1078,11 +1128,11 @@ plans = [
                      "カルテ・申し送り・鍵の位置・ガレージ場所・引継ぎ事項・注意点を区分で1枚に持つ",
                      "写真は子テーブル。実体は持たず保存キーのみ",
                      "customers の列にしないのは、上書きだと「いつ誰がその情報にしたか」が残らないため"]),
-    ("予約(RESERVA移植版)", ACCENT, [["service_menus", "reservations",
-                                "reservation_assignments", "staff_availabilities"],
-                            "予約(約束)と日報(実施記録)は別の表。片方だけ存在する状態が正常にあり得るため",
-                            "主担当は1予約1人までを部分一意索引で保証",
-                            "二重取りの防止だけはDBで守れていない(第3章③)"]),
+    ("予約(RESERVA移植)", ACCENT, [["service_menus", "reservations",
+                               "reservation_assignments", "staff_availabilities"],
+                             "予約(約束)と日報(実施記録)は別の表。片方だけ存在する状態が正常にあり得るため",
+                             "主担当は1予約1人までを部分一意索引で保証",
+                             "二重取りの防止だけはDBで守れていない(第3章③)"]),
     ("請求・決済(Stripe)", GREEN, [["customer_payment_profiles", "invoices", "invoice_lines",
                               "payments", "stripe_webhook_events"],
                            "カード番号は受け取らず保存しない。Stripeの識別子とブランド・下4桁だけ",
@@ -1097,20 +1147,34 @@ plans = [
                         "自動車・公共交通機関・自転車・徒歩を選べる",
                         "手段ごとに計算方法(距離比例/1移動定額/1日定額/実費精算)と単価を持つ",
                         "金額への換算ロジックはGAS版にも無く、新規追加"]),
+    ("日報AIの文面調整", TEAL, [["prompt_templates", "report_age_bands", "report_keywords",
+                          "report_age_band_keywords", "report_phrases",
+                          "report_education_levels", "report_stress_levels",
+                          "customer_report_profiles", "report_ai_generations",
+                          "report_ai_generation_keywords"],
+                         "文面は版を積む。生成記録が版を指すので消せない",
+                         "年齢帯 × 教育関心度★ × ストレス度の3軸で組み替える",
+                         "ストレス度は★より優先。安全弁は列で持ち、★は customers に置かない",
+                         "どの文面・どの語で作ったかを生成1回ごとに残す"]),
 ]
-GW2, GG2 = 2.34, 0.16
+GG2 = 0.16
+GW2 = (CW - GG2 * 5) / 6  # 6領域に増えたので1列あたりの幅を計算で出す(1.92in)
 cx = ML
 for ttl, col, items in plans:
     rect(s, cx, 1.62, GW2, 4.0, fill=WHITE, border=col, border_w=1.3)
-    fill_text(rect(s, cx, 1.62, GW2, 0.44, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE),
-              ttl, size=10.5, color=WHITE, bold=True)
-    text(s, cx + 0.13, 2.12, GW2 - 0.26, 0.82, "\n".join(items[0]), size=7.5, color=col,
+    fill_text(rect(s, cx, 1.62, GW2, 0.42, fill=col, border=None, shape=MSO_SHAPE.RECTANGLE),
+              ttl, size=10, color=WHITE, bold=True)
+    names = items[0]
+    nh = len(names) * 7 * 1.45 / 72  # 表名の行数ぶんだけ確保し、箇条書きはその下から
+    text(s, cx + 0.11, 2.10, GW2 - 0.22, nh + 0.04, "\n".join(names), size=7, color=col,
          font=MONO, line=1.45)
-    bullets(s, cx + 0.13, 3.02, GW2 - 0.26, 2.5,
-            [{"t": it, "s": 9} for it in items[1:]], size=9, line=1.3, gap=6, marker_color=col)
+    by = 2.10 + nh + 0.10
+    bullets(s, cx + 0.11, by, GW2 - 0.22, 5.55 - by,
+            [{"t": it, "s": 8.5} for it in items[1:]], size=8.5, line=1.3, gap=5,
+            marker_color=col)
     cx += GW2 + GG2
 
-card(s, ML, 5.78, 6.0, 1.12, "既存16枚と同じ規約に載せてある", accent=GREEN, items=[
+card(s, ML, 5.78, 6.0, 1.12, "既存17枚と同じ規約に載せてある", accent=GREEN, items=[
     {"t": "tenant_id + RLS(FORCE)・(tenant_id, 参照先ID) の複合外部キー・金額は円の整数・"
           "updated_at はトリガー。張り忘れはCIが機械的に検出する"},
 ], body_size=10.5)
@@ -1120,9 +1184,9 @@ note(s, ML + 6.33, 5.78, 6.0, 1.12, "ご相談したいこと(相談⑦)",
      accent=VIOLET, fill=VIOLET_L, size=10.5)
 
 # ══════════════════════════════════════════════════════════════
-# 26. 追加した5領域で迷った判断
+# 26. 追加した6領域で迷った判断
 # ══════════════════════════════════════════════════════════════
-s = sl_("追加した5領域で迷った判断", "どれも「こちらが正しい」と言い切れず、選んで実装しています",
+s = sl_("追加した6領域で迷った判断", "どれも「こちらが正しい」と言い切れず、選んで実装しています",
         source="doc/db/new-domains.md 各章「レビューで確認いただきたい点」")
 rows = [
     ["特性を項目マスタ+値テーブル(EAV)にした", "訪問最適化",
@@ -1145,49 +1209,57 @@ rows = [
     ["取込元キーの対をCHECKで縛った", "予約",
      "部分一意索引はNULL同士を別物として扱い、取込元が空の行は重複を防げないため",
      "同じ形の customers の索引にも同じCHECKを足すべきか"],
+    ["ストレス度を既存の risk_rating 列に載せた", "日報AI",
+     "GAS版のRisk列(PSI評価)をそのまま使い、列名は変えていない(ミラー送信と画面が参照するため)",
+     "名前と意味のずれを許容してよいか、stress_level に改名すべきか(運用前なので改名は可能)"],
+    ["キーワードの候補をコードで絞り、AIに表を渡さない", "日報AI",
+     "月齢・★の範囲・ストレス度の下限の3条件を満たす語だけを提示する。決定性と検証のしやすさを優先した",
+     "AIの裁量(表全体から選ばせる)を狭める判断の是非と、候補上限(既定6語)の妥当性"],
 ]
-dom_colors = [VIOLET, GREEN, GREEN, PINK, ORANGE, ACCENT]
-table(s, ML, 1.25, CW, ["選んだ判断", "領域", "そうした理由", "ご意見をいただきたい点"], rows,
-      col_w=[3.3, 1.1, 4.6, 3.33], size=9.5, hsize=10, row_h=0.70, header_h=0.33,
+dom_colors = [VIOLET, GREEN, GREEN, PINK, ORANGE, ACCENT, TEAL, TEAL]
+table(s, ML, 1.22, CW, ["選んだ判断", "領域", "そうした理由", "ご意見をいただきたい点"], rows,
+      col_w=[3.3, 1.1, 4.6, 3.33], size=9, hsize=10, row_h=0.55, header_h=0.30,
       first_bold=True, cell_colors={(i, 1): c for i, c in enumerate(dom_colors)},
       aligns=[PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.LEFT, PP_ALIGN.LEFT])
-note(s, ML, 6.06, CW, 0.8, "ご相談したいこと(相談⑧)",
-     "この6件について、より一般的な作り方があればご教示ください。"
+note(s, ML, 6.02, CW, 0.8, "ご相談したいこと(相談⑧)",
+     "この8件について、より一般的な作り方があればご教示ください。"
      "とくにEAVは「項目が決まっていないから」という理由で選びましたが、後戻りしにくい選択だと考えています。",
      accent=VIOLET, fill=VIOLET_L, size=11)
 
 # ══════════════════════════════════════════════════════════════
 # 27. 相談事項まとめ
 # ══════════════════════════════════════════════════════════════
-s = sl_("ご相談したいこと(まとめ)", "優先度順。特に伺いたいのは ①②③⑨",
-        source="doc/db/overview.md 第5章「レビュー観点」/ doc/db/new-domains.md §6 に対応")
+s = sl_("ご相談したいこと(まとめ)", "優先度順。特に伺いたいのは ①②③⑩",
+        source="doc/db/overview.md 第5章「レビュー観点」/ doc/db/new-domains.md 第7章 に対応")
 rows = [
-    ["①", "customers 39列を分けるべきか", "19",
+    ["①", "customers 39列を分けるべきか", "20",
      "顧客マスタとして何列までが常識的か、分ける単位の基準。運用前の今が最も安く直せる"],
-    ["②", "業務データ平文化の前提が妥当か", "14・20",
+    ["②", "業務データ平文化の前提が妥当か", "15・21",
      "「保存時暗号化は本番基盤に任せる」という前提の置き方。本番未配備のまま進めてよいか"],
-    ["③", "予約の二重取りをどこで止めるか", "21",
+    ["③", "予約の二重取りをどこで止めるか", "22",
      "EXCLUDE制約が使えない(テスト環境に拡張が無い)。本番だけ張る / アプリで直列化 / 固定スロット / 運用で検知"],
-    ["④", "勤怠のJSONをいつ分解するか", "22",
+    ["④", "勤怠のJSONをいつ分解するか", "23",
      "給与直結。実データ照合の前に分解すべきか、照合の基準を動かさないため後にすべきか"],
-    ["⑤", "廃棄・返還の手順と、その他の負債の優先順位", "23",
+    ["⑤", "廃棄・返還の手順と、その他の負債の優先順位", "24",
      "ON DELETE と物理削除手順、バックアップ保持期間。運用前に必須のものはどれか"],
-    ["⑥", "監査と鍵管理を本番相当にする時期", "24",
+    ["⑥", "監査と鍵管理を本番相当にする時期", "25",
      "pgaudit等を入れる時期と粒度。Cloud KMS 前に本番データを溜め始めてよいか"],
-    ["⑦", "実装より先にスキーマを置く進め方の是非", "26",
-     "要件が固まる前に作った18テーブルは、結局作り直しになるか"],
-    ["⑧", "追加5領域で迷った6つの判断", "27",
-     "EAV・請求書のvoid・Stripeの語彙・並び順・手当の粒度・取込元キー"],
-    ["⑨", "見落としているPostgreSQLの落とし穴", "12・13",
+    ["⑦", "実装より先にスキーマを置く進め方の是非", "27",
+     "要件が固まる前に作った27テーブルは、結局作り直しになるか"],
+    ["⑧", "追加6領域で迷った8つの判断", "28",
+     "EAV・請求書のvoid・Stripeの語彙・並び順・手当の粒度・取込元キー・risk_rating の名前・候補の絞り込み"],
+    ["⑨", "日報AIの記録をどこまで残すか", "11・28",
+     "入力メモとAIの生出力を生成1回ごとに残すため日報本文より嵩む。保持期間を決めるか、保存分だけにするか"],
+    ["⑩", "見落としているPostgreSQLの落とし穴", "13・14",
      "複合外部キー + RLS の二重防御で塞いだつもりだが、他に仕様上の抜け道はないか"],
 ]
-table(s, ML, 1.28, CW, ["", "論点", "頁", "何を判断いただきたいか"], rows,
-      col_w=[0.45, 3.9, 0.75, 7.2], size=10.5, hsize=10.5, row_h=0.48, header_h=0.32,
-      cell_colors={(i, 0): (RED if i in (0, 1, 2, 8) else ACCENT) for i in range(9)},
+table(s, ML, 1.26, CW, ["", "論点", "頁", "何を判断いただきたいか"], rows,
+      col_w=[0.45, 3.9, 0.75, 7.2], size=10, hsize=10.5, row_h=0.43, header_h=0.32,
+      cell_colors={(i, 0): (RED if i in (0, 1, 2, 9) else ACCENT) for i in range(10)},
       aligns=[PP_ALIGN.CENTER, PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.LEFT])
 note(s, ML, 6.05, CW, 0.85, "いちばん困っていること",
-     "⑨のような「自分では気づきようがない落とし穴」が、他にもあるかどうかを知りたいです。"
-     "①〜⑧は選択肢が見えている判断ですが、⑨は見えていないものを指摘いただく必要があります。",
+     "⑩のような「自分では気づきようがない落とし穴」が、他にもあるかどうかを知りたいです。"
+     "①〜⑨は選択肢が見えている判断ですが、⑩は見えていないものを指摘いただく必要があります。",
      accent=ACCENT, fill=ACCENT_L)
 
 # ══════════════════════════════════════════════════════════════
@@ -1196,21 +1268,21 @@ note(s, ML, 6.05, CW, 0.85, "いちばん困っていること",
 s = sl_("付録 — 一次情報の在り処と、用語の対応", "この資料は要約なので、判断に必要な詳細はこちらを")
 card(s, ML, 1.28, 6.0, 2.6, "コード(こちらが正)", accent=ACCENT, items=[
     {"t": [("packages/db/src/schema/*.ts", {"font": MONO, "bold": True}),
-           ("  34テーブルの定義。列ごとに「なぜこの形か」をコメントで書いてある", {})]},
+           ("  44テーブルの定義。列ごとに「なぜこの形か」をコメントで書いてある", {})]},
     {"t": [("packages/db/drizzle/0000_baseline_schema.sql", {"font": MONO, "bold": True}),
            ("  適用されるDDL。RLSの FORCE と updated_at トリガーはここに手で追記", {})]},
     {"t": [("packages/shared/src/contracts/", {"font": MONO, "bold": True}),
            ("  区分値(CHECK制約の許可値)の定義。DDLはここから組み立てる", {})]},
     {"t": [("packages/core/src/ports/", {"font": MONO, "bold": True}),
-           ("  業務ロジックが外部に求める窓口の定義(29本)", {})]},
+           ("  業務ロジックが外部に求める窓口の定義(30本)", {})]},
 ], body_size=10.5)
 card(s, ML + 6.33, 1.28, 6.0, 2.6, "ドキュメント", accent=GREEN, items=[
     {"t": [("doc/db/overview.md", {"bold": True}),
            ("  本資料の詳細版。設計方針・暗号化の構成・レビュー観点", {})]},
     {"t": [("doc/db/reference.md", {"bold": True}),
-           ("  ER図と全34テーブルの全列一覧。スキーマから自動生成(pnpm db:docs)", {})]},
+           ("  ER図と全44テーブルの全列一覧。スキーマから自動生成(pnpm db:docs)", {})]},
     {"t": [("doc/db/new-domains.md", {"bold": True}),
-           ("  第4章の18テーブルの設計理由と、未決の論点", {})]},
+           ("  第4章の27テーブルの設計理由と、未決の論点", {})]},
     {"t": [("doc/db/guidelines.md", {"bold": True}),
            ("  DBを触るときの決めごとと、実際に踏んだ落とし穴", {})]},
     {"t": [("doc/slides/architecture.pptx", {"bold": True}),
