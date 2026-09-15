@@ -10,6 +10,7 @@ import type { MirrorWorkerDeps } from './mirrorWorker';
 import { runOutboxBatch } from './mirrorWorker';
 import type { ReceiptDeps } from './receipts';
 import { uploadReceipts } from './receipts';
+import { FakeReportAiGenerationRepository } from './reportAiTestDoubles';
 import type { ReportDeps } from './reports';
 import { saveAccidentReport, saveDailyReport } from './reports';
 import {
@@ -87,6 +88,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
       couponRedemptions,
       customerCoupons: new FakeCustomerCouponRepository(),
       familyMembers: new FakeFamilyMemberRepository(),
+      reportAiGenerations: new FakeReportAiGenerationRepository(),
       notifier: new FakeNotifierPort(),
       mirror: outbox,
       unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, couponRedemptions, outbox]),
@@ -100,7 +102,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
       inputText: '元気に過ごした',
       internalText: '社内向けメモ',
       customerText: '保護者向けメモ',
-      riskRating: 3,
+      stressLevel: 3,
       esRating: 4,
     });
 
@@ -149,6 +151,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
       couponRedemptions,
       customerCoupons: new FakeCustomerCouponRepository(),
       familyMembers: new FakeFamilyMemberRepository(),
+      reportAiGenerations: new FakeReportAiGenerationRepository(),
       notifier: new FakeNotifierPort(),
       mirror: outbox,
       unitOfWork: new FakeUnitOfWork([dailyReports, accidentReports, couponRedemptions, outbox]),

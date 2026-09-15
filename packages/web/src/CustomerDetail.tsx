@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAdminTargetStaff } from './AdminTargetStaffContext';
 import { fetchCustomerDetail } from './api';
 import { CustomerCouponSection } from './CustomerCouponSection';
+import { CustomerReportProfileEditor } from './CustomerReportProfileEditor';
 import { FamilyAllergyEditor } from './FamilyAllergyEditor';
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
@@ -277,6 +278,12 @@ export function CustomerDetail({ customerId, onClose }: { customerId: string; on
                   ))}
                 </ul>
               </section>
+
+              <CustomerReportProfileEditor
+                key={customerId}
+                customerId={customerId}
+                reportProfile={query.data.reportProfile}
+              />
 
               {/* key に顧客IDを入れて、顧客が変わったら作り直す。生年月日の入力途中や配布する
                   クーポンの選択といった顧客固有の状態を、前の顧客のまま持ち越さない

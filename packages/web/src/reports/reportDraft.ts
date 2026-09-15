@@ -66,8 +66,12 @@ export interface ReportDraft {
   /** 生成・加筆した本文。 */
   internalText: string;
   customerText: string;
-  riskRating: number | null;
+  stressLevel: number | null;
   esRating: number | null;
+  /** 対象児(familyMembers)。世帯全体・選ばない場合はnull。 */
+  targetFamilyMemberId: string | null;
+  /** 直近のAI生成のreport_ai_generations行ID。生成後に入力を変えれば再生成で更新、手書きのみならnull。 */
+  aiGenerationId: string | null;
   accident: ReportDraftAccident;
   savedAt: number;
 }
@@ -80,8 +84,9 @@ function isEmpty(draft: ReportDraft): boolean {
     !draft.accidentMemo.trim() &&
     !draft.internalText.trim() &&
     !draft.customerText.trim() &&
-    draft.riskRating === null &&
+    draft.stressLevel === null &&
     draft.esRating === null &&
+    draft.targetFamilyMemberId === null &&
     !a.targetName.trim() &&
     !a.occurrenceTime.trim() &&
     !a.location.trim() &&
@@ -94,6 +99,7 @@ function isEmpty(draft: ReportDraft): boolean {
   );
 }
 
+/** 書きかけの控えを端末に保存する。全部空なら控えは持たない(次に開いたとき復元を促さない)。 */
 export function saveReportDraft(draft: ReportDraft): void {
   try {
     if (isEmpty(draft)) {
@@ -106,6 +112,7 @@ export function saveReportDraft(draft: ReportDraft): void {
   }
 }
 
+/** 控えを読む。持ち主が違う・期限切れ・壊れている控えは、その場で捨てて null を返す。 */
 export function loadReportDraft(owner: ReportDraftOwner): ReportDraft | null {
   try {
     const raw = localStorage.getItem(draftKey(owner));
@@ -124,13 +131,23 @@ export function loadReportDraft(owner: ReportDraftOwner): ReportDraft | null {
       clearReportDraft(owner);
       return null;
     }
-    return draft;
+    // 控えは端末に置いたJSONをそのまま読むので、項目が欠けていることがある
+    // (手で書き換えられた・別の版の画面が書いた等)。「未入力」を表すnull可の項目は
+    // undefinedのままだと画面の状態がnullでもない値になるため、読み出しでnullに寄せる。
+    return {
+      ...draft,
+      stressLevel: draft.stressLevel ?? null,
+      esRating: draft.esRating ?? null,
+      targetFamilyMemberId: draft.targetFamilyMemberId ?? null,
+      aiGenerationId: draft.aiGenerationId ?? null,
+    };
   } catch {
     clearReportDraft(owner);
     return null;
   }
 }
 
+/** 控えを消す(保存が確定したとき・復元を断られたとき)。 */
 export function clearReportDraft(owner: ReportDraftOwner): void {
   try {
     localStorage.removeItem(draftKey(owner));

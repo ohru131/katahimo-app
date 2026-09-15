@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { parseImageDataUrl } from './geminiAiPort';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { GeminiAiPort, NoopReportAiPort, parseImageDataUrl } from './geminiAiPort';
 
 /**
  * 領収書画像のデータURLの解釈を固定する。
@@ -61,5 +61,97 @@ describe('parseImageDataUrl', () => {
 
   it('空文字は空のまま返す(呼び出し側がそのまま送り、APIが読み取り失敗を返す)', () => {
     expect(parseImageDataUrl('')).toEqual({ mimeType: 'image/jpeg', data: '' });
+  });
+});
+
+/** Gemini へ送ったリクエスト1回ぶん(URLと本文)。 */
+interface GeminiCall {
+  url: string;
+  payload: {
+    generationConfig: { responseSchema: { properties: Record<string, unknown>; required: string[] } };
+  };
+}
+
+/** Gemini の generateContent が JSON を返したことにする。呼ばれたURL・本文も覚える。 */
+function stubGemini(status: number, body: unknown): { calls: GeminiCall[] } {
+  const calls: GeminiCall[] = [];
+  vi.stubGlobal('fetch', async (url: string, init: { body: string }) => {
+    calls.push({ url, payload: JSON.parse(init.body) });
+    return { status, text: async () => (typeof body === 'string' ? body : JSON.stringify(body)) };
+  });
+  return { calls };
+}
+
+/** Gemini の応答(JSONをテキストパートに入れた形)を組み立てる。 */
+function geminiResponse(payload: unknown) {
+  return { candidates: [{ content: { parts: [{ text: JSON.stringify(payload) }] } }] };
+}
+
+describe('GeminiAiPort.generateDailyReport', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('設定したモデル名を記録用に返し、そのモデルを呼ぶ', async () => {
+    const { calls } = stubGemini(200, geminiResponse({ warnings: [], internal: 'i', customer: 'c' }));
+    const port = new GeminiAiPort({ apiKey: 'key', reportModel: 'gemini-test' });
+
+    expect(port.reportModel).toBe('gemini-test');
+    await port.generateDailyReport({ prompt: 'P', text: 'メモ' });
+    expect(calls[0]?.url).toContain('/models/gemini-test:generateContent');
+  });
+
+  it('usedKeywords を応答スキーマに入れるが、必須にはしない', async () => {
+    const { calls } = stubGemini(200, geminiResponse({ warnings: [], internal: 'i', customer: 'c' }));
+    await new GeminiAiPort({ apiKey: 'key' }).generateDailyReport({ prompt: 'P', text: 'メモ' });
+
+    const schema = calls[0]?.payload.generationConfig.responseSchema;
+    expect(schema?.properties.usedKeywords).toEqual({ type: 'ARRAY', items: { type: 'STRING' } });
+    expect(schema?.required).not.toContain('usedKeywords');
+  });
+
+  it('応答に usedKeywords が無ければ空配列にし、あればそのまま返す', async () => {
+    stubGemini(200, geminiResponse({ warnings: [], internal: 'i', customer: 'c' }));
+    const withoutKeywords = await new GeminiAiPort({ apiKey: 'key' }).generateDailyReport({
+      prompt: 'P',
+      text: 'メモ',
+    });
+    expect(withoutKeywords.usedKeywords).toEqual([]);
+    expect(withoutKeywords.error).toBeUndefined();
+
+    vi.unstubAllGlobals();
+    stubGemini(200, geminiResponse({ warnings: [], internal: 'i', customer: 'c', usedKeywords: ['K01'] }));
+    const withKeywords = await new GeminiAiPort({ apiKey: 'key' }).generateDailyReport({
+      prompt: 'P',
+      text: 'メモ',
+    });
+    // 候補やキーワード表と突き合わせず、AIが答えた通りに渡す(絞るのは記録側)。
+    expect(withKeywords.usedKeywords).toEqual(['K01']);
+  });
+
+  it('API呼び出しが失敗したら、GAS版と同じ形に加えて error にも理由を入れる', async () => {
+    stubGemini(429, 'rate limited');
+    const draft = await new GeminiAiPort({ apiKey: 'key' }).generateDailyReport({
+      prompt: 'P',
+      text: 'メモ',
+    });
+
+    expect(draft.warnings).toEqual(['API Error']);
+    expect(draft.internal).toContain('レート制限');
+    expect(draft.customer).toBe('');
+    expect(draft.usedKeywords).toEqual([]);
+    expect(draft.error).toBe(draft.internal);
+  });
+});
+
+describe('NoopReportAiPort', () => {
+  it('APIキー未設定は生成の失敗として扱う(記録に理由が残る)', async () => {
+    const port = new NoopReportAiPort();
+    expect(port.reportModel).toBe('noop');
+
+    const draft = await port.generateDailyReport();
+    expect(draft.warnings).toEqual(['API Key Missing']);
+    expect(draft.usedKeywords).toEqual([]);
+    expect(draft.error).toBe('API Key Missing');
   });
 });

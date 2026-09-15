@@ -1,10 +1,11 @@
-import { runOutboxBatch } from '@katahimo/core';
+import { formatJstDateKey, purgeStaleAiGenerations, runOutboxBatch } from '@katahimo/core';
 import { closeDatabase, getDatabase } from '@katahimo/db';
 import { createWorkerContainer } from './container';
 import { loadWorkerEnv } from './env';
 import { loadDotenv } from './loadDotenv';
 
-// outboxミラー(Sheets/Drive)を実行するワーカー。夜間同期・CSV取込ポーリングは別Phaseで追加する。
+// outboxミラー(Sheets/Drive)と、AI生成の記録の保持期間の掃除を実行するワーカー。
+// 夜間同期・CSV取込ポーリングは別Phaseで追加する。
 // Cloud Run Jobs / 常駐プロセスのどちらでも動くよう、単純なポーリングループにしてある。
 
 loadDotenv();
@@ -20,9 +21,39 @@ process.on('SIGINT', () => {
   stopping = true;
 });
 
+/**
+ * テナントID → 最後にAI生成の掃除を走らせたJSTの日付('YYYY-MM-DD')。
+ *
+ * 【メモリで持つ理由】掃除は「消し漏らしても次の日にまた消える」だけの後始末で、
+ * ワーカーが再起動した日に2回走っても害が無い(消す対象が同じなら2回目は0件)。
+ * そのためだけに実行済みを記録する表を足さない。
+ */
+const lastPurgedDateByTenant = new Map<string, string>();
+
+/** その日ぶんのAI生成の掃除がまだなら実行する。失敗してもミラーの処理は止めない。 */
+async function purgeAiGenerationsOncePerDay(tenantId: string, tenantSlug: string): Promise<void> {
+  const today = formatJstDateKey(new Date());
+  if (lastPurgedDateByTenant.get(tenantId) === today) return;
+
+  try {
+    const purged = await purgeStaleAiGenerations(container, tenantId, {
+      retentionDays: env.AI_GENERATION_RETENTION_DAYS,
+    });
+    lastPurgedDateByTenant.set(tenantId, today);
+    console.log(
+      `[ai-generations] tenant=${tenantSlug} purged=${purged}` +
+        `(保持期間 ${env.AI_GENERATION_RETENTION_DAYS}日。日報が参照している記録は残す)`,
+    );
+  } catch (e) {
+    // 次のポーリングでまた試す(日付を記録しないので同じ日のうちに再挑戦する)。
+    console.error(`[ai-generations] tenant=${tenantSlug} 古いAI生成の削除に失敗しました`, e);
+  }
+}
+
 async function pollOnce(): Promise<void> {
   const tenants = await container.tenants.listAll();
   for (const tenant of tenants) {
+    await purgeAiGenerationsOncePerDay(tenant.id, tenant.slug);
     const { processed, failed, deadLettered } = await runOutboxBatch(
       container,
       tenant.id,

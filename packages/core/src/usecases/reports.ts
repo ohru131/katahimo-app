@@ -11,6 +11,7 @@ import { buildMirrorIdempotencyKey } from '../domain/mirror/idempotencyKey';
 import type { AccidentReportContent, DailyReportContent } from '../domain/reports/types';
 import type { MirrorPort } from '../ports/mirror';
 import type { NotifierPort } from '../ports/notifier';
+import type { ReportAiGenerationRepositoryPort } from '../ports/reportAiRepositories';
 import type {
   AccidentReportRepositoryPort,
   CouponRedemptionRepositoryPort,
@@ -24,6 +25,7 @@ import type {
 import type { UnitOfWorkPort } from '../ports/unitOfWork';
 import type { DailyReportCouponView } from './coupons';
 import { buildDailyReportCouponViews, resolveCouponRedemptionSnapshots } from './coupons';
+import { UsecaseValidationError } from './errors';
 
 export interface ReportDeps {
   dailyReports: DailyReportRepositoryPort;
@@ -36,6 +38,8 @@ export interface ReportDeps {
   // 満たすことで、日報保存時の検証と日報画面の選択肢づくりが同じ関数を通れるようにする。
   customerCoupons: CustomerCouponRepositoryPort;
   familyMembers: FamilyMemberRepositoryPort;
+  /** 保存時に aiGenerationId が同じテナント・同じ顧客の生成を指しているかを確かめるために使う。 */
+  reportAiGenerations: ReportAiGenerationRepositoryPort;
   notifier: NotifierPort;
   /** GAS版「日報」「事故報告」シートへのミラー書き込み要求をoutboxに積む(Phase 5)。 */
   mirror: MirrorPort;
@@ -43,6 +47,10 @@ export interface ReportDeps {
   unitOfWork: UnitOfWorkPort;
 }
 
+/**
+ * 通知文に出すスタッフ名・顧客名を、IDから引き直す。
+ * 画面から送られてきた名前は信用せず、必ずここで解決する(CLAUDE.mdのセキュリティパターン)。
+ */
 async function resolveNames(
   deps: ReportDeps,
   tenantId: string,
@@ -53,8 +61,8 @@ async function resolveNames(
     deps.staff.findById(tenantId, staffId),
     deps.customers.findById(tenantId, customerId),
   ]);
-  if (!staffRecord) throw new Error('スタッフが見つかりません');
-  if (!customerRecord) throw new Error('顧客が見つかりません');
+  if (!staffRecord) throw new UsecaseValidationError('スタッフが見つかりません');
+  if (!customerRecord) throw new UsecaseValidationError('顧客が見つかりません');
   return { staffName: staffRecord.name, customerName: customerRecord.name };
 }
 
@@ -70,8 +78,12 @@ export interface SaveDailyReportInput {
   inputText: string;
   internalText: string;
   customerText: string;
-  riskRating: number | null;
+  stressLevel: number | null;
   esRating: number | null;
+  /** この日報が主に描いている子(世帯構成員)。未選択・世帯全体は null/省略。 */
+  targetFamilyMemberId?: string | null;
+  /** 本文の元になったAI生成の記録(report_ai_generations)。手書きのみは null/省略。 */
+  aiGenerationId?: string | null;
   /**
    * 適用する割引クーポンのID配列(doc/db/guidelines.md §9)。省略/空配列は「クーポン無し」。
    * 既存の適用記録は保存のたびに削除して入れ直す(saveDailyReport内のコメント参照)ため、
@@ -85,8 +97,10 @@ export interface DailyReportView {
   occurredAt: Date;
   staffId: string;
   customerId: string;
-  riskRating: number | null;
+  stressLevel: number | null;
   esRating: number | null;
+  targetFamilyMemberId: string | null;
+  aiGenerationId: string | null;
   startedAt: Date | null;
   endedAt: Date | null;
   content: DailyReportContent;
@@ -149,13 +163,24 @@ export async function saveDailyReport(
     customerText: input.customerText || '',
   };
 
+  // 対象児・AI生成の記録が「同じテナントの、同じ顧客のもの」かを保存の手前で確かめる。
+  // DBには (tenant_id, customer_id, id) の複合FKがあるので取り違えは最後には弾かれるが、
+  // 23503(FK違反)で落ちると画面には何が悪いのか分からないエラーしか出ない。
+  const { targetFamilyMemberId, aiGenerationId } = await resolveDailyReportReferences(deps, tenantId, {
+    customerId: input.customerId,
+    targetFamilyMemberId: input.targetFamilyMemberId ?? null,
+    aiGenerationId: input.aiGenerationId ?? null,
+  });
+
   const newInput = {
     tenantId,
     staffId: input.staffId,
     customerId: input.customerId,
     occurredAt,
-    riskRating: input.riskRating,
+    stressLevel: input.stressLevel,
     esRating: input.esRating,
+    targetFamilyMemberId,
+    aiGenerationId,
     startedAt,
     endedAt,
     content,
@@ -217,7 +242,7 @@ export async function saveDailyReport(
       endTime: input.endTime || '',
       internalText: content.internalText,
     },
-    riskRating: input.riskRating,
+    stressLevel: input.stressLevel,
     esRating: input.esRating,
   });
   await deps.notifier.notify(tenantId, 'report', notificationText);
@@ -227,13 +252,47 @@ export async function saveDailyReport(
     occurredAt: record.occurredAt,
     staffId: record.staffId,
     customerId: record.customerId,
-    riskRating: record.riskRating,
+    stressLevel: record.stressLevel,
     esRating: record.esRating,
+    targetFamilyMemberId: record.targetFamilyMemberId,
+    aiGenerationId: record.aiGenerationId,
     startedAt: record.startedAt,
     endedAt: record.endedAt,
     content,
     coupons,
   };
+}
+
+/**
+ * 日報が指す対象児・AI生成の記録が、同じテナントの同じ顧客のものかを確かめる。
+ * どちらも未指定(null)ならそのまま null を返す。
+ *
+ * 【生成の対象児と日報の対象児が一致することまで見る理由】
+ * 生成は対象児の月齢で年齢帯・キーワードを選ぶので、別の子で作った文面をこの日報に
+ * 結び付けると、記録(report_ai_generations)を辿ったときに「この文面がどの子の月齢から
+ * 生まれたか」が日報と食い違う。顧客が同じでも、子が違えば別の生成として扱う。
+ */
+async function resolveDailyReportReferences(
+  deps: ReportDeps,
+  tenantId: string,
+  input: { customerId: string; targetFamilyMemberId: string | null; aiGenerationId: string | null },
+): Promise<{ targetFamilyMemberId: string | null; aiGenerationId: string | null }> {
+  if (input.targetFamilyMemberId) {
+    const members = await deps.familyMembers.listByCustomerId(tenantId, input.customerId);
+    if (!members.some((m) => m.id === input.targetFamilyMemberId)) {
+      throw new UsecaseValidationError('対象児が見つかりません');
+    }
+  }
+  if (input.aiGenerationId) {
+    const generation = await deps.reportAiGenerations.findById(tenantId, input.aiGenerationId);
+    if (!generation || generation.customerId !== input.customerId) {
+      throw new UsecaseValidationError('AI生成の記録が見つかりません');
+    }
+    if (generation.targetFamilyMemberId !== input.targetFamilyMemberId) {
+      throw new UsecaseValidationError('AI生成の記録が対象児と一致しません');
+    }
+  }
+  return { targetFamilyMemberId: input.targetFamilyMemberId, aiGenerationId: input.aiGenerationId };
 }
 
 export interface SaveAccidentReportInput {
@@ -382,6 +441,10 @@ export interface HistoryItem {
   subtype?: string;
   /** この日報に適用された割引クーポン(doc/db/guidelines.md §9)。日報(type: 'daily')にのみ持つ。 */
   coupons?: DailyReportCouponView[];
+  /** 対象児(世帯構成員)。日報にのみ持つ。未選択は null。 */
+  targetFamilyMemberId?: string | null;
+  /** 本文の元になったAI生成の記録。日報にのみ持つ。手書きのみは null。 */
+  aiGenerationId?: string | null;
 }
 
 /**
@@ -439,9 +502,11 @@ export async function getCustomerHistory(
       original: content.inputText,
       internal: content.internalText,
       customer: content.customerText,
-      risk: r.riskRating,
+      risk: r.stressLevel,
       es: r.esRating,
       coupons: couponViewsByDailyReportId.get(r.id) ?? [],
+      targetFamilyMemberId: r.targetFamilyMemberId,
+      aiGenerationId: r.aiGenerationId,
     };
   });
 

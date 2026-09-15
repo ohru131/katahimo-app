@@ -3,6 +3,7 @@ import type { AuthDeps } from './auth';
 import { registerStaff } from './auth';
 import type { CustomerDeps } from './customers';
 import { createCustomer } from './customers';
+import { FakeReportAiGenerationRepository } from './reportAiTestDoubles';
 import type { ReportDeps } from './reports';
 import { getCustomerHistory, saveDailyReport, sendVisitCompleteNotification } from './reports';
 import {
@@ -68,6 +69,7 @@ describe('sendVisitCompleteNotification', () => {
       couponRedemptions: new FakeCouponRedemptionRepository(),
       customerCoupons: new FakeCustomerCouponRepository(),
       familyMembers: new FakeFamilyMemberRepository(),
+      reportAiGenerations: new FakeReportAiGenerationRepository(),
       notifier,
       mirror: new FakeOutboxRepository(),
       unitOfWork: new FakeUnitOfWork([]),
@@ -141,6 +143,7 @@ describe('saveDailyReport とクーポン(doc/db/guidelines.md §9)', () => {
       couponRedemptions,
       customerCoupons: new FakeCustomerCouponRepository(),
       familyMembers: new FakeFamilyMemberRepository(),
+      reportAiGenerations: new FakeReportAiGenerationRepository(),
       notifier: new FakeNotifierPort(),
       mirror: new FakeOutboxRepository(),
       unitOfWork: new FakeUnitOfWork([dailyReports, couponRedemptions]),
@@ -153,7 +156,7 @@ describe('saveDailyReport とクーポン(doc/db/guidelines.md §9)', () => {
     inputText: 'メモ',
     internalText: '社内',
     customerText: '保護者向け',
-    riskRating: 1,
+    stressLevel: 1,
     esRating: 2,
   };
 
@@ -404,6 +407,7 @@ describe('getCustomerHistory とクーポン', () => {
       couponRedemptions,
       customerCoupons: new FakeCustomerCouponRepository(),
       familyMembers: new FakeFamilyMemberRepository(),
+      reportAiGenerations: new FakeReportAiGenerationRepository(),
       notifier: new FakeNotifierPort(),
       mirror: new FakeOutboxRepository(),
       unitOfWork: new FakeUnitOfWork([dailyReports, couponRedemptions]),
@@ -437,7 +441,7 @@ describe('getCustomerHistory とクーポン', () => {
       inputText: 'メモ',
       internalText: '社内',
       customerText: '保護者向け',
-      riskRating: 1,
+      stressLevel: 1,
       esRating: 2,
       couponIds: [coupon.id],
     });
@@ -455,5 +459,203 @@ describe('getCustomerHistory とクーポン', () => {
         birthdaySubjectName: null,
       },
     ]);
+  });
+});
+
+/**
+ * 日報が指す対象児・AI生成の記録。DBには (tenant_id, customer_id, id) の複合FKがあるが、
+ * FK違反(23503)で落ちると画面には何が悪いのか分からないエラーしか出ないので、保存の手前で弾く。
+ */
+describe('saveDailyReport の対象児・AI生成の記録', () => {
+  const tenantId = 'tenant-1';
+  let deps: ReportDeps;
+  let dailyReports: FakeDailyReportRepository;
+  let familyMembers: FakeFamilyMemberRepository;
+  let reportAiGenerations: FakeReportAiGenerationRepository;
+  let staffId: string;
+  let customerId: string;
+  let otherCustomerId: string;
+
+  beforeEach(async () => {
+    const staff = new FakeStaffRepository();
+    const customers = new FakeCustomerRepository();
+    const couponRedemptions = new FakeCouponRedemptionRepository();
+    dailyReports = new FakeDailyReportRepository();
+    familyMembers = new FakeFamilyMemberRepository();
+    reportAiGenerations = new FakeReportAiGenerationRepository();
+
+    const createdStaff = await registerStaff(
+      {
+        tenants: new FakeTenantRepository(),
+        staff,
+        sessions: new FakeSessionRepository(),
+        passwordResetCodes: new FakePasswordResetCodeRepository(),
+        passwordHasher: new FakePasswordHasherPort(),
+      },
+      { tenantId, name: '佐藤 花子', email: 'hanako@example.com', password: 'seed-password', isAdmin: false },
+    );
+    staffId = createdStaff.id;
+
+    const customerDeps: CustomerDeps = { customers, familyMembers };
+    customerId = (await createCustomer(customerDeps, { tenantId, name: '田中 一郎' })).id;
+    otherCustomerId = (await createCustomer(customerDeps, { tenantId, name: '鈴木 次郎' })).id;
+
+    deps = {
+      dailyReports,
+      accidentReports: new FakeAccidentReportRepository(),
+      customers,
+      staff,
+      coupons: new FakeCouponRepository(),
+      couponRedemptions,
+      customerCoupons: new FakeCustomerCouponRepository(),
+      familyMembers,
+      reportAiGenerations,
+      notifier: new FakeNotifierPort(),
+      mirror: new FakeOutboxRepository(),
+      unitOfWork: new FakeUnitOfWork([dailyReports, couponRedemptions]),
+    };
+  });
+
+  const baseInput = {
+    reportDate: '2026-06-01',
+    startTime: '09:00',
+    endTime: '10:00',
+    inputText: 'メモ',
+    internalText: '社内',
+    customerText: '保護者向け',
+    stressLevel: 3,
+    esRating: 4,
+  };
+
+  /** その顧客の子を1人作る。 */
+  async function addChild(ofCustomerId: string): Promise<string> {
+    const created = await familyMembers.createMany([
+      {
+        tenantId,
+        customerId: ofCustomerId,
+        name: '太郎',
+        dobDate: '2025-01-15',
+        dobRaw: '2025-01-15',
+        info: '',
+        allergyStatus: 'unknown',
+        allergyNote: null,
+      },
+    ]);
+    const member = created[0];
+    if (!member) throw new Error('テストの前提が崩れています');
+    return member.id;
+  }
+
+  /** その顧客のAI生成を1件作る(対象児を指定しなければ「世帯全体」の生成)。 */
+  async function addGeneration(
+    ofCustomerId: string,
+    forFamilyMemberId: string | null = null,
+  ): Promise<string> {
+    const record = await reportAiGenerations.create({
+      tenantId,
+      staffId,
+      customerId: ofCustomerId,
+      targetFamilyMemberId: forFamilyMemberId,
+      promptTemplateId: null,
+      promptText: 'prompt',
+      model: 'test-model',
+      childAgeMonths: null,
+      educationLevel: null,
+      effectiveEducationLevel: 2,
+      stressLevel: null,
+      escalationRequired: false,
+      inputText: 'メモ',
+      timeInfo: '時間指定なし',
+      outputJson: { warnings: [], internal: '', customer: '' },
+      errorMessage: null,
+      candidateKeywordIds: [],
+      usedKeywordIds: [],
+    });
+    return record.id;
+  }
+
+  it('省略したら両方 null で保存する(手書きのみ・対象児なし)', async () => {
+    const saved = await saveDailyReport(deps, tenantId, { ...baseInput, staffId, customerId });
+    expect(saved.targetFamilyMemberId).toBeNull();
+    expect(saved.aiGenerationId).toBeNull();
+  });
+
+  it('同じ顧客の子・生成なら保存し、履歴にも出す', async () => {
+    const memberId = await addChild(customerId);
+    const generationId = await addGeneration(customerId, memberId);
+
+    const saved = await saveDailyReport(deps, tenantId, {
+      ...baseInput,
+      staffId,
+      customerId,
+      targetFamilyMemberId: memberId,
+      aiGenerationId: generationId,
+    });
+    expect(saved.targetFamilyMemberId).toBe(memberId);
+    expect(saved.aiGenerationId).toBe(generationId);
+
+    const history = await getCustomerHistory(deps, tenantId, customerId, null, 5);
+    expect(history[0]?.targetFamilyMemberId).toBe(memberId);
+    expect(history[0]?.aiGenerationId).toBe(generationId);
+  });
+
+  it('別の顧客の子は弾く(日報も保存しない)', async () => {
+    const otherChild = await addChild(otherCustomerId);
+
+    await expect(
+      saveDailyReport(deps, tenantId, {
+        ...baseInput,
+        staffId,
+        customerId,
+        targetFamilyMemberId: otherChild,
+      }),
+    ).rejects.toThrow('対象児が見つかりません');
+    expect(await dailyReports.listByCustomer(tenantId, customerId, null, 10)).toEqual([]);
+  });
+
+  it('別の顧客のAI生成・存在しないIDは弾く', async () => {
+    const otherGeneration = await addGeneration(otherCustomerId);
+
+    await expect(
+      saveDailyReport(deps, tenantId, {
+        ...baseInput,
+        staffId,
+        customerId,
+        aiGenerationId: otherGeneration,
+      }),
+    ).rejects.toThrow('AI生成の記録が見つかりません');
+
+    await expect(
+      saveDailyReport(deps, tenantId, { ...baseInput, staffId, customerId, aiGenerationId: 'missing' }),
+    ).rejects.toThrow('AI生成の記録が見つかりません');
+    expect(await dailyReports.listByCustomer(tenantId, customerId, null, 10)).toEqual([]);
+  });
+
+  it('同じ顧客でも、生成の対象児と日報の対象児が違えば弾く', async () => {
+    const memberId = await addChild(customerId);
+    const otherMemberId = await addChild(customerId);
+    const generationId = await addGeneration(customerId, otherMemberId);
+
+    await expect(
+      saveDailyReport(deps, tenantId, {
+        ...baseInput,
+        staffId,
+        customerId,
+        targetFamilyMemberId: memberId,
+        aiGenerationId: generationId,
+      }),
+    ).rejects.toThrow('AI生成の記録が対象児と一致しません');
+
+    // 世帯全体の日報に、特定の子で作った生成を付けるのも同じ理由で弾く。
+    await expect(
+      saveDailyReport(deps, tenantId, {
+        ...baseInput,
+        staffId,
+        customerId,
+        targetFamilyMemberId: null,
+        aiGenerationId: generationId,
+      }),
+    ).rejects.toThrow('AI生成の記録が対象児と一致しません');
+    expect(await dailyReports.listByCustomer(tenantId, customerId, null, 10)).toEqual([]);
   });
 });

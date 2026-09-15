@@ -200,25 +200,25 @@ describe('CHECK制約が不正値のINSERTを拒否する(PGlite)', () => {
     });
   });
 
-  describe('daily_reports_risk_rating_check / daily_reports_es_rating_check', () => {
+  describe('daily_reports_stress_level_check / daily_reports_es_rating_check', () => {
     it('1〜5、またはnullは通る', async () => {
-      for (const riskRating of [1, 5, null]) {
+      for (const stressLevel of [1, 5, null]) {
         await expect(
           fixture.client.query(
-            'INSERT INTO daily_reports (tenant_id, staff_id, customer_id, occurred_at, risk_rating, es_rating) VALUES ($1, $2, $3, now(), $4, $4);',
-            [fixture.tenantId, fixture.staffId, fixture.customerId, riskRating],
+            'INSERT INTO daily_reports (tenant_id, staff_id, customer_id, occurred_at, stress_level, es_rating) VALUES ($1, $2, $3, now(), $4, $4);',
+            [fixture.tenantId, fixture.staffId, fixture.customerId, stressLevel],
           ),
         ).resolves.toBeDefined();
       }
     });
 
-    it('範囲外のrisk_ratingは拒否される', async () => {
+    it('範囲外のstress_levelは拒否される', async () => {
       await expectRejectedByConstraint(
         fixture.client.query(
-          'INSERT INTO daily_reports (tenant_id, staff_id, customer_id, occurred_at, risk_rating) VALUES ($1, $2, $3, now(), -999);',
+          'INSERT INTO daily_reports (tenant_id, staff_id, customer_id, occurred_at, stress_level) VALUES ($1, $2, $3, now(), -999);',
           [fixture.tenantId, fixture.staffId, fixture.customerId],
         ),
-        'daily_reports_risk_rating_check',
+        'daily_reports_stress_level_check',
       );
     });
 

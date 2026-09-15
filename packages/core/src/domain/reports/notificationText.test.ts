@@ -11,7 +11,7 @@ describe('buildDailyReportNotificationText', () => {
       staffName: '山田',
       customerName: '田中様',
       content: { startTime: '10:00', endTime: '11:00', internalText: '本文' },
-      riskRating: 3,
+      stressLevel: 3,
       esRating: 5,
     });
     expect(text).toBe(
@@ -24,7 +24,7 @@ describe('buildDailyReportNotificationText', () => {
       staffName: '山田',
       customerName: '田中様',
       content: { startTime: '', endTime: '', internalText: '本文2' },
-      riskRating: null,
+      stressLevel: null,
       esRating: null,
     });
     expect(text).toBe('【日報提出】\n担当: 山田\n顧客名: 田中様\n訪問時間: \n\n本文2');

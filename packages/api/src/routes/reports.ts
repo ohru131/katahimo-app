@@ -1,8 +1,11 @@
 import {
+  type GenerateDailyReportDraftInput,
   generateAccidentReportDraft,
   generateDailyReportDraft,
   getCustomerHistory,
+  getReportAiLevelsForStaff,
   getReportUiTexts,
+  isUsecaseValidationError,
   saveAccidentReport,
   saveDailyReport,
   sendVisitCompleteNotification,
@@ -28,11 +31,66 @@ export function isAccidentReportType(value: unknown): value is AccidentReportTyp
 }
 
 /**
- * PSI/満足度評価。packages/db/src/schema/dailyReports.ts の
- * daily_reports_risk_rating_check/es_rating_check と一致させる(doc/db/guidelines.md §4)。
+ * ストレス度(PSI評価)/満足度評価。packages/db/src/schema/dailyReports.ts の
+ * daily_reports_stress_level_check/es_rating_check と一致させる(doc/db/guidelines.md §4)。
  */
 export function isValidRating(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5;
+}
+
+/**
+ * 外から来た値を「UUID等のID文字列 または null」として読む。
+ * 空文字は「未選択」と同じ扱いで null にする(画面のセレクトが未選択を空文字で送るため)。
+ * 文字列でも null でもない値は undefined を返し、呼び出し側が400にする。
+ */
+function readOptionalId(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+export type ParsedGenerateDailyReportBody =
+  | { ok: true; input: Omit<GenerateDailyReportDraftInput, 'staffId'> }
+  | { ok: false; message: string };
+
+/**
+ * `POST /daily/generate` のリクエストボディを読む。
+ *
+ * 【ルートから切り出している理由】Honoアプリ全体(認証・Container)を組み立てるテストが
+ * このパッケージには無いので、csrf.test.ts と同じ方針で入口の判定だけを純粋関数にして
+ * テストできるようにしている。staffId はここでは読まない(セッションと突き合わせて決める値で、
+ * リクエストの値をそのまま信用してはいけない。session.ts の resolveReportTargetStaffId が
+ * 管理者かどうかを見て決める)。
+ */
+export function parseGenerateDailyReportBody(body: unknown): ParsedGenerateDailyReportBody {
+  const raw = (body ?? {}) as Record<string, unknown>;
+  if (typeof raw.text !== 'string' || !raw.text.trim()) {
+    return { ok: false, message: 'text が必要です' };
+  }
+  if (typeof raw.customerId !== 'string' || !raw.customerId.trim()) {
+    return { ok: false, message: 'customerId が必要です' };
+  }
+  const familyMemberId = readOptionalId(raw.familyMemberId);
+  if (familyMemberId === undefined) {
+    return { ok: false, message: 'familyMemberId は文字列かnullにしてください' };
+  }
+  // 未評価(null/省略)を許す。値がある場合だけ daily_reports_stress_level_check と同じ範囲を見る。
+  if (raw.stressLevel != null && !isValidRating(raw.stressLevel)) {
+    return { ok: false, message: 'stressLevel は1〜5の整数にしてください' };
+  }
+  return {
+    ok: true,
+    input: {
+      text: raw.text,
+      start: typeof raw.start === 'string' ? raw.start : undefined,
+      end: typeof raw.end === 'string' ? raw.end : undefined,
+      reportDate: typeof raw.reportDate === 'string' ? raw.reportDate : undefined,
+      customerId: raw.customerId.trim(),
+      familyMemberId,
+      stressLevel: isValidRating(raw.stressLevel) ? raw.stressLevel : null,
+    },
+  };
 }
 
 /** 日報・事故報告・AI生成・領収書OCRのルートをまとめる。 */
@@ -51,22 +109,41 @@ export function createReportRoutes(container: Container) {
     return c.json(texts);
   });
 
+  /**
+   * 教育関心度★・ストレス度(PSI)のテナント設定。一般スタッフ向け(顧客詳細の★設定と、
+   * 日報入力画面のPSI判定基準の表示に使う)。行が無いレベルは含まない。
+   */
+  app.get('/ai-config', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    const levels = await getReportAiLevelsForStaff(container, session.tenantId);
+    return c.json(levels);
+  });
+
   /** 保育日報の下書きをAI生成する(GAS版generateReportWithWarnings相当)。 */
   app.post('/daily/generate', async (c) => {
     const session = await getAuthenticatedSession(c, container);
     if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
 
     const body = await c.req.json().catch(() => null);
-    if (typeof body?.text !== 'string' || !body.text.trim()) {
-      return c.json({ code: 'validation_failed', message: 'text が必要です' }, 400);
-    }
+    const parsed = parseGenerateDailyReportBody(body);
+    if (!parsed.ok) return c.json({ code: 'validation_failed', message: parsed.message }, 400);
 
-    const draft = await generateDailyReportDraft(container, session.tenantId, {
-      text: body.text,
-      start: typeof body.start === 'string' ? body.start : undefined,
-      end: typeof body.end === 'string' ? body.end : undefined,
-    });
-    return c.json({ draft });
+    const staffId = resolveReportTargetStaffId(session, body?.staffId);
+    try {
+      const draft = await generateDailyReportDraft(container, session.tenantId, {
+        ...parsed.input,
+        staffId,
+      });
+      return c.json({ draft });
+    } catch (e) {
+      // 生成そのものの失敗は warnings に詰めて返る(GAS版と同じ)。ここに来るのは
+      // 対象児の取り違えなど、入力が通ってはいけない場合だけ。それ以外(DBの不調など)は
+      // 投げ直して500にする(障害を「入力が悪い」という顔で返さないため)。
+      if (!isUsecaseValidationError(e)) throw e;
+      return c.json({ code: 'validation_failed', message: e.message }, 400);
+    }
   });
 
   /** 事故報告/ヒヤリハットの下書きをAI生成する(GAS版generateAccidentReport相当)。 */
@@ -97,8 +174,8 @@ export function createReportRoutes(container: Container) {
       return c.json({ code: 'validation_failed', message: 'customerId が必要です' }, 400);
     }
     // undefined/nullは「未評価」として許容する(DB側もNULLABLE)。値がある場合だけ範囲を見る。
-    if (body.riskRating != null && !isValidRating(body.riskRating)) {
-      return c.json({ code: 'validation_failed', message: 'riskRating は1〜5の整数にしてください' }, 400);
+    if (body.stressLevel != null && !isValidRating(body.stressLevel)) {
+      return c.json({ code: 'validation_failed', message: 'stressLevel は1〜5の整数にしてください' }, 400);
     }
     if (body.esRating != null && !isValidRating(body.esRating)) {
       return c.json({ code: 'validation_failed', message: 'esRating は1〜5の整数にしてください' }, 400);
@@ -116,6 +193,20 @@ export function createReportRoutes(container: Container) {
       }
       couponIds = parsed.data;
     }
+    const targetFamilyMemberId = readOptionalId(body.targetFamilyMemberId);
+    if (targetFamilyMemberId === undefined) {
+      return c.json(
+        { code: 'validation_failed', message: 'targetFamilyMemberId は文字列かnullにしてください' },
+        400,
+      );
+    }
+    const aiGenerationId = readOptionalId(body.aiGenerationId);
+    if (aiGenerationId === undefined) {
+      return c.json(
+        { code: 'validation_failed', message: 'aiGenerationId は文字列かnullにしてください' },
+        400,
+      );
+    }
 
     const staffId = resolveReportTargetStaffId(session, body.staffId);
     try {
@@ -129,13 +220,17 @@ export function createReportRoutes(container: Container) {
         inputText: typeof body.inputText === 'string' ? body.inputText : '',
         internalText: typeof body.internalText === 'string' ? body.internalText : '',
         customerText: typeof body.customerText === 'string' ? body.customerText : '',
-        riskRating: isValidRating(body.riskRating) ? body.riskRating : null,
+        stressLevel: isValidRating(body.stressLevel) ? body.stressLevel : null,
         esRating: isValidRating(body.esRating) ? body.esRating : null,
+        targetFamilyMemberId,
+        aiGenerationId,
         couponIds,
       });
       return c.json({ success: true, report });
     } catch (e) {
-      return c.json({ success: false, message: e instanceof Error ? e.message : String(e) }, 400);
+      // 対象児・AI生成の記録・クーポンの取り違えだけを400にする。それ以外は投げ直して500。
+      if (!isUsecaseValidationError(e)) throw e;
+      return c.json({ success: false, message: e.message }, 400);
     }
   });
 

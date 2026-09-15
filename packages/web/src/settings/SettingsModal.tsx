@@ -12,6 +12,7 @@ import {
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { CouponAdminModal } from './CouponAdminModal';
 import { PromptTemplateAdminModal } from './PromptTemplateAdminModal';
+import { ReportAiAdminModal } from './ReportAiAdminModal';
 import { StaffAdminModal } from './StaffAdminModal';
 import { applyTextSize, getStoredTextSize, type TextSize } from './textSize';
 
@@ -70,6 +71,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
   const [showStaffAdmin, setShowStaffAdmin] = useState(false);
   const [showCouponAdmin, setShowCouponAdmin] = useState(false);
   const [showPromptAdmin, setShowPromptAdmin] = useState(false);
+  const [showReportAiAdmin, setShowReportAiAdmin] = useState(false);
 
   const settingsQuery = useQuery({
     queryKey: ['admin-settings'],
@@ -260,9 +262,16 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
               <button
                 type="button"
                 onClick={() => setShowPromptAdmin(true)}
-                className="w-full py-2 mb-4 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200"
+                className="w-full py-2 mb-2 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200"
               >
                 AIプロンプト
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowReportAiAdmin(true)}
+                className="w-full py-2 mb-4 bg-gray-100 text-gray-700 font-bold rounded-lg hover:bg-gray-200"
+              >
+                日報AIの調整(3軸)
               </button>
 
               <h4 className="text-sm font-bold text-red-600 mb-3">管理者設定</h4>
@@ -475,6 +484,7 @@ export function SettingsModal({ staff, onClose }: { staff: StaffView; onClose: (
       )}
       {showCouponAdmin && <CouponAdminModal onClose={() => setShowCouponAdmin(false)} />}
       {showPromptAdmin && <PromptTemplateAdminModal onClose={() => setShowPromptAdmin(false)} />}
+      {showReportAiAdmin && <ReportAiAdminModal onClose={() => setShowReportAiAdmin(false)} />}
     </div>
   );
 }

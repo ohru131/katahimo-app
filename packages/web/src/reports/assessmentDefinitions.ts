@@ -13,10 +13,10 @@ export interface AssessmentDefinition {
   levels: AssessmentLevel[];
 }
 
-export type AssessmentType = 'risk' | 'es';
+export type AssessmentType = 'stress' | 'es';
 
 export const ASSESSMENT_DEFINITIONS: Record<AssessmentType, AssessmentDefinition> = {
-  risk: {
+  stress: {
     title: 'PSI',
     levels: [
       {

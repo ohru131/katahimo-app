@@ -43,6 +43,13 @@
       "when": 1789435391326,
       "tag": "0005_daily_report_prompt_customization",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789439489178,
+      "tag": "0006_daily_report_stress_level",
+      "breakpoints": true
     }
   ]
 }

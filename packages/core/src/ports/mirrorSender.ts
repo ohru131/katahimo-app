@@ -30,6 +30,11 @@ export interface DailyReportMirrorPayload {
   inputText: string;
   internalText: string;
   customerText: string;
+  /**
+   * ストレス度(PSI評価。1〜5)。GAS側「日報」シートのRiskRating列に書く値
+   * (reference/gas-childcare-visit-app/Bridge.js の writeDailyReport が payload.riskRating を読む)ため、
+   * ここだけGAS側の名前に合わせている。ドメイン側の呼び名は stressLevel。
+   */
   riskRating: number | null;
   esRating: number | null;
 }

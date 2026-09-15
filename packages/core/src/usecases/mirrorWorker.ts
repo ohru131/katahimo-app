@@ -80,7 +80,8 @@ export async function processOutboxJob(
         inputText: content.inputText,
         internalText: content.internalText,
         customerText: content.customerText,
-        riskRating: record.riskRating,
+        // GAS側「日報」シートのRiskRating列に対応する項目名(ports/mirrorSender.ts参照)。
+        riskRating: record.stressLevel,
         esRating: record.esRating,
       });
       return;

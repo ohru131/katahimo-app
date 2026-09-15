@@ -1,11 +1,14 @@
 import {
   getCustomerDetail,
+  getCustomerReportProfile,
   listCustomers,
+  saveCustomerReportProfile,
   searchCustomersByFamilyName,
   updateCustomerBirthday,
   updateFamilyMemberAllergy,
 } from '@katahimo/core';
 import {
+  customerReportProfileInputSchema,
   customerUpdateRequestSchema,
   familyMemberAllergyUpdateRequestSchema,
   idSchema,
@@ -51,7 +54,53 @@ export function createCustomerRoutes(container: Container) {
     const detail = await getCustomerDetail(container, session.tenantId, customerId);
     if (!detail) return c.json({ code: 'not_found', message: '顧客が見つかりません' }, 404);
 
-    return c.json({ customer: detail });
+    // 日報AIの★設定(customer_report_profiles)。未設定の家庭はnullで、生成時は既定(★2相当)
+    // として扱う(doc/db/new-domains.md 第6章)。顧客詳細を開くたびに一緒に使うので、
+    // 画面が2回引かなくて済むよう同じ応答に載せる。
+    const reportProfile = await getCustomerReportProfile(container, session.tenantId, customerId);
+
+    return c.json({ customer: { ...detail, reportProfile } });
+  });
+
+  /**
+   * 家庭ごとの日報AI設定(教育関心度★とメモ)を保存する。
+   *
+   * 管理者に限らないのは、★が「この家庭にどこまで教育の言葉を使うか」という現場の見立てで、
+   * 訪問した担当者が保護者の反応から付けるものだから(設計書「管理者・担当者が付ける」)。
+   * アレルギーの登録(下のPATCH)と同じ理由で、請求額にも影響しない。
+   */
+  app.put('/:id/report-profile', async (c) => {
+    const session = await getAuthenticatedSession(c, container);
+    if (!session) return c.json({ code: 'unauthenticated', message: '未ログインです' }, 401);
+
+    // uuid列との比較にUUID以外の文字列を渡すとPostgreSQLが例外を投げて500になる(下のPATCHと同じ理由)。
+    const customerId = idSchema.safeParse(c.req.param('id'));
+    if (!customerId.success) {
+      return c.json({ code: 'validation_failed', message: 'IDの形式が不正です' }, 400);
+    }
+
+    const parsed = customerReportProfileInputSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      const message = parsed.error.issues
+        .map((issue) => `${issue.path.join('.') || '値'}: ${issue.message}`)
+        .join(' / ');
+      return c.json({ code: 'validation_failed', message }, 400);
+    }
+
+    // 存在しない顧客に★だけが残らないよう、先に顧客の実在を確かめる
+    // (customer_report_profiles は顧客への複合外部キーを持つので、実DBなら23503で落ちるが、
+    // 利用者には何が悪いのか分からないため404で返す)。
+    const detail = await getCustomerDetail(container, session.tenantId, customerId.data);
+    if (!detail) return c.json({ code: 'not_found', message: '顧客が見つかりません' }, 404);
+
+    const reportProfile = await saveCustomerReportProfile(
+      container,
+      session.tenantId,
+      customerId.data,
+      parsed.data,
+      session.staffId,
+    );
+    return c.json({ reportProfile });
   });
 
   /**

@@ -6,6 +6,7 @@ import {
   extractReceiptOcr,
   fetchCouponsForSelection,
   fetchCustomerDetail,
+  fetchReportAiConfig,
   fetchReportUiTexts,
   generateAccidentReportDraft,
   generateDailyReportDraft,
@@ -15,7 +16,7 @@ import {
   uploadReceipts,
 } from '../api';
 import { markCustomerRecentlyUsed } from '../recentCustomers';
-import { ASSESSMENT_DEFINITIONS, type AssessmentType } from './assessmentDefinitions';
+import { ASSESSMENT_DEFINITIONS, type AssessmentLevel, type AssessmentType } from './assessmentDefinitions';
 import { clearReportDraft, loadReportDraft, type ReportDraftOwner, saveReportDraft } from './reportDraft';
 import { useVoiceInput } from './useVoiceInput';
 
@@ -77,14 +78,21 @@ function StarRating({
   value,
   onChange,
   onShowHint,
+  levelLabel,
 }: {
   type: AssessmentType;
   value: number | null;
   onChange: (v: number | null) => void;
   onShowHint: () => void;
+  /**
+   * 星の右に出すラベルを差し替える(PSIはテナントが判定基準を設定していれば固定文言の代わりに
+   * それを使う。/api/reports/ai-config由来)。省略時はassessmentDefinitions.tsの固定文言。
+   */
+  levelLabel?: (score: number) => string;
 }) {
   const definition = ASSESSMENT_DEFINITIONS[type];
   const currentLevel = definition.levels.find((l) => l.score === value);
+  const displayLabel = value !== null ? (levelLabel ? levelLabel(value) : (currentLevel?.label ?? '')) : '';
 
   const handleClick = (n: number) => {
     if (n === 1 && value === 1) {
@@ -129,15 +137,28 @@ function StarRating({
             </button>
           ))}
         </div>
-        <span className="text-xs font-bold text-gray-600">{currentLevel?.label ?? ''}</span>
+        <span className="text-xs font-bold text-gray-600">{displayLabel}</span>
       </div>
     </div>
   );
 }
 
-/** GAS版showAssessmentHintと同じ、評価基準一覧のモーダル。 */
-function AssessmentHintModal({ type, onClose }: { type: AssessmentType; onClose: () => void }) {
+/**
+ * GAS版showAssessmentHintと同じ、評価基準一覧のモーダル。PSI(stress)はテナントが
+ * /api/reports/ai-configで判定基準を設定していれば`levels`にその内容(label/criteria)を渡す。
+ * 渡さない場合・行が無いレベルはassessmentDefinitions.tsの固定文言のまま表示する。
+ */
+function AssessmentHintModal({
+  type,
+  levels,
+  onClose,
+}: {
+  type: AssessmentType;
+  levels?: AssessmentLevel[];
+  onClose: () => void;
+}) {
   const definition = ASSESSMENT_DEFINITIONS[type];
+  const rows = levels ?? definition.levels;
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-[130] flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-md rounded-xl shadow-xl flex flex-col max-h-[85vh]">
@@ -161,7 +182,7 @@ function AssessmentHintModal({ type, onClose }: { type: AssessmentType; onClose:
               </tr>
             </thead>
             <tbody>
-              {definition.levels.map((l) => (
+              {rows.map((l) => (
                 <tr key={l.score} className="border-b">
                   <td className="p-2 text-lg font-bold text-center text-yellow-500">{l.score}</td>
                   <td className="p-2 text-sm font-bold">{l.label}</td>
@@ -215,22 +236,41 @@ function WritingHintModal({
   );
 }
 
-/** GAS版index.htmlのcalculateAge()と同じ「(N歳Mか月)」表示。dobは'YYYY-MM-DD'想定。 */
-function calculateAgeLabel(dob: string | null): string {
-  if (!dob) return '';
+/** 生年月日から基準日時点の年齢(歳・か月)を計算する。dobが無い/解析できない場合はnull。 */
+function calculateAgeParts(
+  dob: string | null,
+  referenceDate: Date,
+): { years: number; months: number } | null {
+  if (!dob) return null;
   const parts = dob.split(/[-/]/).map(Number);
-  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return '';
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null;
   const [y, m, d] = parts as [number, number, number];
   const birth = new Date(y, m - 1, d);
-  const today = new Date();
-  let years = today.getFullYear() - birth.getFullYear();
-  let months = today.getMonth() - birth.getMonth();
-  if (today.getDate() < birth.getDate()) months--;
+  let years = referenceDate.getFullYear() - birth.getFullYear();
+  let months = referenceDate.getMonth() - birth.getMonth();
+  if (referenceDate.getDate() < birth.getDate()) months--;
   if (months < 0) {
     years--;
     months += 12;
   }
-  return `(${years}歳${months}か月)`;
+  return { years, months };
+}
+
+/** GAS版index.htmlのcalculateAge()と同じ「(N歳Mか月)」表示(今日基準)。dobは'YYYY-MM-DD'想定。 */
+function calculateAgeLabel(dob: string | null): string {
+  const age = calculateAgeParts(dob, new Date());
+  return age ? `(${age.years}歳${age.months}か月)` : '';
+}
+
+/**
+ * 日報の対象児選択の隣に出す月齢表示。訪問日(visitDate)を基準に「○歳○か月」を計算する
+ * (生年月日の「日」に達していなければその月は数えない)。dobDateが無い/解析できない場合、
+ * または訪問日が生年月日より前の場合は空文字。
+ */
+function calculateAgeAtVisit(dobDate: string | null, visitDate: Date): string {
+  const age = calculateAgeParts(dobDate, visitDate);
+  if (!age || age.years < 0) return '';
+  return `${age.years}歳${age.months}か月`;
 }
 
 interface ReceiptImageState {
@@ -362,6 +402,26 @@ export function ReportModal({
     hiyariHint: DEFAULT_PROMPT_TEMPLATES.hiyari_hint,
   };
 
+  // 教育関心度★・PSIのテナント設定(顧客詳細の★設定と共通)。PSIの判定基準表示にのみ使う
+  // (行が無いレベルはASSESSMENT_DEFINITIONSの固定文言のままにする)。
+  const reportAiConfigQuery = useQuery({
+    queryKey: ['report-ai-config'],
+    queryFn: fetchReportAiConfig,
+    staleTime: 5 * 60_000,
+  });
+  const reportAiConfig = reportAiConfigQuery.data;
+  /** PSIの★の右に出すラベル。テナント設定に該当レベルの行があればそれを、無ければ固定文言。 */
+  const psiLevelLabel = (score: number): string => {
+    const tenantRow = reportAiConfig?.stressLevels.find((s) => s.level === score);
+    if (tenantRow) return tenantRow.label;
+    return ASSESSMENT_DEFINITIONS.stress.levels.find((l) => l.score === score)?.label ?? '';
+  };
+  /** PSIの評価基準一覧モーダルに出す行。レベルごとにテナント設定があればそちらを優先する。 */
+  const psiHintLevels: AssessmentLevel[] = ASSESSMENT_DEFINITIONS.stress.levels.map((l) => {
+    const tenantRow = reportAiConfig?.stressLevels.find((s) => s.level === l.score);
+    return tenantRow ? { score: l.score, label: tenantRow.label, desc: tenantRow.criteria } : l;
+  });
+
   const [mode, setMode] = useState<Mode>('daily');
   const [selectedFamilyId, setSelectedFamilyId] = useState('');
 
@@ -374,8 +434,9 @@ export function ReportModal({
   const [sendingVisitComplete, setSendingVisitComplete] = useState(false);
   const [visitCompleteMessage, setVisitCompleteMessage] = useState<string | null>(null);
 
-  /** GAS版changeDate()と同じ。未来日への変更は禁止する。 */
+  /** GAS版changeDate()と同じ。未来日への変更は禁止する。生成の材料が変わるので直近の生成は捨てる。 */
   const changeDate = (offsetDays: number) => {
+    clearDailyAiGeneration();
     setVisitDate((prev) => {
       const next = new Date(prev);
       next.setDate(next.getDate() + offsetDays);
@@ -427,14 +488,38 @@ export function ReportModal({
   };
 
   // ── 保育日報 ──
-  const [riskRating, setRiskRating] = useState<number | null>(null);
+  const [stressLevel, setStressLevel] = useState<number | null>(null);
   const [esRating, setEsRating] = useState<number | null>(null);
   const [hintType, setHintType] = useState<AssessmentType | null>(null);
   const [showWritingHint, setShowWritingHint] = useState(false);
   const [memoText, setMemoText] = useState('');
+  /** 対象児(familyMembers)。世帯全体・選ばない場合はnull。 */
+  const [targetFamilyMemberId, setTargetFamilyMemberId] = useState<string | null>(null);
   const [internalText, setInternalText] = useState('');
   const [customerText, setCustomerText] = useState('');
   const [warnings, setWarnings] = useState<string[]>([]);
+  /**
+   * 直近の生成結果。generationIdは保存時にaiGenerationIdとして送る(生成せず手書きした場合はnull)。
+   * escalationRequired/usedKeywordsは画面表示のみで控えには残さない(次に開いたときの生成結果は
+   * 現在の入力とずれている可能性があるため)。
+   */
+  const [aiGenerationId, setAiGenerationId] = useState<string | null>(null);
+  const [escalationRequired, setEscalationRequired] = useState(false);
+  const [usedKeywords, setUsedKeywords] = useState<string[]>([]);
+  /**
+   * 直近の生成結果を捨てる。生成の材料(メモ・訪問日・対象児・PSI)を1つでも変えたら呼ぶ。
+   *
+   * 【残したままにできない理由】
+   * aiGenerationIdは保存時にそのまま送られ、日報と生成の記録が結び付く。材料を変えた後も
+   * 古いIDが付いたままだと、記録を辿ったときに日報の内容と生成の前提(対象児の月齢・PSI)が
+   * 食い違う。対象児を変えた場合はサーバー側でも弾かれるが、そこに頼らず画面で外す。
+   * escalationRequired・usedKeywordsも同じ回の結果なので、一緒に消して表示を残さない。
+   */
+  const clearDailyAiGeneration = () => {
+    setAiGenerationId(null);
+    setEscalationRequired(false);
+    setUsedKeywords([]);
+  };
   const [generatingDaily, setGeneratingDaily] = useState(false);
   const [savingDaily, setSavingDaily] = useState(false);
   const [dailyMessage, setDailyMessage] = useState<string | null>(null);
@@ -489,7 +574,10 @@ export function ReportModal({
       setCopyMessage('コピーに失敗しました');
     }
   };
-  const dailyVoice = useVoiceInput((text) => setMemoText((prev) => (prev ? `${prev}\n${text}` : text)));
+  const dailyVoice = useVoiceInput((text) => {
+    clearDailyAiGeneration();
+    setMemoText((prev) => (prev ? `${prev}\n${text}` : text));
+  });
 
   // ── 事故報告/ヒヤリハット ──
   const [reportType, setReportType] = useState<'事故報告' | 'ヒヤリハット'>('事故報告');
@@ -536,15 +624,21 @@ export function ReportModal({
   };
 
   const handleGenerateDaily = async () => {
-    if (!memoText.trim()) return;
+    if (!memoText.trim() || !customerId) return;
     setGeneratingDaily(true);
     setDailyError(null);
+    // 前回の結果をここで捨てる。失敗して抜けても古いIDが残らないようにするため。
+    clearDailyAiGeneration();
     try {
-      const draft = await generateDailyReportDraft(
-        memoText,
-        `${startHour}:${startMinute}`,
-        `${endHour}:${endMinute}`,
-      );
+      const draft = await generateDailyReportDraft({
+        text: memoText,
+        start: `${startHour}:${startMinute}`,
+        end: `${endHour}:${endMinute}`,
+        reportDate: formatDateKey(visitDate),
+        customerId,
+        familyMemberId: targetFamilyMemberId,
+        stressLevel,
+      });
       // GAS版onReportGeneratedのisApiErrorチェックと同じ。'API Error'/'API Key Missing'は
       // 「不足項目」ではなく生成そのものの失敗なので、結果欄には反映せず分かりやすいエラーとして表示する
       // (GAS版はresult.internalの生エラー文言をそのまま画面に出しており不親切だった)。
@@ -557,6 +651,10 @@ export function ReportModal({
       setWarnings(draft.warnings);
       setInternalText(draft.internal);
       setCustomerText(draft.customer);
+      // 生成のたびに更新する。メモ・対象児・PSIを変えて再生成すればここも新しい行IDに置き換わる。
+      setAiGenerationId(draft.generationId);
+      setEscalationRequired(draft.escalationRequired);
+      setUsedKeywords(draft.usedKeywords);
     } catch (e) {
       setDailyError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -574,11 +672,13 @@ export function ReportModal({
       inputText: memoText,
       internalText,
       customerText,
-      riskRating,
+      stressLevel,
       esRating,
       // 選んだ順ではなくソートしてから含める。トグルの順序が違うだけの同じ組み合わせを
       // 「内容が変わった」と誤判定して、下の重複保存防止(snapshot比較)をすり抜けさせないため。
       couponIds: [...selectedCouponIds].sort(),
+      targetFamilyMemberId,
+      aiGenerationId,
     };
     const snapshot = JSON.stringify(payload);
     // GAS版savedReportsState/rowIndexと同じ考え方: 既に保存済みで内容が変わっていなければ
@@ -719,8 +819,10 @@ export function ReportModal({
       accidentMemo,
       internalText,
       customerText,
-      riskRating,
+      stressLevel,
       esRating,
+      targetFamilyMemberId,
+      aiGenerationId,
       accident: {
         reportType,
         targetName: accTargetName,
@@ -751,8 +853,10 @@ export function ReportModal({
     accidentMemo,
     internalText,
     customerText,
-    riskRating,
+    stressLevel,
     esRating,
+    targetFamilyMemberId,
+    aiGenerationId,
     reportType,
     accTargetName,
     accTargetDob,
@@ -790,8 +894,10 @@ export function ReportModal({
     setAccidentMemo(draft.accidentMemo);
     setInternalText(draft.internalText);
     setCustomerText(draft.customerText);
-    setRiskRating(draft.riskRating);
+    setStressLevel(draft.stressLevel);
     setEsRating(draft.esRating);
+    setTargetFamilyMemberId(draft.targetFamilyMemberId);
+    setAiGenerationId(draft.aiGenerationId);
     setReportType(draft.accident.reportType);
     setAccTargetName(draft.accident.targetName);
     setAccTargetDob(draft.accident.targetDob);
@@ -922,6 +1028,13 @@ export function ReportModal({
     }
   };
 
+  // 日報の対象児選択の隣に出す月齢表示(訪問日基準)。未選択・生年月日不明なら空文字。
+  const targetFamilyMember =
+    customerQuery.data?.familyMembers.find((f) => f.id === targetFamilyMemberId) ?? null;
+  const targetChildAgeLabel = targetFamilyMember
+    ? calculateAgeAtVisit(targetFamilyMember.dobDate, visitDate)
+    : '';
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center justify-center">
       <div className="bg-white w-full max-w-md h-[92vh] sm:h-auto sm:max-h-[90vh] sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col">
@@ -999,6 +1112,38 @@ export function ReportModal({
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+
+              {/* 日報タブの対象児選択。事故報告の対象者セレクトと見た目を揃える。
+                  未選択(世帯全体・選ばない)を許し、選んだ子の生年月日があれば訪問日基準の
+                  月齢を隣に表示する(AI生成の候補絞り込み・保存に使うtargetFamilyMemberId)。 */}
+              {mode === 'daily' && customerQuery.data && customerQuery.data.familyMembers.length > 0 && (
+                <div>
+                  <label htmlFor="dailyFamilySelector" className="text-xs text-gray-500 block mb-1">
+                    対象児
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      id="dailyFamilySelector"
+                      value={targetFamilyMemberId ?? ''}
+                      onChange={(e) => {
+                        clearDailyAiGeneration();
+                        setTargetFamilyMemberId(e.target.value || null);
+                      }}
+                      className="flex-1 border rounded-lg px-3 py-2 text-sm bg-gray-50"
+                    >
+                      <option value="">世帯全体・選ばない</option>
+                      {customerQuery.data.familyMembers.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.name}
+                        </option>
+                      ))}
+                    </select>
+                    {targetChildAgeLabel && (
+                      <span className="text-xs text-gray-500 whitespace-nowrap">{targetChildAgeLabel}</span>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1373,10 +1518,14 @@ export function ReportModal({
             <div className="space-y-4">
               <div className="space-y-1">
                 <StarRating
-                  type="risk"
-                  value={riskRating}
-                  onChange={setRiskRating}
-                  onShowHint={() => setHintType('risk')}
+                  type="stress"
+                  value={stressLevel}
+                  onChange={(next) => {
+                    clearDailyAiGeneration();
+                    setStressLevel(next);
+                  }}
+                  onShowHint={() => setHintType('stress')}
+                  levelLabel={psiLevelLabel}
                 />
                 <StarRating
                   type="es"
@@ -1414,7 +1563,10 @@ export function ReportModal({
                 <textarea
                   id="memoText"
                   value={memoText}
-                  onChange={(e) => setMemoText(e.target.value)}
+                  onChange={(e) => {
+                    clearDailyAiGeneration();
+                    setMemoText(e.target.value);
+                  }}
                   rows={4}
                   placeholder={reportUiTexts.dailyMemoPlaceholder}
                   className="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50"
@@ -1430,11 +1582,27 @@ export function ReportModal({
               >
                 {generatingDaily ? 'AI生成中…' : '✨ AIでレポート生成'}
               </button>
+              {/* PSI(判断4): 未評価は安全側として教育キーワードを使わない。生成前に案内しておく。 */}
+              {stressLevel === null && (
+                <p className="text-[11px] text-gray-400 -mt-2">PSI未評価のため教育キーワードは使いません</p>
+              )}
+
+              {/* escalationRequired: 生成結果が「管理者連絡を要する」評価だった場合の目立つ注意
+                  (warningsとは別枠。不足項目の指摘と混ざると見落とされるため)。 */}
+              {escalationRequired && (
+                <p className="text-sm font-bold text-red-700 bg-red-50 border border-red-300 rounded-lg p-2">
+                  ⚠️ 保護者・お子様の安全に懸念がある評価です。管理者へ連絡してください
+                </p>
+              )}
 
               {warnings.length > 0 && (
                 <p className="text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded-lg p-2">
                   不足している可能性がある項目: {warnings.join('、')}
                 </p>
+              )}
+
+              {usedKeywords.length > 0 && (
+                <p className="text-[11px] text-gray-400">使用した教育キーワード: {usedKeywords.join(', ')}</p>
               )}
 
               <div>
@@ -1641,7 +1809,13 @@ export function ReportModal({
         </div>
       </div>
 
-      {hintType && <AssessmentHintModal type={hintType} onClose={() => setHintType(null)} />}
+      {hintType && (
+        <AssessmentHintModal
+          type={hintType}
+          levels={hintType === 'stress' ? psiHintLevels : undefined}
+          onClose={() => setHintType(null)}
+        />
+      )}
       {showWritingHint && (
         <WritingHintModal
           reportType={reportType}
