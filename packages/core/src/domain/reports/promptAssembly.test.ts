@@ -282,6 +282,19 @@ describe('renderPromptTemplate', () => {
     });
     expect(out).toBe('T / T / {"warnings": []} / C');
   });
+
+  it('差し込んだ値の中の `{timeInfo}` はそのまま残る(二重に置き換えない)', () => {
+    // スタッフが「{timeInfo}」という文字列をメモにそのまま書いた場合。差し込んだ値は
+    // もう本文の一部なので、後続の差し込みの対象にしてはいけない。
+    const out = renderPromptTemplate('{anonymizedText}\n{timeInfo}', {
+      anonymizedText: 'メモに {timeInfo} と書かれていた',
+      timeInfo: '10:00〜13:00',
+      childContext: '',
+      keywordGuide: '',
+      toneGuide: '',
+    });
+    expect(out).toBe('メモに {timeInfo} と書かれていた\n10:00〜13:00');
+  });
 });
 
 describe('assembleDailyReportPrompt', () => {

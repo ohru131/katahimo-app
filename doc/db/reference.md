@@ -25,10 +25,10 @@ drizzleがDDLを起こすときと同じ解釈を通しているので、`packag
 | 項目 | 数 |
 |---|---|
 | テーブル | 44 |
-| 列 | 571 |
+| 列 | 572 |
 | 外部キー | 106 |
 | インデックス | 57 |
-| CHECK制約 | 137 |
+| CHECK制約 | 138 |
 | RLSポリシー | 43 |
 
 ---
@@ -139,8 +139,8 @@ erDiagram
     staff ||--o{ daily_reports : "tenant_id, staff_id"
     customers ||--o{ daily_reports : "tenant_id, customer_id"
     reservations |o--o| daily_reports : "tenant_id, reservation_id"
-    family_members |o--o{ daily_reports : "tenant_id, target_family_member_id"
-    report_ai_generations |o--o{ daily_reports : "tenant_id, ai_generation_id"
+    family_members |o--o{ daily_reports : "tenant_id, customer_id, target_family_member_id"
+    report_ai_generations |o--o{ daily_reports : "tenant_id, customer_id, ai_generation_id"
     tenants ||--o{ accident_reports : "tenant_id"
     staff ||--o{ accident_reports : "tenant_id, staff_id"
     customers ||--o{ accident_reports : "tenant_id, customer_id"
@@ -460,7 +460,7 @@ erDiagram
     tenants ||--o{ report_ai_generations : "tenant_id"
     staff ||--o{ report_ai_generations : "tenant_id, staff_id"
     customers ||--o{ report_ai_generations : "tenant_id, customer_id"
-    family_members |o--o{ report_ai_generations : "tenant_id, target_family_member_id"
+    family_members |o--o{ report_ai_generations : "tenant_id, customer_id, target_family_member_id"
     prompt_templates |o--o{ report_ai_generations : "tenant_id, prompt_template_id"
     tenants ||--o{ report_ai_generation_keywords : "tenant_id"
     report_ai_generations ||--o{ report_ai_generation_keywords : "tenant_id, generation_id"
@@ -649,7 +649,7 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 
 **一意制約**
 
-- `family_members_tenant_id_uk` `(tenant_id, id)`
+- `family_members_tenant_customer_id_uk` `(tenant_id, customer_id, id)`
 
 **外部キー**
 
@@ -701,8 +701,8 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 - `(tenant_id, staff_id)` → `staff(tenant_id, id)`
 - `(tenant_id, customer_id)` → `customers(tenant_id, id)`
 - `(tenant_id, reservation_id)` → `reservations(tenant_id, id)`
-- `(tenant_id, target_family_member_id)` → `family_members(tenant_id, id)`
-- `(tenant_id, ai_generation_id)` → `report_ai_generations(tenant_id, id)`
+- `(tenant_id, customer_id, target_family_member_id)` → `family_members(tenant_id, customer_id, id)`
+- `(tenant_id, customer_id, ai_generation_id)` → `report_ai_generations(tenant_id, customer_id, id)`
 
 **CHECK制約**
 
@@ -2135,6 +2135,7 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 | `customer_id` | `uuid` | NOT NULL | — |
 | `target_family_member_id` | `uuid` | NULL可 | — |
 | `prompt_template_id` | `uuid` | NULL可 | — |
+| `prompt_text` | `text` | NOT NULL | — |
 | `model` | `text` | NOT NULL | — |
 | `child_age_months` | `integer` | NULL可 | — |
 | `education_level` | `integer` | NULL可 | — |
@@ -2150,19 +2151,21 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 **一意制約**
 
 - `report_ai_generations_tenant_id_uk` `(tenant_id, id)`
+- `report_ai_generations_tenant_customer_id_uk` `(tenant_id, customer_id, id)`
 
 **外部キー**
 
 - `(tenant_id)` → `tenants(id)`
 - `(tenant_id, staff_id)` → `staff(tenant_id, id)`
 - `(tenant_id, customer_id)` → `customers(tenant_id, id)`
-- `(tenant_id, target_family_member_id)` → `family_members(tenant_id, id)`
+- `(tenant_id, customer_id, target_family_member_id)` → `family_members(tenant_id, customer_id, id)`
 - `(tenant_id, prompt_template_id)` → `prompt_templates(tenant_id, id)`
 
 **CHECK制約**
 
 - `report_ai_generations_levels_check` — `("report_ai_generations"."education_level" IS NULL OR "report_ai_generations"."education_level" BETWEEN 1 AND 5) AND ("report_ai_generations"."effective_education_level" IS NULL OR "report_ai_generations"."effective_education_level" BETWEEN 1 AND 5) AND ("report_ai_generations"."stress_level" IS NULL OR "report_ai_generations"."stress_level" BETWEEN 1 AND 5)`
 - `report_ai_generations_child_age_check` — `"report_ai_generations"."child_age_months" IS NULL OR "report_ai_generations"."child_age_months" BETWEEN 0 AND 144`
+- `report_ai_generations_child_target_check` — `"report_ai_generations"."target_family_member_id" IS NOT NULL OR "report_ai_generations"."child_age_months" IS NULL`
 - `report_ai_generations_outcome_check` — `("report_ai_generations"."output_json" IS NULL) <> ("report_ai_generations"."error_message" IS NULL)`
 
 **インデックス**

@@ -22,6 +22,7 @@ const HISTORY_LIMIT = 5;
 export const ACCIDENT_REPORT_TYPES = ['事故報告', 'ヒヤリハット'] as const;
 export type AccidentReportType = (typeof ACCIDENT_REPORT_TYPES)[number];
 
+/** 外から来た値が区分値(ACCIDENT_REPORT_TYPES)のどちらかかを判定する。 */
 export function isAccidentReportType(value: unknown): value is AccidentReportType {
   return (ACCIDENT_REPORT_TYPES as readonly unknown[]).includes(value);
 }
@@ -34,6 +35,7 @@ export function isValidRating(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5;
 }
 
+/** 日報・事故報告・AI生成・領収書OCRのルートをまとめる。 */
 export function createReportRoutes(container: Container) {
   const app = new Hono();
 

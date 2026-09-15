@@ -14,6 +14,7 @@ const FAKE_LATENCY_MS = 900;
 const DEMO_NOTICE =
   '【デモ】このテキストは定型応答です。管理者設定でGemini APIキーを登録すると実際に生成されます。';
 
+/** 指定ミリ秒だけ待つ。生成しているように見せるためだけの遅延。 */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -25,6 +26,7 @@ function summarize(text: string): string {
   return cleaned.length > 120 ? `${cleaned.slice(0, 120)}…` : cleaned;
 }
 
+/** 開始・終了時刻を「10:00〜13:00」の形にする。片方でも欠けていれば記録なしとする。 */
 function timeRange(start?: string, end?: string): string {
   if (start && end) return `${start}〜${end}`;
   return '訪問時間の記録なし';
@@ -41,6 +43,7 @@ function timeRange(start?: string, end?: string): string {
  * 文面をそのまま出しても定型応答としては読めないため。
  */
 export class CannedReportAiPort implements ReportAiPort {
+  /** 入力メモを素材にした定型の日報下書きを返す(断り書き付き)。 */
   async generateDailyReport(input: GenerateDailyReportInput): Promise<DailyReportDraft> {
     await delay(FAKE_LATENCY_MS);
     const summary = summarize(input.text);
@@ -77,6 +80,7 @@ export class CannedReportAiPort implements ReportAiPort {
     };
   }
 
+  /** 領収書OCRは定型の読み取り結果を返す(画像は見ない)。 */
   async extractReceiptAmount(): Promise<ReceiptOcrResult> {
     await delay(FAKE_LATENCY_MS);
     // 読み取れなかった扱いにして手入力へ誘導する。もっともらしい金額を捏造すると、

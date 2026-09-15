@@ -127,15 +127,18 @@ export const dailyReports = pgTable(
       foreignColumns: [reservations.tenantId, reservations.id],
     }),
     // 対象児・AI生成記録も null 許容の複合FK(MATCH SIMPLE で null の行は対象外)。
+    // どちらも顧客IDまで組に含める。理由: テナント内で別の家庭の子・別の家庭の生成を
+    // 指せないようにする(下の daily_reports_tenant_id_customer_uk と同じ考え方で、
+    // 日報はすでに顧客IDを持っているので、食い違う組み合わせを残さない)。
     foreignKey({
       name: 'daily_reports_tenant_target_family_member_fk',
-      columns: [t.tenantId, t.targetFamilyMemberId],
-      foreignColumns: [familyMembers.tenantId, familyMembers.id],
+      columns: [t.tenantId, t.customerId, t.targetFamilyMemberId],
+      foreignColumns: [familyMembers.tenantId, familyMembers.customerId, familyMembers.id],
     }),
     foreignKey({
       name: 'daily_reports_tenant_ai_generation_fk',
-      columns: [t.tenantId, t.aiGenerationId],
-      foreignColumns: [reportAiGenerations.tenantId, reportAiGenerations.id],
+      columns: [t.tenantId, t.customerId, t.aiGenerationId],
+      foreignColumns: [reportAiGenerations.tenantId, reportAiGenerations.customerId, reportAiGenerations.id],
     }),
     // 1つの予約に日報が2件付くのを止める(二重登録で実施記録が重複すると、
     // サービス提供分の請求も二重になる)。nullの行同士は重複とみなさない。

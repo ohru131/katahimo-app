@@ -45,6 +45,7 @@ function parsePromptTemplateKey(value: string | undefined): PromptTemplateKey | 
     : null;
 }
 
+/** 管理者設定(Gemini APIキー・ミラー送信先・プロンプト文面等)のルートをまとめる。 */
 export function createSettingsRoutes(container: Container) {
   const app = new Hono();
 

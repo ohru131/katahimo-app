@@ -102,10 +102,13 @@ export const familyMembers = pgTable(
       sql`${t.allergyStatus} <> 'present' OR NULLIF(btrim(${t.allergyNote}), '') IS NOT NULL`,
     ),
     // daily_reports.target_family_member_id / report_ai_generations.target_family_member_id からの
-    // 複合FK(tenant_id, family_member_id)の参照先。customers.ts の customers_tenant_id_uk と同じ理由
-    // (RLSはFK制約をバイパスするため、単一列PKだけでは他テナントの構成員IDを誤って参照しても
-    // DBが検知できない)。
-    unique('family_members_tenant_id_uk').on(t.tenantId, t.id),
+    // 複合FK(tenant_id, customer_id, family_member_id)の参照先。customers.ts の
+    // customers_tenant_id_uk と同じ理由(RLSはFK制約をバイパスするため、単一列PKだけでは
+    // 他テナントの構成員IDを誤って参照してもDBが検知できない)に加えて、顧客IDまで組に含める。
+    // daily_reports.tenant_id_customer_uk と同じ考え方で、参照する側(日報・AI生成の記録)は
+    // すでに顧客IDを持っているため、対象児だけ別の家庭の子を指せる状態を残さない。
+    // PostgreSQLは複合FKの参照先に、参照する列の組と完全に一致するUNIQUE制約を要求する。
+    unique('family_members_tenant_customer_id_uk').on(t.tenantId, t.customerId, t.id),
     // listByCustomer(WHERE tenant_id=? AND customer_id=?)を索引だけで返すため(doc/db/guidelines.md §3)。
     index('family_members_tenant_customer_idx').on(t.tenantId, t.customerId),
   ],

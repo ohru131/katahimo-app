@@ -415,18 +415,27 @@ drizzle の `sql` テンプレートに JavaScript の値を `${}` で直接埋�
   更新される「顧客側から来た情報」で、★は「こちら側の判断」。取込の全件上書きで消えては
   いけない。訪問割当の `customer_traits` にも載せない。あちらは「誰を組ませるか」の材料で、
   こちらは「どう書くか」の設定。目的が違う値を混ぜると、相性計算がうっかり★を読む余地が生まれる。
-- **生成1回を1行で残す(`report_ai_generations`)。** モデル名・使った版・月齢・★(引き下げ前後)・
-  ストレス度・入力メモ・AIの生の出力(または失敗理由)。`updated_at` を持たない事実の記録で、
-  人が直した最終版は `daily_reports` 側。`daily_reports.ai_generation_id` がこの表を指す
-  (逆ではない)。生成は保存の前に何度でも行われ、保存に使われた1回だけが日報から参照される。
+- **生成1回を1行で残す(`report_ai_generations`)。** モデル名・使った版・実際に送ったプロンプト全文・
+  月齢・★(引き下げ前後)・ストレス度・入力メモ・AIの生の出力(または失敗理由)。`updated_at` を
+  持たない事実の記録で、人が直した最終版は `daily_reports` 側。`daily_reports.ai_generation_id` が
+  この表を指す(逆ではない)。生成は保存の前に何度でも行われ、保存に使われた1回だけが日報から
+  参照される。
+- **使った文面は版IDと全文の両方で残す(`report_ai_generations`)。** 使った版は `prompt_template_id`
+  (既定文面なら NULL)、実際にモデルへ送った文字列は `prompt_text`。版IDだけでは復元できない。
+  既定文面はコードのリリースで変わるうえ(そのときの文面はDBのどこにも無い)、3軸の差し込み
+  (`{childContext}` `{keywordGuide}` `{toneGuide}`)の結果も版には残らないため。
 - **提示した候補と使われた語を別表で残す(`report_ai_generation_keywords`)。** `output_json` を
   JSON検索して数える形にしないのは、語の廃止・改名(`report_keywords.active`)と突き合わせるのに
   外部キーが要るため。「提示したのに使われない語」「提示していないのに使われた語(創作)」を
   SQLで数え、表と文面の調整に使う。
 - **`daily_reports` に2列を足した。** 主に描いている子 `target_family_member_id`(兄弟のいる世帯で
   「誰の日報か」を区別し、月齢の材料にする)と `ai_generation_id`。どちらも null 可で、
-  GAS版から移す既存行はそのまま通る。参照先として `family_members` に `(tenant_id, id)` の
-  UNIQUE を足した(第1.2節の複合FKの規約)。
+  GAS版から移す既存行はそのまま通る。複合FKは顧客IDまで含めた
+  `(tenant_id, customer_id, xxx_id)` で張る(第1.2節の規約に、`daily_reports` が既に顧客IDを
+  持っていることを足した形)。テナント内で別の家庭の子・別の家庭の生成を指せないようにするため。
+  参照先として `family_members` に `(tenant_id, customer_id, id)`、`report_ai_generations` に
+  `(tenant_id, customer_id, id)` の UNIQUE を置いた。`report_ai_generations.target_family_member_id`
+  も同じ形で `family_members` を指す。
 
 区分値と値域は `packages/shared/src/contracts/reportAi.ts`、組み立てロジックは
 `packages/core/src/domain/reports/promptAssembly.ts`(純関数。テストで3軸の挙動を固定している)。

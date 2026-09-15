@@ -137,10 +137,51 @@ export interface GeminiAiPortOptions {
   ocrModel?: string;
 }
 
+/** 領収書画像を Gemini の inline_data に載せる形(MIMEタイプとbase64本体)に分けたもの。 */
+export interface ParsedImageData {
+  mimeType: string;
+  data: string;
+}
+
+/**
+ * 先頭が `data:image/<subtype>` のデータURLを拾う。`;base64` 等のパラメータは
+ * あってもなくてもよく、本体はカンマの後ろ全部。
+ */
+const IMAGE_DATA_URL_RE = /^data:(image\/[a-z0-9.+-]+)[^,]*,/i;
+
+/** MIMEタイプを読み取れなかったときに使う値。GAS版が固定で送っていたもの。 */
+const FALLBACK_IMAGE_MIME = 'image/jpeg';
+
+/**
+ * 領収書画像のデータURL(`data:image/png;base64,....`)を、宣言されたMIMEタイプと
+ * base64本体に分ける。
+ *
+ * 【MIMEタイプを見る理由】GAS版は常に `image/jpeg` として送っていたため、実際にはPNGやHEICの
+ * 画像でも JPEG と申告していた。モデル側が申告を信じて復号に失敗すると、読み取り結果が
+ * 空になる(画面上は「読み取れませんでした」としか見えない)。
+ *
+ * 【読み取れないときにGAS版と同じに倒す理由】`data:` で始まらない値・画像でないMIMEタイプは、
+ * 呼び出し側が生のbase64やHTMLの input から取った値をそのまま渡してきた場合。ここで
+ * エラーにすると、GAS版で通っていた入力が通らなくなる。カンマがあればその後ろ、無ければ
+ * 全体を本体とみなし、MIMEタイプは `image/jpeg` として送る(GAS版と同じ挙動)。
+ */
+export function parseImageDataUrl(base64Image: string): ParsedImageData {
+  const match = IMAGE_DATA_URL_RE.exec(base64Image);
+  if (match?.[0] && match[1]) {
+    return { mimeType: match[1].toLowerCase(), data: base64Image.slice(match[0].length) };
+  }
+  const comma = base64Image.indexOf(',');
+  return {
+    mimeType: FALLBACK_IMAGE_MIME,
+    data: comma === -1 ? base64Image : base64Image.slice(comma + 1),
+  };
+}
+
 /** GAS版GeminiReport.jsのAPI呼び出しロジックを実装するReportAiPort。GEMINI_API_KEYが設定されている場合に使う。 */
 export class GeminiAiPort implements ReportAiPort {
   constructor(private readonly options: GeminiAiPortOptions) {}
 
+  /** 保育日報の下書きを生成する。GAS版 GeminiReport.js generateReport に対応。 */
   async generateDailyReport(input: GenerateDailyReportInput): Promise<DailyReportDraft> {
     const schema = {
       type: 'OBJECT',
@@ -166,6 +207,7 @@ export class GeminiAiPort implements ReportAiPort {
     return result.value as DailyReportDraft;
   }
 
+  /** 事故報告/ヒヤリハットの下書きを生成する。GAS版 GeminiReport.js generateAccidentReport に対応。 */
   async generateAccidentReport(
     input: GenerateAccidentReportInput,
   ): Promise<AccidentReportDraft | AccidentReportDraftError> {
@@ -204,11 +246,12 @@ export class GeminiAiPort implements ReportAiPort {
     return result.value as AccidentReportDraft;
   }
 
+  /** 領収書画像から金額・店名・日時を読み取る。GAS版 GeminiReport.js extractAmountFromImage に対応。 */
   async extractReceiptAmount(input: ExtractReceiptAmountInput): Promise<ReceiptOcrResult> {
-    const rawBase64 = input.base64Image.split(',')[1] ?? '';
+    const image = parseImageDataUrl(input.base64Image);
     const result = await callGemini(
       this.options.apiKey,
-      [{ text: input.prompt }, { inline_data: { mime_type: 'image/jpeg', data: rawBase64 } }],
+      [{ text: input.prompt }, { inline_data: { mime_type: image.mimeType, data: image.data } }],
       null,
       this.options.ocrModel || DEFAULT_MODEL_OCR,
     );
@@ -220,14 +263,17 @@ export class GeminiAiPort implements ReportAiPort {
 
 /** GEMINI_API_KEY未設定時のフォールバック。GAS版のapiKey未設定時の挙動と同じ値を返す。 */
 export class NoopReportAiPort implements ReportAiPort {
+  /** APIキーが無いので生成せず、GAS版と同じ「API Key Missing」を返す。 */
   async generateDailyReport(): Promise<DailyReportDraft> {
     return { warnings: ['API Key Missing'], internal: 'Error: API Key not set', customer: '' };
   }
 
+  /** 同上。事故報告も生成せずエラーだけを返す。 */
   async generateAccidentReport(): Promise<AccidentReportDraftError> {
     return { error: 'API Key Missing' };
   }
 
+  /** 同上。OCRも行わず空の読み取り結果とエラーを返す。 */
   async extractReceiptAmount(): Promise<ReceiptOcrResult> {
     return { amount: '', storeName: '', receiptDate: '', error: 'API Key Missing' };
   }

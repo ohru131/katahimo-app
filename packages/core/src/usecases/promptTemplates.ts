@@ -60,10 +60,12 @@ const PLACEHOLDERS_BY_KEY: Readonly<Record<PromptTemplateKey, readonly string[]>
 const REQUIRED_PLACEHOLDER = '{anonymizedText}';
 const KEYS_REQUIRING_INPUT_TEXT: readonly PromptTemplateKey[] = ['daily_report', 'accident_report'];
 
+/** 外から来た文字列が区分値(PROMPT_TEMPLATE_KEYS)のキーかを判定する。 */
 function isPromptTemplateKey(value: unknown): value is PromptTemplateKey {
   return (PROMPT_TEMPLATE_KEYS as readonly unknown[]).includes(value);
 }
 
+/** 有効版の行(無ければ null)を、生成で使う形に整える。行が無いキーは既定文面で埋める。 */
 function toResolved(key: PromptTemplateKey, row: PromptTemplateRecord | null): ResolvedPromptTemplate {
   if (!row) {
     return { key, body: DEFAULT_PROMPT_TEMPLATES[key], version: null, templateId: null, isDefault: true };
@@ -112,6 +114,7 @@ export interface PromptTemplateAdminView {
   placeholders: string[];
 }
 
+/** 有効版の行(無ければ null)を、管理画面の一覧1行に整える。既定文面と使える差し込みも添える。 */
 function toAdminView(key: PromptTemplateKey, row: PromptTemplateRecord | null): PromptTemplateAdminView {
   return {
     key,
@@ -182,19 +185,17 @@ export async function savePromptTemplate(
     };
   }
 
-  const current = await deps.promptTemplates.findLatest(tenantId, key);
-  const currentBody = current ? current.body : DEFAULT_PROMPT_TEMPLATES[key];
-  if (input.body === currentBody) {
+  // 「変わっていなければ積まない」の判定はリポジトリのトランザクション内で行う。ここで
+  // findLatest してから append すると、読みと書きの間に別の管理者が保存した版を見落とす。
+  const result = await deps.promptTemplates.appendIfChanged(
+    tenantId,
+    { key, body: input.body, note: input.note ?? '', createdByStaffId: staffId },
+    DEFAULT_PROMPT_TEMPLATES[key],
+  );
+  if (!result.appended) {
     return { ok: false, message: '文面が変わっていません。' };
   }
-
-  const saved = await deps.promptTemplates.append(tenantId, {
-    key,
-    body: input.body,
-    note: input.note ?? '',
-    createdByStaffId: staffId,
-  });
-  return { ok: true, message: '文面を保存しました。', template: toAdminView(key, saved) };
+  return { ok: true, message: '文面を保存しました。', template: toAdminView(key, result.record) };
 }
 
 /**
@@ -220,18 +221,17 @@ export async function resetPromptTemplateToDefault(
     };
   }
 
-  const current = await deps.promptTemplates.findLatest(tenantId, key);
-  if ((current ? current.body : defaultBody) === defaultBody) {
+  // savePromptTemplate と同じ理由で、「すでに既定の文面か」の判定も書き込みと同じ
+  // トランザクションに入れる(既定文面を積む操作なので、フォールバックも既定文面)。
+  const result = await deps.promptTemplates.appendIfChanged(
+    tenantId,
+    { key, body: defaultBody, note: '既定の文面に戻す', createdByStaffId: staffId },
+    defaultBody,
+  );
+  if (!result.appended) {
     return { ok: false, message: 'すでに既定の文面です。' };
   }
-
-  const saved = await deps.promptTemplates.append(tenantId, {
-    key,
-    body: defaultBody,
-    note: '既定の文面に戻す',
-    createdByStaffId: staffId,
-  });
-  return { ok: true, message: '既定の文面に戻しました。', template: toAdminView(key, saved) };
+  return { ok: true, message: '既定の文面に戻しました。', template: toAdminView(key, result.record) };
 }
 
 /** 版の履歴を新しい順に返す。管理画面で「前の版に何が書いてあったか」を読むため。 */

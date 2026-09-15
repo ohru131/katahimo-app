@@ -1,5 +1,5 @@
 {
-  "id": "c3b42fbf-eb12-4319-b301-f72c13be6018",
+  "id": "ffd0f263-d5f2-4f7c-8dec-82c6f73978d5",
   "prevId": "115f1465-9186-4b34-ac0e-e340ab370c9a",
   "version": "7",
   "dialect": "postgresql",
@@ -3316,10 +3316,12 @@
           "tableTo": "family_members",
           "columnsFrom": [
             "tenant_id",
+            "customer_id",
             "target_family_member_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "customer_id",
             "id"
           ],
           "onDelete": "no action",
@@ -3331,10 +3333,12 @@
           "tableTo": "report_ai_generations",
           "columnsFrom": [
             "tenant_id",
+            "customer_id",
             "ai_generation_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "customer_id",
             "id"
           ],
           "onDelete": "no action",
@@ -3520,11 +3524,12 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "family_members_tenant_id_uk": {
-          "name": "family_members_tenant_id_uk",
+        "family_members_tenant_customer_id_uk": {
+          "name": "family_members_tenant_customer_id_uk",
           "nullsNotDistinct": false,
           "columns": [
             "tenant_id",
+            "customer_id",
             "id"
           ]
         }
@@ -5924,6 +5929,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "prompt_text": {
+          "name": "prompt_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "model": {
           "name": "model",
           "type": "text",
@@ -6073,10 +6084,12 @@
           "tableTo": "family_members",
           "columnsFrom": [
             "tenant_id",
+            "customer_id",
             "target_family_member_id"
           ],
           "columnsTo": [
             "tenant_id",
+            "customer_id",
             "id"
           ],
           "onDelete": "no action",
@@ -6107,6 +6120,15 @@
             "tenant_id",
             "id"
           ]
+        },
+        "report_ai_generations_tenant_customer_id_uk": {
+          "name": "report_ai_generations_tenant_customer_id_uk",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "customer_id",
+            "id"
+          ]
         }
       },
       "policies": {
@@ -6129,6 +6151,10 @@
         "report_ai_generations_child_age_check": {
           "name": "report_ai_generations_child_age_check",
           "value": "\"report_ai_generations\".\"child_age_months\" IS NULL OR \"report_ai_generations\".\"child_age_months\" BETWEEN 0 AND 144"
+        },
+        "report_ai_generations_child_target_check": {
+          "name": "report_ai_generations_child_target_check",
+          "value": "\"report_ai_generations\".\"target_family_member_id\" IS NOT NULL OR \"report_ai_generations\".\"child_age_months\" IS NULL"
         },
         "report_ai_generations_outcome_check": {
           "name": "report_ai_generations_outcome_check",

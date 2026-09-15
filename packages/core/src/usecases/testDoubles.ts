@@ -23,6 +23,7 @@ import type {
   AccidentReportRecord,
   AccidentReportRepositoryPort,
   ActiveStaffRecord,
+  AppendPromptTemplateResult,
   AppSettingsPatchInput,
   AppSettingsRecord,
   AppSettingsRepositoryPort,
@@ -626,17 +627,20 @@ export class FakeAppSettingsRepository implements AppSettingsRepositoryPort {
 }
 
 /**
- * プロンプト文面のインメモリ版。追記のみ・版番号は(tenantId, key)ごとに1から採番、という
- * DB側の決まり(prompt_templates)だけを再現する。
+ * プロンプト文面のインメモリ版。追記のみ・版番号は(tenantId, key)ごとに1から採番・
+ * 有効な文面と同じなら積まない、というDB側とリポジトリ実装の決まり(prompt_templates)
+ * だけを再現する。
  */
 export class FakePromptTemplateRepository implements PromptTemplateRepositoryPort {
   private readonly rows: PromptTemplateRecord[] = [];
   private seq = 0;
 
+  /** (テナント, キー)の版を全部取り出す。並べ替えは呼び出し側。 */
   private forKey(tenantId: string, key: PromptTemplateKey): PromptTemplateRecord[] {
     return this.rows.filter((row) => row.tenantId === tenantId && row.key === key);
   }
 
+  /** キーごとの最新版だけ。テナントが1版も積んでいないキーは含めない。 */
   async findLatestAll(tenantId: string): Promise<PromptTemplateRecord[]> {
     const latest = new Map<PromptTemplateKey, PromptTemplateRecord>();
     for (const row of this.rows) {
@@ -647,32 +651,42 @@ export class FakePromptTemplateRepository implements PromptTemplateRepositoryPor
     return [...latest.values()].map((row) => ({ ...row }));
   }
 
+  /** 1キーの有効な版(最大 version)。1版も無ければ null。 */
   async findLatest(tenantId: string, key: PromptTemplateKey): Promise<PromptTemplateRecord | null> {
     const rows = this.forKey(tenantId, key).sort((a, b) => b.version - a.version);
     return rows[0] ? { ...rows[0] } : null;
   }
 
+  /** 1キーの版の履歴を新しい順に。 */
   async listVersions(tenantId: string, key: PromptTemplateKey): Promise<PromptTemplateRecord[]> {
     return this.forKey(tenantId, key)
       .sort((a, b) => b.version - a.version)
       .map((row) => ({ ...row }));
   }
 
-  async append(tenantId: string, input: NewPromptTemplateInput): Promise<PromptTemplateRecord> {
-    const maxVersion = this.forKey(tenantId, input.key).reduce((max, row) => Math.max(max, row.version), 0);
+  /** 有効な文面(1版も無ければ currentBodyFallback)と違うときだけ、最大版+1で積む。 */
+  async appendIfChanged(
+    tenantId: string,
+    input: NewPromptTemplateInput,
+    currentBodyFallback: string,
+  ): Promise<AppendPromptTemplateResult> {
+    const current = await this.findLatest(tenantId, input.key);
+    if (input.body === (current ? current.body : currentBodyFallback)) {
+      return { appended: false, current };
+    }
     this.seq += 1;
     const row: PromptTemplateRecord = {
       id: `prompt-template-${this.seq}`,
       tenantId,
       key: input.key,
-      version: maxVersion + 1,
+      version: (current?.version ?? 0) + 1,
       body: input.body,
       note: input.note,
       createdByStaffId: input.createdByStaffId,
       createdAt: new Date(),
     };
     this.rows.push(row);
-    return { ...row };
+    return { appended: true, record: { ...row } };
   }
 }
 

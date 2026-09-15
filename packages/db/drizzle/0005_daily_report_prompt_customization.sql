@@ -5,9 +5,16 @@
 -- 表(report_age_bands / report_keywords / report_education_levels / report_stress_levels / report_phrases /
 -- customer_report_profiles)と、AI生成1回ごとの記録(report_ai_generations / report_ai_generation_keywords)を足す。
 --
+-- report_ai_generations は使った版(prompt_template_id。既定文面なら NULL)に加えて、実際にモデルへ
+-- 送った文字列そのもの(prompt_text)を持つ。既定文面はコードのリリースで変わり、3軸の差し込み結果も
+-- 版には残らないため、版IDだけでは「この日報がどの文面から生まれたか」を復元できない。
+--
 -- daily_reports には「主に描いている子」(target_family_member_id)と「保存した本文の元になった生成」
 -- (ai_generation_id)の2列を足す。どちらも null 許容で、既存行はそのまま通る。
--- family_members には (tenant_id, id) の UNIQUE を足す(上の2表からの複合FKの参照先)。
+-- この2列と report_ai_generations.target_family_member_id は、顧客IDまで含めた複合FKで縛る
+-- (テナント内で別の家庭の子・別の家庭の生成を指せないようにする)。その参照先として
+-- family_members に (tenant_id, customer_id, id)、report_ai_generations に
+-- (tenant_id, customer_id, id) の UNIQUE を置く。
 --
 -- 【drizzle-kitが生成できず手で追記している部分】(このファイル末尾)
 -- 0001 と同じく FORCE ROW LEVEL SECURITY と set_updated_at トリガーは生成されないため、
@@ -96,6 +103,7 @@ CREATE TABLE "report_ai_generations" (
 	"customer_id" uuid NOT NULL,
 	"target_family_member_id" uuid,
 	"prompt_template_id" uuid,
+	"prompt_text" text NOT NULL,
 	"model" text NOT NULL,
 	"child_age_months" integer,
 	"education_level" integer,
@@ -108,6 +116,7 @@ CREATE TABLE "report_ai_generations" (
 	"error_message" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "report_ai_generations_tenant_id_uk" UNIQUE("tenant_id","id"),
+	CONSTRAINT "report_ai_generations_tenant_customer_id_uk" UNIQUE("tenant_id","customer_id","id"),
 	CONSTRAINT "report_ai_generations_levels_check" CHECK (("report_ai_generations"."education_level" IS NULL
           OR "report_ai_generations"."education_level" BETWEEN 1 AND 5)
         AND ("report_ai_generations"."effective_education_level" IS NULL
@@ -115,6 +124,7 @@ CREATE TABLE "report_ai_generations" (
         AND ("report_ai_generations"."stress_level" IS NULL
           OR "report_ai_generations"."stress_level" BETWEEN 1 AND 5)),
 	CONSTRAINT "report_ai_generations_child_age_check" CHECK ("report_ai_generations"."child_age_months" IS NULL OR "report_ai_generations"."child_age_months" BETWEEN 0 AND 144),
+	CONSTRAINT "report_ai_generations_child_target_check" CHECK ("report_ai_generations"."target_family_member_id" IS NOT NULL OR "report_ai_generations"."child_age_months" IS NULL),
 	CONSTRAINT "report_ai_generations_outcome_check" CHECK (("report_ai_generations"."output_json" IS NULL) <> ("report_ai_generations"."error_message" IS NULL))
 );
 --> statement-breakpoint
@@ -213,7 +223,7 @@ CREATE TABLE "report_stress_levels" (
 ALTER TABLE "report_stress_levels" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 -- 参照先の UNIQUE は、それを指す複合FK(下の report_ai_generations / daily_reports)より前に作る
 -- (drizzle-kit はこの順で生成しないため手で動かしている)。
-ALTER TABLE "family_members" ADD CONSTRAINT "family_members_tenant_id_uk" UNIQUE("tenant_id","id");--> statement-breakpoint
+ALTER TABLE "family_members" ADD CONSTRAINT "family_members_tenant_customer_id_uk" UNIQUE("tenant_id","customer_id","id");--> statement-breakpoint
 ALTER TABLE "daily_reports" ADD COLUMN "target_family_member_id" uuid;--> statement-breakpoint
 ALTER TABLE "daily_reports" ADD COLUMN "ai_generation_id" uuid;--> statement-breakpoint
 ALTER TABLE "customer_report_profiles" ADD CONSTRAINT "customer_report_profiles_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -231,7 +241,7 @@ ALTER TABLE "report_ai_generation_keywords" ADD CONSTRAINT "report_ai_generation
 ALTER TABLE "report_ai_generations" ADD CONSTRAINT "report_ai_generations_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "report_ai_generations" ADD CONSTRAINT "report_ai_generations_tenant_staff_fk" FOREIGN KEY ("tenant_id","staff_id") REFERENCES "public"."staff"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "report_ai_generations" ADD CONSTRAINT "report_ai_generations_tenant_customer_fk" FOREIGN KEY ("tenant_id","customer_id") REFERENCES "public"."customers"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "report_ai_generations" ADD CONSTRAINT "report_ai_generations_tenant_target_family_member_fk" FOREIGN KEY ("tenant_id","target_family_member_id") REFERENCES "public"."family_members"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "report_ai_generations" ADD CONSTRAINT "report_ai_generations_tenant_target_family_member_fk" FOREIGN KEY ("tenant_id","customer_id","target_family_member_id") REFERENCES "public"."family_members"("tenant_id","customer_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "report_ai_generations" ADD CONSTRAINT "report_ai_generations_tenant_prompt_template_fk" FOREIGN KEY ("tenant_id","prompt_template_id") REFERENCES "public"."prompt_templates"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "report_education_levels" ADD CONSTRAINT "report_education_levels_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "report_keywords" ADD CONSTRAINT "report_keywords_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -240,8 +250,8 @@ ALTER TABLE "report_stress_levels" ADD CONSTRAINT "report_stress_levels_tenant_i
 CREATE INDEX "report_ai_generation_keywords_tenant_keyword_idx" ON "report_ai_generation_keywords" USING btree ("tenant_id","keyword_id","role");--> statement-breakpoint
 CREATE INDEX "report_ai_generations_tenant_customer_created_idx" ON "report_ai_generations" USING btree ("tenant_id","customer_id","created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "report_phrases_tenant_kind_idx" ON "report_phrases" USING btree ("tenant_id","kind") WHERE "report_phrases"."active";--> statement-breakpoint
-ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_tenant_target_family_member_fk" FOREIGN KEY ("tenant_id","target_family_member_id") REFERENCES "public"."family_members"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_tenant_ai_generation_fk" FOREIGN KEY ("tenant_id","ai_generation_id") REFERENCES "public"."report_ai_generations"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_tenant_target_family_member_fk" FOREIGN KEY ("tenant_id","customer_id","target_family_member_id") REFERENCES "public"."family_members"("tenant_id","customer_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_tenant_ai_generation_fk" FOREIGN KEY ("tenant_id","customer_id","ai_generation_id") REFERENCES "public"."report_ai_generations"("tenant_id","customer_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "customer_report_profiles" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "prompt_templates" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "report_age_band_keywords" AS PERMISSIVE FOR ALL TO public USING (tenant_id = current_setting('app.tenant_id', true)::uuid) WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);--> statement-breakpoint

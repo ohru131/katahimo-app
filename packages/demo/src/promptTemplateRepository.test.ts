@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import type { AppendPromptTemplateResult, PromptTemplateRecord } from '@katahimo/core/ports';
 import { DrizzlePromptTemplateRepository } from '@katahimo/db/repositories';
 import * as schema from '@katahimo/db/schema';
 import type { Database } from '@katahimo/db/tenant-scope';
@@ -18,12 +19,20 @@ import { applyPendingMigrations } from './database';
  * (packages/db はブラウザからも使うのでDBドライバを持ち込まない)。
  *
  * 【インメモリのフェイクでは足りない理由】このリポジトリは「キーごとの最大版」を副問い合わせの
- * JOINで、版番号の採番をINSERTの中の副問い合わせで行う。どちらもSQLが通るかどうかが要点で、
- * フェイク(FakePromptTemplateRepository)では何も確かめられない。
+ * JOINで、「変わっていなければ積まない」の判定を `SELECT ... FOR UPDATE` と同じトランザクションで
+ * 行う。どちらもSQLが通るかどうかが要点で、フェイク(FakePromptTemplateRepository)では
+ * 何も確かめられない。
  */
+
+/** appendIfChanged が積んだ版を取り出す。積まれなかった場合はテストを落とす。 */
+function appended(result: AppendPromptTemplateResult): PromptTemplateRecord {
+  if (!result.appended) throw new Error('版が積まれるはずの操作で appended:false が返った');
+  return result.record;
+}
 
 const DRIZZLE_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../db/drizzle');
 
+/** drizzle が吐いたマイグレーションをファイル名順に読む(本番と同じSQLをPGliteに当てるため)。 */
 function loadMigrations(): DemoMigration[] {
   return readdirSync(DRIZZLE_DIR)
     .filter((name) => name.endsWith('.sql'))
@@ -68,31 +77,39 @@ describe('DrizzlePromptTemplateRepository(PGlite)', () => {
   });
 
   it('版番号は(テナント, キー)ごとに1から採番され、有効な版は最大版になる', async () => {
-    const first = await repo.append(tenantId, {
-      key: 'daily_report',
-      body: '一版目 {anonymizedText}',
-      note: '最初の調整',
-      createdByStaffId: staffId,
-    });
+    const first = appended(
+      await repo.appendIfChanged(
+        tenantId,
+        {
+          key: 'daily_report',
+          body: '一版目 {anonymizedText}',
+          note: '最初の調整',
+          createdByStaffId: staffId,
+        },
+        '既定の文面',
+      ),
+    );
     expect(first.version).toBe(1);
     expect(first.createdByStaffId).toBe(staffId);
     expect(first.createdAt).toBeInstanceOf(Date);
 
-    const second = await repo.append(tenantId, {
-      key: 'daily_report',
-      body: '二版目 {anonymizedText}',
-      note: '',
-      createdByStaffId: null,
-    });
+    const second = appended(
+      await repo.appendIfChanged(
+        tenantId,
+        { key: 'daily_report', body: '二版目 {anonymizedText}', note: '', createdByStaffId: null },
+        '既定の文面',
+      ),
+    );
     expect(second.version).toBe(2);
 
     // 別のキーは別系列で1から。
-    const hint = await repo.append(tenantId, {
-      key: 'accident_hint',
-      body: '記載要領',
-      note: '',
-      createdByStaffId: null,
-    });
+    const hint = appended(
+      await repo.appendIfChanged(
+        tenantId,
+        { key: 'accident_hint', body: '記載要領', note: '', createdByStaffId: null },
+        '既定の文面',
+      ),
+    );
     expect(hint.version).toBe(1);
 
     expect((await repo.findLatest(tenantId, 'daily_report'))?.body).toBe('二版目 {anonymizedText}');
@@ -108,19 +125,44 @@ describe('DrizzlePromptTemplateRepository(PGlite)', () => {
   });
 
   it('別テナントの版は混ざらない', async () => {
-    await repo.append(otherTenantId, {
-      key: 'daily_report',
-      body: 'よその文面 {anonymizedText}',
-      note: '',
-      createdByStaffId: null,
-    });
+    await repo.appendIfChanged(
+      otherTenantId,
+      { key: 'daily_report', body: 'よその文面 {anonymizedText}', note: '', createdByStaffId: null },
+      '既定の文面',
+    );
     expect((await repo.findLatest(otherTenantId, 'daily_report'))?.version).toBe(1);
     expect((await repo.findLatest(tenantId, 'daily_report'))?.version).toBe(2);
   });
 
+  it('同じ文面を2回積んでも版は増えない(判定が書き込みと同じトランザクションにある)', async () => {
+    const before = await repo.listVersions(tenantId, 'accident_hint');
+    const again = await repo.appendIfChanged(
+      tenantId,
+      { key: 'accident_hint', body: '記載要領', note: '二度目', createdByStaffId: null },
+      '既定の文面',
+    );
+    expect(again.appended).toBe(false);
+    expect(again.appended === false && again.current?.version).toBe(1);
+    expect(await repo.listVersions(tenantId, 'accident_hint')).toHaveLength(before.length);
+  });
+
+  it('1版も無いキーは、渡した既定文面と同じなら積まない', async () => {
+    const result = await repo.appendIfChanged(
+      tenantId,
+      { key: 'receipt_ocr', body: '既定のOCR文面', note: '', createdByStaffId: null },
+      '既定のOCR文面',
+    );
+    expect(result).toEqual({ appended: false, current: null });
+    expect(await repo.listVersions(tenantId, 'receipt_ocr')).toEqual([]);
+  });
+
   it('空白だけの文面はDBのCHECK制約で弾かれる', async () => {
     const error = await repo
-      .append(tenantId, { key: 'daily_report', body: '   ', note: '', createdByStaffId: null })
+      .appendIfChanged(
+        tenantId,
+        { key: 'daily_report', body: '   ', note: '', createdByStaffId: null },
+        '既定の文面',
+      )
       .then(
         () => null,
         (e: unknown) => e,

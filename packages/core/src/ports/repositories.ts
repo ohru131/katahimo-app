@@ -943,17 +943,38 @@ export interface NewPromptTemplateInput {
   createdByStaffId: string | null;
 }
 
+/**
+ * `appendIfChanged` の結果。積んだ場合は新しい版、積まなかった場合は判定に使った
+ * 「いま有効な版」(テナントの版が1つも無ければ null=既定文面のまま)を返す。
+ * 呼び出し側は appended:false を「文面が変わっていません」等のメッセージに読み替える。
+ */
+export type AppendPromptTemplateResult =
+  | { appended: true; record: PromptTemplateRecord }
+  | { appended: false; current: PromptTemplateRecord | null };
+
 export interface PromptTemplateRepositoryPort {
   /** キーごとの最新版だけを返す。テナントが1版も積んでいないキーは含まれない(既定文面へのフォールバックは呼び出し側)。 */
   findLatestAll(tenantId: string): Promise<PromptTemplateRecord[]>;
+  /** 1キーの有効な版(最大 version)。テナントが1版も積んでいなければ null。 */
   findLatest(tenantId: string, key: PromptTemplateKey): Promise<PromptTemplateRecord | null>;
   /** 版の履歴を新しい順に返す。 */
   listVersions(tenantId: string, key: PromptTemplateKey): Promise<PromptTemplateRecord[]>;
   /**
-   * 新しい版を積む。version は (tenantId, key) の最大版+1 を書き込みと同じトランザクションで
-   * 採番する(先に読んでから書くと、同時編集で同じ版番号を2つ作りにいく)。
+   * いま有効な文面と違うときだけ、新しい版を積む。
+   *
+   * 【「変わっていなければ積まない」の判定まで実装側に持たせる理由】
+   * 呼び出し側で findLatest してから append すると、読みと書きの間に別の管理者が保存した版を
+   * 見落とし、同じ文面の版が2つ積まれる(版だけが増えて履歴が読みにくくなる)。判定と書き込みを
+   * 1つのトランザクションに入れ、有効版の行を読む時点で施錠する。
+   *
+   * version は (tenantId, key) の最大版+1。`currentBodyFallback` は、テナントの版が1つも
+   * 無いときに「いま有効な文面」として比較に使う値(呼び出し側が持つ既定文面)。
    */
-  append(tenantId: string, input: NewPromptTemplateInput): Promise<PromptTemplateRecord>;
+  appendIfChanged(
+    tenantId: string,
+    input: NewPromptTemplateInput,
+    currentBodyFallback: string,
+  ): Promise<AppendPromptTemplateResult>;
 }
 
 /**

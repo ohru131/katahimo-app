@@ -459,6 +459,8 @@ export const customerReportProfiles = pgTable(
  * 【残す理由】
  * - 日報から「どのモデル・どの版の文面・どの★/ストレス度・どの候補語」で生まれたかを辿る
  *   (doc/proposal/tech-stack.md: AI生成の記録にはモデル名とプロンプトの版を残す)。
+ *   使った版は prompt_template_id(既定文面なら NULL)、実際にモデルへ送った全文は prompt_text。
+ *   既定文面はコードのリリースで変わるため、版IDだけでは文面を復元できない。
  * - 文面やキーワード表を変えた前後で出来上がりを比べる(検証の材料)。
  * - 失敗(APIエラー)も残し、どの入力で落ちたかを追える。
  *
@@ -483,6 +485,17 @@ export const reportAiGenerations = pgTable(
     targetFamilyMemberId: uuid(),
     /** 使った日報生成文面(prompt_templates の版)。テナントの版が無く既定文面を使ったときは null。 */
     promptTemplateId: uuid(),
+    /**
+     * 組み立て済みプロンプト全文のスナップショット。既定文面・3軸の差し込みを含めた、
+     * 実際にモデルへ送った文字列。
+     *
+     * 【版IDと別に全文も残す理由】
+     * prompt_template_id は「テナントが積んだ版」しか指せない。既定文面を使った生成は null に
+     * なるうえ、既定文面はコードのリリースで変わるため、版IDだけでは後から文面を復元できない。
+     * 差し込み({childContext} / {keywordGuide} / {toneGuide} 等)の結果も版には残らない。
+     * 「この日報はどの文字列から生まれたか」を1行で確定させるため、送った全文をここに置く。
+     */
+    promptText: text().notNull(),
     /** 使ったモデル名(「gemini-2.5-flash」等)。 */
     model: text().notNull(),
 
@@ -520,18 +533,23 @@ export const reportAiGenerations = pgTable(
       columns: [t.tenantId, t.customerId],
       foreignColumns: [customers.tenantId, customers.id],
     }),
+    // 対象児は顧客IDまで含めた組で縛る(理由: テナント内で別の家庭の子を指せないようにする)。
+    // null の行は MATCH SIMPLE(既定)により制約の対象外で、対象児未選択の生成も通る。
     foreignKey({
       name: 'report_ai_generations_tenant_target_family_member_fk',
-      columns: [t.tenantId, t.targetFamilyMemberId],
-      foreignColumns: [familyMembers.tenantId, familyMembers.id],
+      columns: [t.tenantId, t.customerId, t.targetFamilyMemberId],
+      foreignColumns: [familyMembers.tenantId, familyMembers.customerId, familyMembers.id],
     }),
     foreignKey({
       name: 'report_ai_generations_tenant_prompt_template_fk',
       columns: [t.tenantId, t.promptTemplateId],
       foreignColumns: [promptTemplates.tenantId, promptTemplates.id],
     }),
-    // daily_reports.ai_generation_id / report_ai_generation_keywords からの複合FKの参照先。
+    // report_ai_generation_keywords からの複合FKの参照先。
     unique('report_ai_generations_tenant_id_uk').on(t.tenantId, t.id),
+    // daily_reports.(tenant_id, customer_id, ai_generation_id) からの複合FKの参照先。
+    // daily_reports.tenant_id_customer_uk と同じ理由で、日報の顧客と食い違う生成を指せないようにする。
+    unique('report_ai_generations_tenant_customer_id_uk').on(t.tenantId, t.customerId, t.id),
     check(
       'report_ai_generations_levels_check',
       sql`(${t.educationLevel} IS NULL
@@ -544,6 +562,11 @@ export const reportAiGenerations = pgTable(
     check(
       'report_ai_generations_child_age_check',
       sql`${t.childAgeMonths} IS NULL OR ${t.childAgeMonths} BETWEEN 0 AND ${sqlNumber(AGE_MONTHS_MAX)}`,
+    ),
+    // 対象児が未選択なら月齢も入らない(誰の月齢か分からない値を残さない。列コメントの前提)。
+    check(
+      'report_ai_generations_child_target_check',
+      sql`${t.targetFamilyMemberId} IS NOT NULL OR ${t.childAgeMonths} IS NULL`,
     ),
     // 成功と失敗のどちらかが必ず分かる形にする(両方 null / 両方入りの行を作らせない)。
     check(

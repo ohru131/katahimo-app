@@ -1,4 +1,5 @@
 import {
+  PROMPT_PLACEHOLDERS,
   type PromptPlaceholder,
   REPORT_LEVEL_MAX,
   REPORT_LEVEL_MIN,
@@ -119,6 +120,7 @@ export const DEFAULT_MAX_KEYWORD_CANDIDATES = 6;
 
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
+/** 'YYYY-MM-DD' を年月日に分ける。形式が違う・月日が範囲外なら null(勝手に補正しない)。 */
 function parseDateOnly(value: string): { y: number; m: number; d: number } | null {
   const match = DATE_ONLY_RE.exec(value);
   if (!match) return null;
@@ -165,6 +167,7 @@ export interface StressAdjustment {
   escalationRequired: boolean;
 }
 
+/** ★・ストレス度を許容範囲(REPORT_LEVEL_MIN〜MAX)に収める。引き下げで範囲外に出るのを防ぐ。 */
 function clampLevel(level: number): number {
   return Math.min(REPORT_LEVEL_MAX, Math.max(REPORT_LEVEL_MIN, level));
 }
@@ -342,16 +345,26 @@ export function buildToneGuide(stanceText: string, avoidPhrases: readonly Report
 }
 
 /**
+ * 差し込み変数を1度の走査で拾うための正規表現。PROMPT_PLACEHOLDERS から組み立てるので、
+ * 変数を足しても(区分値を1箇所で足せば)ここは直さなくてよい。
+ */
+const PLACEHOLDER_RE = new RegExp(`\\{(${PROMPT_PLACEHOLDERS.join('|')})\\}`, 'g');
+
+/**
  * テンプレート中の `{name}` を値で置き換える。同じ名前が複数あれば全部置き換える
  * (GAS版 String.replace は最初の1箇所だけだったが、文面を自由に書けるようにするため全箇所)。
  * 未知の `{...}` はそのまま残す(JSON出力例の波括弧を壊さないため)。
+ *
+ * 【1回の走査でまとめて置き換える理由】
+ * 変数ごとに順に置き換えると、先に差し込んだ値の中に `{timeInfo}` のような文字列が
+ * 含まれていた場合(スタッフのメモにそのまま書かれていた等)、後の回でそれも置き換わってしまう。
+ * 差し込んだ値は「もう差し込み済みの本文」なので、二度目の対象にしない。
  */
 export function renderPromptTemplate(template: string, values: Record<PromptPlaceholder, string>): string {
-  let out = template;
-  for (const [name, value] of Object.entries(values)) {
-    out = out.split(`{${name}}`).join(value);
-  }
-  return out;
+  return template.replace(
+    PLACEHOLDER_RE,
+    (matched, name: string) => values[name as PromptPlaceholder] ?? matched,
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -79,10 +79,13 @@ export interface ReceiptOcrResult {
 }
 
 export interface ReportAiPort {
+  /** 組み立て済みプロンプトから保育日報の下書き(警告・社内向け・保護者向け)を作る。失敗も戻り値で表す。 */
   generateDailyReport(input: GenerateDailyReportInput): Promise<DailyReportDraft>;
+  /** 組み立て済みプロンプトから事故報告/ヒヤリハットの下書きを作る。失敗は error だけを持つ形で返す。 */
   generateAccidentReport(
     input: GenerateAccidentReportInput,
   ): Promise<AccidentReportDraft | AccidentReportDraftError>;
+  /** 領収書画像から金額・店名・日時を読み取る。読み取れなかった項目は空文字。 */
   extractReceiptAmount(input: ExtractReceiptAmountInput): Promise<ReceiptOcrResult>;
 }
 
@@ -99,5 +102,6 @@ export interface ReportAiPortOptions {
  * 使い分ける。
  */
 export interface ReportAiPortFactory {
+  /** APIキー・モデル名から ReportAiPort を1つ組み立てる。 */
   create(options: ReportAiPortOptions): ReportAiPort;
 }
