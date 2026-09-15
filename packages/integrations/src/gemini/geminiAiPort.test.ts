@@ -20,8 +20,8 @@ describe('parseImageDataUrl', () => {
   });
 
   it('JPEG以外のサブタイプもそのまま通す(webp・heic)', () => {
-    expect(parseImageDataUrl('data:image/webp;base64,BBBB').mimeType).toBe('image/webp');
-    expect(parseImageDataUrl('data:image/heic;base64,CCCC').mimeType).toBe('image/heic');
+    expect(parseImageDataUrl('data:image/webp;base64,BBBB')?.mimeType).toBe('image/webp');
+    expect(parseImageDataUrl('data:image/heic;base64,CCCC')?.mimeType).toBe('image/heic');
   });
 
   it('大文字表記のMIMEタイプは小文字に揃える', () => {
