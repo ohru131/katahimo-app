@@ -31,8 +31,16 @@ describe('parseImageDataUrl', () => {
     });
   });
 
-  it('`;base64` が無いデータURLでも本体はカンマの後ろ全部', () => {
-    expect(parseImageDataUrl('data:image/gif,EEEE')).toEqual({ mimeType: 'image/gif', data: 'EEEE' });
+  it('`;base64` が無いデータURLは弾く(inline_data はbase64しか受けない)', () => {
+    expect(parseImageDataUrl('data:image/gif,EEEE')).toBeNull();
+    expect(parseImageDataUrl('data:image/gif;charset=utf-8,EEEE')).toBeNull();
+  });
+
+  it('`;base64` が他のパラメータと並んでいても拾う', () => {
+    expect(parseImageDataUrl('data:image/gif;name=a.gif;base64,EEEE')).toEqual({
+      mimeType: 'image/gif',
+      data: 'EEEE',
+    });
   });
 
   it('本体にカンマが含まれていても最初のカンマだけで切る', () => {
@@ -42,11 +50,9 @@ describe('parseImageDataUrl', () => {
     });
   });
 
-  it('画像でないMIMEタイプは、カンマの後ろを本体・image/jpeg として扱う(GAS版と同じ)', () => {
-    expect(parseImageDataUrl('data:application/pdf;base64,HHHH')).toEqual({
-      mimeType: 'image/jpeg',
-      data: 'HHHH',
-    });
+  it('画像でないMIMEタイプのデータURLは弾く', () => {
+    expect(parseImageDataUrl('data:application/pdf;base64,HHHH')).toBeNull();
+    expect(parseImageDataUrl('data:text/plain,HHHH')).toBeNull();
   });
 
   it('接頭辞の無い生のbase64は、全体を本体・image/jpeg として扱う', () => {

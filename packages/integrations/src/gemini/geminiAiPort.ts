@@ -144,13 +144,18 @@ export interface ParsedImageData {
 }
 
 /**
- * 先頭が `data:image/<subtype>` のデータURLを拾う。`;base64` 等のパラメータは
- * あってもなくてもよく、本体はカンマの後ろ全部。
+ * 先頭が `data:image/<subtype>` で、パラメータに `;base64` を含むデータURLを拾う。
+ * 本体はカンマの後ろ全部。Gemini の inline_data はbase64本体しか受け付けないため、
+ * `;base64` の無いデータURL(パーセントエンコードの生バイト)はここで弾く。
  */
-const IMAGE_DATA_URL_RE = /^data:(image\/[a-z0-9.+-]+)[^,]*,/i;
+const IMAGE_DATA_URL_RE = /^data:(image\/[a-z0-9.+-]+)((?:;[^,;]*)*),/i;
+const BASE64_PARAM_RE = /(^|;)base64(;|$)/i;
 
 /** MIMEタイプを読み取れなかったときに使う値。GAS版が固定で送っていたもの。 */
 const FALLBACK_IMAGE_MIME = 'image/jpeg';
+
+/** 画像のbase64データURLでない入力を受けたときのエラー文言(OCRは呼ばない)。 */
+export const IMAGE_FORMAT_ERROR = '画像の形式が不正です(base64のデータURLではありません)';
 
 /**
  * 領収書画像のデータURL(`data:image/png;base64,....`)を、宣言されたMIMEタイプと
@@ -160,21 +165,20 @@ const FALLBACK_IMAGE_MIME = 'image/jpeg';
  * 画像でも JPEG と申告していた。モデル側が申告を信じて復号に失敗すると、読み取り結果が
  * 空になる(画面上は「読み取れませんでした」としか見えない)。
  *
- * 【読み取れないときにGAS版と同じに倒す理由】`data:` で始まらない値・画像でないMIMEタイプは、
- * 呼び出し側が生のbase64やHTMLの input から取った値をそのまま渡してきた場合。ここで
- * エラーにすると、GAS版で通っていた入力が通らなくなる。カンマがあればその後ろ、無ければ
- * 全体を本体とみなし、MIMEタイプは `image/jpeg` として送る(GAS版と同じ挙動)。
+ * 【`data:` で始まるのに画像のbase64でないものは null にする理由】`data:text/plain,...` や
+ * `data:image/png,<生バイト>` は inline_data に載せられない。送っても復号に失敗して
+ * 「読み取れませんでした」になるだけなので、呼び出し前に形式エラーとして返す。
+ *
+ * 【`data:` で始まらない値をGAS版と同じに倒す理由】呼び出し側が生のbase64を渡してきた場合。
+ * GAS版で通っていた入力を通すため、全体を本体・MIMEタイプは `image/jpeg` として送る。
  */
-export function parseImageDataUrl(base64Image: string): ParsedImageData {
-  const match = IMAGE_DATA_URL_RE.exec(base64Image);
-  if (match?.[0] && match[1]) {
+export function parseImageDataUrl(base64Image: string): ParsedImageData | null {
+  if (/^data:/i.test(base64Image)) {
+    const match = IMAGE_DATA_URL_RE.exec(base64Image);
+    if (!match?.[0] || !match[1] || !BASE64_PARAM_RE.test(match[2] ?? '')) return null;
     return { mimeType: match[1].toLowerCase(), data: base64Image.slice(match[0].length) };
   }
-  const comma = base64Image.indexOf(',');
-  return {
-    mimeType: FALLBACK_IMAGE_MIME,
-    data: comma === -1 ? base64Image : base64Image.slice(comma + 1),
-  };
+  return { mimeType: FALLBACK_IMAGE_MIME, data: base64Image };
 }
 
 /** GAS版GeminiReport.jsのAPI呼び出しロジックを実装するReportAiPort。GEMINI_API_KEYが設定されている場合に使う。 */
@@ -249,6 +253,9 @@ export class GeminiAiPort implements ReportAiPort {
   /** 領収書画像から金額・店名・日時を読み取る。GAS版 GeminiReport.js extractAmountFromImage に対応。 */
   async extractReceiptAmount(input: ExtractReceiptAmountInput): Promise<ReceiptOcrResult> {
     const image = parseImageDataUrl(input.base64Image);
+    if (!image) {
+      return { amount: '', storeName: '', receiptDate: '', error: IMAGE_FORMAT_ERROR };
+    }
     const result = await callGemini(
       this.options.apiKey,
       [{ text: input.prompt }, { inline_data: { mime_type: image.mimeType, data: image.data } }],

@@ -157,6 +157,7 @@ export function PromptTemplateAdminModal({ onClose }: { onClose: () => void }) {
 
   /** 履歴の1件を編集欄に読み込む。変更メモは版ごとに書き直すものなので、古いメモは残さず空にする。 */
   const loadVersionIntoEditor = (version: PromptTemplateVersionView) => {
+    if (!confirmDiscardIfDirty()) return;
     setBody(version.body);
     setNote('');
     setFormError(null);
