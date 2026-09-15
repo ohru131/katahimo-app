@@ -42,7 +42,7 @@ import { tenants } from './tenants';
  *
  *   1. 子の年齢帯   … 世帯構成員の生年月日から月齢を都度計算し、report_age_bands に当てる
  *   2. 教育関心度★ … 家庭ごとの値(customer_report_profiles.education_level)。高いほど教育語を使う
- *   3. ストレス度   … 訪問ごとにスタッフが評価する保護者の負担(daily_reports.risk_rating)。
+ *   3. ストレス度   … 訪問ごとにスタッフが評価する保護者の負担(daily_reports.stress_level)。
  *                     低いほど負担が大きく、★より優先して文面を控えめにする
  *
  * 「どの語をどの条件で使えるか」は report_keywords の行に持たせ、絞り込みはコードで行う
@@ -149,7 +149,7 @@ export const reportEducationLevels = pgTable(
 ).enableRLS();
 
 /**
- * ストレス度(1〜5。daily_reports.risk_rating と同じ尺度)ごとの、判定基準と文面への効き方。
+ * ストレス度(1〜5。daily_reports.stress_level と同じ尺度)ごとの、判定基準と文面への効き方。
  * テナントごとに5行。
  *
  * 【★より優先する仕組みを列で持つ理由】
@@ -505,7 +505,7 @@ export const reportAiGenerations = pgTable(
     educationLevel: integer(),
     /** ストレス度による引き下げ後に実際に適用した★。 */
     effectiveEducationLevel: integer(),
-    /** 生成時点でスタッフが評価していたストレス度(daily_reports.risk_rating と同じ尺度)。未評価は null。 */
+    /** 生成時点でスタッフが評価していたストレス度(daily_reports.stress_level と同じ尺度)。未評価は null。 */
     stressLevel: integer(),
     /** 管理者への連絡を要するストレス度だったか(report_stress_levels.escalation_required の適用結果)。 */
     escalationRequired: boolean().notNull().default(false),

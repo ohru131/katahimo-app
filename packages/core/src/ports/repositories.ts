@@ -507,7 +507,7 @@ export interface DailyReportRecord {
   staffId: string;
   customerId: string;
   occurredAt: Date;
-  riskRating: number | null;
+  stressLevel: number | null;
   esRating: number | null;
   /**
    * 開始/終了時刻(doc/db/guidelines.md §6)。未入力はnull。occurredAtとの関係は
@@ -525,7 +525,7 @@ export interface NewDailyReportInput {
   staffId: string;
   customerId: string;
   occurredAt: Date;
-  riskRating: number | null;
+  stressLevel: number | null;
   esRating: number | null;
   startedAt: Date | null;
   endedAt: Date | null;

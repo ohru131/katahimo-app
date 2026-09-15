@@ -131,7 +131,7 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
         inputText: 'メモ',
         internalText: '社内',
         customerText: '保護者向け',
-        riskRating: 1,
+        stressLevel: 1,
         esRating: 2,
       }),
     ).rejects.toThrow('outboxへの書き込みに失敗しました');
@@ -149,7 +149,7 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
         inputText: 'メモ',
         internalText: '社内',
         customerText: '保護者向け',
-        riskRating: 1,
+        stressLevel: 1,
         esRating: 2,
         couponIds: [couponId],
       }),
@@ -192,7 +192,7 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
       inputText: '初回',
       internalText: '初回',
       customerText: '初回',
-      riskRating: 1,
+      stressLevel: 1,
       esRating: 2,
     });
 
@@ -206,13 +206,13 @@ describe('ドメインの書き込みとoutboxへのenqueueは同じトランザ
         inputText: '編集後',
         internalText: '編集後',
         customerText: '編集後',
-        riskRating: 5,
+        stressLevel: 5,
         esRating: 5,
       }),
     ).rejects.toThrow('outboxへの書き込みに失敗しました');
 
     const stored = await dailyReports.findById(tenantId, saved.id);
-    expect(stored?.riskRating).toBe(1);
+    expect(stored?.stressLevel).toBe(1);
   });
 
   it('事故報告の「編集」でも、enqueueが失敗したら編集前の内容のまま残る', async () => {

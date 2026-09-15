@@ -382,7 +382,7 @@ export interface AssembleDailyReportPromptInput {
   childAgeMonths: number | null;
   /** 家庭の教育関心度★(customer_report_profiles)。未設定は null。 */
   educationLevel: number | null;
-  /** スタッフが評価したストレス度(daily_reports.risk_rating)。未評価は null。 */
+  /** スタッフが評価したストレス度(daily_reports.stress_level)。未評価は null。 */
   stressLevel: number | null;
   ageBands: readonly ReportAgeBand[];
   /** 年齢帯 → 相性の良いキーワードID(report_age_band_keywords)。 */

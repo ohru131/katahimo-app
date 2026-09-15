@@ -28,8 +28,8 @@ export function isAccidentReportType(value: unknown): value is AccidentReportTyp
 }
 
 /**
- * PSI/満足度評価。packages/db/src/schema/dailyReports.ts の
- * daily_reports_risk_rating_check/es_rating_check と一致させる(doc/db/guidelines.md §4)。
+ * ストレス度(PSI評価)/満足度評価。packages/db/src/schema/dailyReports.ts の
+ * daily_reports_stress_level_check/es_rating_check と一致させる(doc/db/guidelines.md §4)。
  */
 export function isValidRating(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5;
@@ -97,8 +97,8 @@ export function createReportRoutes(container: Container) {
       return c.json({ code: 'validation_failed', message: 'customerId が必要です' }, 400);
     }
     // undefined/nullは「未評価」として許容する(DB側もNULLABLE)。値がある場合だけ範囲を見る。
-    if (body.riskRating != null && !isValidRating(body.riskRating)) {
-      return c.json({ code: 'validation_failed', message: 'riskRating は1〜5の整数にしてください' }, 400);
+    if (body.stressLevel != null && !isValidRating(body.stressLevel)) {
+      return c.json({ code: 'validation_failed', message: 'stressLevel は1〜5の整数にしてください' }, 400);
     }
     if (body.esRating != null && !isValidRating(body.esRating)) {
       return c.json({ code: 'validation_failed', message: 'esRating は1〜5の整数にしてください' }, 400);
@@ -129,7 +129,7 @@ export function createReportRoutes(container: Container) {
         inputText: typeof body.inputText === 'string' ? body.inputText : '',
         internalText: typeof body.internalText === 'string' ? body.internalText : '',
         customerText: typeof body.customerText === 'string' ? body.customerText : '',
-        riskRating: isValidRating(body.riskRating) ? body.riskRating : null,
+        stressLevel: isValidRating(body.stressLevel) ? body.stressLevel : null,
         esRating: isValidRating(body.esRating) ? body.esRating : null,
         couponIds,
       });

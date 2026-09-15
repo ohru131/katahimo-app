@@ -39,7 +39,7 @@ function draftOf(patch: Partial<ReportDraft> = {}): ReportDraft {
     accidentMemo: '',
     internalText: '',
     customerText: '',
-    riskRating: null,
+    stressLevel: null,
     esRating: null,
     accident: {
       reportType: '事故報告',
@@ -86,8 +86,8 @@ describe('日報・事故報告の書きかけの控え', () => {
   });
 
   it('評価だけを付けた状態も「入力あり」として扱う', () => {
-    saveReportDraft(draftOf({ riskRating: 3 }));
-    expect(loadReportDraft(OWNER)?.riskRating).toBe(3);
+    saveReportDraft(draftOf({ stressLevel: 3 }));
+    expect(loadReportDraft(OWNER)?.stressLevel).toBe(3);
   });
 
   it('3日より古い控えは、別の訪問の書きかけとみなして捨てる', () => {

@@ -43,7 +43,7 @@ describe('ミラージョブの再試行', () => {
       staffId: 'staff-1',
       customerId: 'customer-1',
       occurredAt: new Date('2026-08-30T01:00:00.000Z'),
-      riskRating: null,
+      stressLevel: null,
       esRating: null,
       startedAt: new Date('2026-08-30T01:00:00.000Z'),
       endedAt: null,

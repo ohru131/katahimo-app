@@ -20,13 +20,13 @@ export function buildDailyReportNotificationText(params: {
    * endTimeをそのまま渡す)。
    */
   content: { startTime: string; endTime: string; internalText: string };
-  riskRating: number | null;
+  stressLevel: number | null;
   esRating: number | null;
 }): string {
   let ratingsInfo = '';
-  if (params.riskRating || params.esRating) {
+  if (params.stressLevel || params.esRating) {
     ratingsInfo = '\n【評価指標】';
-    if (params.riskRating) ratingsInfo += `\nPSI: ${star(params.riskRating)} (${params.riskRating})`;
+    if (params.stressLevel) ratingsInfo += `\nPSI: ${star(params.stressLevel)} (${params.stressLevel})`;
     if (params.esRating) ratingsInfo += `\n満足度: ${star(params.esRating)} (${params.esRating})`;
   }
   const visitTime =

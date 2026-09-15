@@ -100,7 +100,7 @@ describe('runOutboxBatch / processOutboxJob', () => {
       inputText: '元気に過ごした',
       internalText: '社内向けメモ',
       customerText: '保護者向けメモ',
-      riskRating: 3,
+      stressLevel: 3,
       esRating: 4,
     });
 

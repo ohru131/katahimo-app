@@ -680,7 +680,7 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 | `target_family_member_id` | `uuid` | NULL可 | — |
 | `ai_generation_id` | `uuid` | NULL可 | — |
 | `occurred_at` | `timestamp with time zone` | NOT NULL | — |
-| `risk_rating` | `integer` | NULL可 | — |
+| `stress_level` | `integer` | NULL可 | — |
 | `es_rating` | `integer` | NULL可 | — |
 | `started_at` | `timestamp with time zone` | NULL可 | — |
 | `ended_at` | `timestamp with time zone` | NULL可 | — |
@@ -706,7 +706,7 @@ RLS: `tenant_isolation`(ALL)— `tenant_id = current_setting('app.tenant_id', tr
 
 **CHECK制約**
 
-- `daily_reports_risk_rating_check` — `"daily_reports"."risk_rating" IS NULL OR "daily_reports"."risk_rating" BETWEEN 1 AND 5`
+- `daily_reports_stress_level_check` — `"daily_reports"."stress_level" IS NULL OR "daily_reports"."stress_level" BETWEEN 1 AND 5`
 - `daily_reports_es_rating_check` — `"daily_reports"."es_rating" IS NULL OR "daily_reports"."es_rating" BETWEEN 1 AND 5`
 - `daily_reports_time_order` — `"daily_reports"."ended_at" IS NULL OR "daily_reports"."started_at" IS NULL OR "daily_reports"."ended_at" >= "daily_reports"."started_at"`
 

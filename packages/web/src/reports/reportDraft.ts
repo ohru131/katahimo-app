@@ -66,7 +66,7 @@ export interface ReportDraft {
   /** 生成・加筆した本文。 */
   internalText: string;
   customerText: string;
-  riskRating: number | null;
+  stressLevel: number | null;
   esRating: number | null;
   accident: ReportDraftAccident;
   savedAt: number;
@@ -80,7 +80,7 @@ function isEmpty(draft: ReportDraft): boolean {
     !draft.accidentMemo.trim() &&
     !draft.internalText.trim() &&
     !draft.customerText.trim() &&
-    draft.riskRating === null &&
+    draft.stressLevel === null &&
     draft.esRating === null &&
     !a.targetName.trim() &&
     !a.occurrenceTime.trim() &&

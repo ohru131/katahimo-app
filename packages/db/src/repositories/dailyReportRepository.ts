@@ -41,7 +41,7 @@ function toRecord(row: DailyReportRow): DailyReportRecord {
     staffId: row.staffId,
     customerId: row.customerId,
     occurredAt: row.occurredAt,
-    riskRating: row.riskRating,
+    stressLevel: row.stressLevel,
     esRating: row.esRating,
     startedAt: row.startedAt,
     endedAt: row.endedAt,
@@ -65,7 +65,7 @@ export class DrizzleDailyReportRepository implements DailyReportRepositoryPort {
             staffId: input.staffId,
             customerId: input.customerId,
             occurredAt: input.occurredAt,
-            riskRating: input.riskRating,
+            stressLevel: input.stressLevel,
             esRating: input.esRating,
             startedAt: input.startedAt,
             endedAt: input.endedAt,
@@ -94,7 +94,7 @@ export class DrizzleDailyReportRepository implements DailyReportRepositoryPort {
           .update(dailyReports)
           .set({
             occurredAt: input.occurredAt,
-            riskRating: input.riskRating,
+            stressLevel: input.stressLevel,
             esRating: input.esRating,
             startedAt: input.startedAt,
             endedAt: input.endedAt,

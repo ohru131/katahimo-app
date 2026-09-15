@@ -155,7 +155,7 @@ export async function seedVisitsForDate(
       inputText: note,
       internalText: `【訪問時間】${visit.start}〜${visit.end}\n【記録】${note}`,
       customerText: `本日は${visit.start}〜${visit.end}でご訪問しました。${note}`,
-      riskRating: (seq % 5) + 1,
+      stressLevel: (seq % 5) + 1,
       esRating: (seq % 4) + 2,
       couponIds: slotIndex === 0 ? options.couponIds : undefined,
     });

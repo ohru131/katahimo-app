@@ -901,7 +901,7 @@ export interface SaveDailyReportInput {
   inputText: string;
   internalText: string;
   customerText: string;
-  riskRating: number | null;
+  stressLevel: number | null;
   esRating: number | null;
   /** 適用する割引クーポンのID配列(doc/db/guidelines.md §9)。省略/空配列は「クーポン無し」。 */
   couponIds?: string[];
@@ -912,7 +912,7 @@ export interface DailyReportView {
   occurredAt: string;
   staffId: string;
   customerId: string;
-  riskRating: number | null;
+  stressLevel: number | null;
   esRating: number | null;
   /** この日報に適用された割引クーポン(doc/db/guidelines.md §9)。 */
   coupons: DailyReportCouponView[];

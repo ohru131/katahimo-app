@@ -77,12 +77,12 @@ export const dailyReports = pgTable(
 
     occurredAt: timestamp({ withTimezone: true }).notNull(),
     /**
-     * PSI評価(保護者のストレス度。1〜5、数値が低いほど負担が大きい)。未評価はnull
-     * (2026-08-28のGAS版仕様変更で未評価に戻せるようにしたのを踏襲)。
+     * ストレス度(PSI評価。保護者の負担。1〜5、数値が低いほど負担が大きい)。未評価はnull。
+     * GAS版の Risk 列に由来する。
      * AI生成ではこの値を report_stress_levels の定義に当てて、教育キーワードの使用可否と
-     * 文面の控えめさを切り替える(doc/db/new-domains.md 第6章)。列名は GAS版の Risk 列に由来。
+     * 文面の控えめさを切り替える(doc/db/new-domains.md 第6章)。
      */
-    riskRating: integer(),
+    stressLevel: integer(),
     /** 満足度(ES)評価(1〜5)。未評価はnull。 */
     esRating: integer(),
 
@@ -161,9 +161,12 @@ export const dailyReports = pgTable(
     // (WHERE customer_id=? ORDER BY occurred_at DESC LIMIT n)を索引だけで返すための複合索引。
     // occurredAt を DESC で含めるのは、ORDER BY と向きを揃えて並べ替えを省くため(doc/db/guidelines.md §3)。
     index('daily_reports_tenant_customer_occurred_idx').on(t.tenantId, t.customerId, t.occurredAt.desc()),
-    // risk_rating/es_ratingは「1〜5」という前提でUIやミラー送信のコードが書かれており、
+    // stress_level/es_ratingは「1〜5」という前提でUIやミラー送信のコードが書かれており、
     // 範囲外の値が混入すると気付かないままスプレッドシートにも書き出される(doc/db/guidelines.md §4)。
-    check('daily_reports_risk_rating_check', sql`${t.riskRating} IS NULL OR ${t.riskRating} BETWEEN 1 AND 5`),
+    check(
+      'daily_reports_stress_level_check',
+      sql`${t.stressLevel} IS NULL OR ${t.stressLevel} BETWEEN 1 AND 5`,
+    ),
     check('daily_reports_es_rating_check', sql`${t.esRating} IS NULL OR ${t.esRating} BETWEEN 1 AND 5`),
     // 日跨ぎ勤務(22:00〜01:00等)はendedAtがstartedAtの翌日になるのを許すため、単純な
     // ">="ではなく「どちらかがNULL(未入力)ならスキップ」を先に見る(doc/db/guidelines.md §6)。

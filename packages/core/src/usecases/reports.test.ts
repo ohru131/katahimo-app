@@ -153,7 +153,7 @@ describe('saveDailyReport とクーポン(doc/db/guidelines.md §9)', () => {
     inputText: 'メモ',
     internalText: '社内',
     customerText: '保護者向け',
-    riskRating: 1,
+    stressLevel: 1,
     esRating: 2,
   };
 
@@ -437,7 +437,7 @@ describe('getCustomerHistory とクーポン', () => {
       inputText: 'メモ',
       internalText: '社内',
       customerText: '保護者向け',
-      riskRating: 1,
+      stressLevel: 1,
       esRating: 2,
       couponIds: [coupon.id],
     });

@@ -29,7 +29,7 @@ describe('reportType の値域検証(accident_reports_report_type_check と一�
   });
 });
 
-describe('riskRating/esRating の値域検証(daily_reports_risk_rating_check/es_rating_check と一致させる)', () => {
+describe('stressLevel/esRating の値域検証(daily_reports_stress_level_check/es_rating_check と一致させる)', () => {
   it('1〜5の整数は通す', () => {
     for (const value of [1, 2, 3, 4, 5]) {
       expect(isValidRating(value)).toBe(true);

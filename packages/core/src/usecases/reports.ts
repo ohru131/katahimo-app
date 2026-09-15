@@ -70,7 +70,7 @@ export interface SaveDailyReportInput {
   inputText: string;
   internalText: string;
   customerText: string;
-  riskRating: number | null;
+  stressLevel: number | null;
   esRating: number | null;
   /**
    * 適用する割引クーポンのID配列(doc/db/guidelines.md §9)。省略/空配列は「クーポン無し」。
@@ -85,7 +85,7 @@ export interface DailyReportView {
   occurredAt: Date;
   staffId: string;
   customerId: string;
-  riskRating: number | null;
+  stressLevel: number | null;
   esRating: number | null;
   startedAt: Date | null;
   endedAt: Date | null;
@@ -154,7 +154,7 @@ export async function saveDailyReport(
     staffId: input.staffId,
     customerId: input.customerId,
     occurredAt,
-    riskRating: input.riskRating,
+    stressLevel: input.stressLevel,
     esRating: input.esRating,
     startedAt,
     endedAt,
@@ -217,7 +217,7 @@ export async function saveDailyReport(
       endTime: input.endTime || '',
       internalText: content.internalText,
     },
-    riskRating: input.riskRating,
+    stressLevel: input.stressLevel,
     esRating: input.esRating,
   });
   await deps.notifier.notify(tenantId, 'report', notificationText);
@@ -227,7 +227,7 @@ export async function saveDailyReport(
     occurredAt: record.occurredAt,
     staffId: record.staffId,
     customerId: record.customerId,
-    riskRating: record.riskRating,
+    stressLevel: record.stressLevel,
     esRating: record.esRating,
     startedAt: record.startedAt,
     endedAt: record.endedAt,
@@ -439,7 +439,7 @@ export async function getCustomerHistory(
       original: content.inputText,
       internal: content.internalText,
       customer: content.customerText,
-      risk: r.riskRating,
+      risk: r.stressLevel,
       es: r.esRating,
       coupons: couponViewsByDailyReportId.get(r.id) ?? [],
     };

@@ -427,7 +427,7 @@ export function ReportModal({
   };
 
   // ── 保育日報 ──
-  const [riskRating, setRiskRating] = useState<number | null>(null);
+  const [stressLevel, setStressLevel] = useState<number | null>(null);
   const [esRating, setEsRating] = useState<number | null>(null);
   const [hintType, setHintType] = useState<AssessmentType | null>(null);
   const [showWritingHint, setShowWritingHint] = useState(false);
@@ -574,7 +574,7 @@ export function ReportModal({
       inputText: memoText,
       internalText,
       customerText,
-      riskRating,
+      stressLevel,
       esRating,
       // 選んだ順ではなくソートしてから含める。トグルの順序が違うだけの同じ組み合わせを
       // 「内容が変わった」と誤判定して、下の重複保存防止(snapshot比較)をすり抜けさせないため。
@@ -719,7 +719,7 @@ export function ReportModal({
       accidentMemo,
       internalText,
       customerText,
-      riskRating,
+      stressLevel,
       esRating,
       accident: {
         reportType,
@@ -751,7 +751,7 @@ export function ReportModal({
     accidentMemo,
     internalText,
     customerText,
-    riskRating,
+    stressLevel,
     esRating,
     reportType,
     accTargetName,
@@ -790,7 +790,7 @@ export function ReportModal({
     setAccidentMemo(draft.accidentMemo);
     setInternalText(draft.internalText);
     setCustomerText(draft.customerText);
-    setRiskRating(draft.riskRating);
+    setStressLevel(draft.stressLevel);
     setEsRating(draft.esRating);
     setReportType(draft.accident.reportType);
     setAccTargetName(draft.accident.targetName);
@@ -1374,8 +1374,8 @@ export function ReportModal({
               <div className="space-y-1">
                 <StarRating
                   type="risk"
-                  value={riskRating}
-                  onChange={setRiskRating}
+                  value={stressLevel}
+                  onChange={setStressLevel}
                   onShowHint={() => setHintType('risk')}
                 />
                 <StarRating
